@@ -905,9 +905,9 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                         setNodes(prev => [...prev, newNode]);
                     }
                     
-                    // Start wire painting if wire tool + ctrl
-                    // Allow starting painting even if we clicked on a duplicate wire!
-                    if (activeTool.type === 'wire' && e.ctrlKey) {
+                    // Start wire painting if wire tool
+                    // Always allow painting for wires (User Request: Ctrl not needed for continuous draw)
+                    if (activeTool.type === 'wire') {
                         setIsWirePainting(true);
                         setLastWireGridPos({ x: gx, y: gy });
                     }
@@ -954,10 +954,25 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
             setLastMousePos({ x: e.clientX, y: e.clientY });
         } else if (isWirePainting && activeTool?.type === 'wire' && lastWireGridPos) {
-            // Check if grid pos changed
-            if (gx !== lastWireGridPos.x || gy !== lastWireGridPos.y) {
-                const dx = gx - lastWireGridPos.x;
-                const dy = gy - lastWireGridPos.y;
+            // Axis Locking (Ctrl): Snap to the current wire axis to ensure straight lines
+            let effectiveGx = gx;
+            let effectiveGy = gy;
+            
+            if (e.ctrlKey) {
+                 const currentRot = activeTool.rotation || 0;
+                 // Rotation 0 or 2 implies Horizontal
+                 const isHorizontal = (currentRot === 0 || currentRot === 2);
+                 if (isHorizontal) {
+                     effectiveGy = lastWireGridPos.y;
+                 } else {
+                     effectiveGx = lastWireGridPos.x;
+                 }
+            }
+
+            // Check if grid pos changed (using effective coords)
+            if (effectiveGx !== lastWireGridPos.x || effectiveGy !== lastWireGridPos.y) {
+                const dx = effectiveGx - lastWireGridPos.x;
+                const dy = effectiveGy - lastWireGridPos.y;
                 
                 let newRotation = activeTool.rotation || 0;
                 let targetX = lastWireGridPos.x;
@@ -974,7 +989,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                         targetX = lastWireGridPos.x;
                     } else {
                         // Moving Left: Place at Curr (connects Curr -> Prev)
-                        targetX = gx;
+                        targetX = effectiveGx;
                     }
                     targetY = lastWireGridPos.y; // Keep Y stable
                 } 
@@ -986,7 +1001,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                         targetY = lastWireGridPos.y;
                     } else {
                         // Moving Up: Place at Curr (connects Curr -> Prev)
-                        targetY = gy;
+                        targetY = effectiveGy;
                     }
                     targetX = lastWireGridPos.x; // Keep X stable
                 }
@@ -1035,8 +1050,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                     setNodes(prev => [...prev, newNode]);
                 }
                 
-                // Update last pos to CURRENT mouse pos, ready for next step
-                setLastWireGridPos({ x: gx, y: gy });
+                // Update last pos to CURRENT effective mouse pos, ready for next step
+                setLastWireGridPos({ x: effectiveGx, y: effectiveGy });
             }
         } else {
              // Tooltip Check
