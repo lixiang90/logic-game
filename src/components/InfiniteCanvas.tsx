@@ -650,7 +650,9 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             const superBlock: number[] = [];
 
             for (let pos = firstLine; pos <= max; pos += step) {
-                const isSuperBlockLine = Math.abs(pos % (GRID_SIZE * SUPER_BLOCK_STRIDE)) < 1;
+                // Shift super block grid by 32 units (2 blocks) to avoid origin overlap
+                const superBlockOffset = 32 * GRID_SIZE;
+                const isSuperBlockLine = Math.abs((pos - superBlockOffset) % (GRID_SIZE * SUPER_BLOCK_STRIDE)) < 1;
                 const isBlockLine = Math.abs(pos % (GRID_SIZE * BLOCK_STRIDE)) < 1;
 
                 if (isSuperBlockLine) {
