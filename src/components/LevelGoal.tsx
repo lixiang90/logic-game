@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { parseGoal } from '@/lib/logic-engine';
 
 interface LevelGoalProps {
     level: number;
@@ -9,10 +10,10 @@ interface LevelGoalProps {
 
 export default function LevelGoal({ level, title, goalFormula, description }: LevelGoalProps) {
     // Format the formula for display (ASCII -> Unicode)
-    const displayFormula = goalFormula
-        .replace(/-\./g, '¬')
-        .replace(/->/g, '→')
-        .replace(/\|-/g, '⊢ ');
+    const displayFormula = useMemo(() => {
+        const parsed = parseGoal(goalFormula);
+        return parsed ? parsed.toString() : goalFormula;
+    }, [goalFormula]);
 
     return (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur-md border border-slate-500/50 rounded-2xl px-8 py-4 shadow-2xl z-40 flex flex-col items-center gap-2 select-none min-w-[300px]">

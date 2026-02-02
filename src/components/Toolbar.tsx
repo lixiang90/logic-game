@@ -89,7 +89,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
                     <div 
                         onClick={() => handleSelect('atom', 'P', 4, 4)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
-                                text-[#00d0ff] border border-[#00d0ff] bg-gradient-to-br from-[#0a1a2a] to-[#151520] 
+                                text-[#00d0ff] border border-[#00d0ff] bg-linear-to-br from-[#0a1a2a] to-[#151520] 
                                 shadow-[0_0_10px_rgba(0,208,255,0.2)] hover:-translate-y-1 hover:shadow-[0_0_15px_rgba(0,208,255,0.4)] hover:scale-110 active:scale-95 rounded-md font-bold
                                 ${isActive('P') ? activeClass : ''}`}
                         title="Atom P"
@@ -103,7 +103,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
                     <div 
                         onClick={() => handleSelect('atom', 'Q', 4, 4)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
-                                text-[#d000ff] border border-[#d000ff] bg-gradient-to-br from-[#1a0a2a] to-[#201525] 
+                                text-[#d000ff] border border-[#d000ff] bg-linear-to-br from-[#1a0a2a] to-[#201525] 
                                 shadow-[0_0_10px_rgba(208,0,255,0.2)] hover:-translate-y-1 hover:shadow-[0_0_15px_rgba(208,0,255,0.4)] hover:scale-110 active:scale-95 rounded-md font-bold
                                 ${isActive('Q') ? activeClass : ''}`}
                         title="Atom Q"
@@ -117,7 +117,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
                     <div 
                         onClick={() => handleSelect('atom', 'R', 4, 4)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
-                                text-[#ffaa00] border border-[#ffaa00] bg-gradient-to-br from-[#2a1a0a] to-[#252015] 
+                                text-[#ffaa00] border border-[#ffaa00] bg-linear-to-br from-[#2a1a0a] to-[#252015] 
                                 shadow-[0_0_10px_rgba(255,170,0,0.2)] hover:-translate-y-1 hover:shadow-[0_0_15px_rgba(255,170,0,0.4)] hover:scale-110 active:scale-95 rounded-md font-bold
                                 ${isActive('R') ? activeClass : ''}`}
                         title="Atom R"

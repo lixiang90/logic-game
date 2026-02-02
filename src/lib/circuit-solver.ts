@@ -1,7 +1,7 @@
 
 import { NodeData, Port } from '../types/game';
 import { getNodePorts, getAbsolutePortPosition } from './gameUtils';
-import { Atom, Formula, Implies, Not, Provable, createAxiom1, createAxiom2, createAxiom3, checkModusPonens, parseGoal } from './logic-engine';
+import { Atom, Formula, Implies, Not, Provable, createAxiom1, createAxiom2, createAxiom3, checkModusPonens, parseGoal, parseFormula } from './logic-engine';
 
 // --- Types ---
 
@@ -32,7 +32,8 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
     activeNodeIds: Set<string>,
     errorWireIds: Set<string>,
     errorNodePorts: Map<string, Set<string>>,
-    errorGoalPorts: Set<string>
+    errorGoalPorts: Set<string>,
+    wireValues: Map<string, string>
 } {
     // console.log("Solving circuit for goal:", goalFormulaStr);
     
@@ -45,7 +46,8 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
             activeNodeIds: new Set(), 
             errorWireIds: new Set(), 
             errorNodePorts: new Map(),
-            errorGoalPorts: new Set()
+            errorGoalPorts: new Set(),
+            wireValues: new Map()
         };
     }
     // console.log("Parsed goal object:", goalObject.toString());
@@ -129,6 +131,7 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
     const state: CircuitState = new Map();
     // NetState: NetIndex -> Value
     const netState = new Array<Formula | Provable | null>(nets.length).fill(null);
+    const conflictNetIndices = new Set<number>(); // Track short-circuited nets
 
     let changed = true;
     let iterations = 0;
@@ -162,7 +165,12 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
                             const netIdx = nodeToNetIdx.get(wire.id);
                             if (netIdx !== undefined) {
                                 const oldNetVal = netState[netIdx];
-                                if (!isEqual(oldNetVal, newVal)) {
+                                
+                                // Conflict Detection (Short Circuit)
+                                if (oldNetVal !== null && !isEqual(oldNetVal, newVal)) {
+                                    conflictNetIndices.add(netIdx);
+                                    // Do not update value to prevent oscillation
+                                } else if (!isEqual(oldNetVal, newVal)) {
                                     netState[netIdx] = newVal;
                                     changed = true;
                                 }
@@ -176,6 +184,11 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
 
     // 4. Detect Type Mismatches (Errors)
     const errorWireIds = new Set<string>();
+    
+    // Add conflict nets to errors
+    conflictNetIndices.forEach(netIdx => {
+        nets[netIdx].forEach(w => errorWireIds.add(w.id));
+    });
     const errorNodePorts = new Map<string, Set<string>>();
     const errorGoalPorts = new Set<string>();
 
@@ -247,6 +260,15 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
         }
     });
 
+    // Collect wire values for tooltips
+    const wireValues = new Map<string, string>();
+    netState.forEach((val, netIdx) => {
+        if (val !== null) {
+            const valStr = val.toString();
+            nets[netIdx].forEach(w => wireValues.set(w.id, valStr));
+        }
+    });
+
     // Goal Block at [-4, -4] w=8 h=8
     // const goalPorts = getGoalPorts(); // Already computed
     for (const gp of goalPorts) {
@@ -261,7 +283,7 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
             if (netIdx !== undefined) {
                 const val = netState[netIdx];
                 if (checkGoalValue(val, goalObject)) {
-                    return { isSolved: true, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts };
+                    return { isSolved: true, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues };
                 }
             }
         }
@@ -280,14 +302,14 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
                 if (Math.abs(absPos.x - gp.x) < EPS && Math.abs(absPos.y - gp.y) < EPS) {
                     const val = state.get(node.id);
                     if (checkGoalValue(val, goalObject)) {
-                        return { isSolved: true, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts };
+                        return { isSolved: true, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues };
                     }
                 }
             }
         }
     }
 
-    return { isSolved: false, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts };
+    return { isSolved: false, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues };
 }
 
 function checkGoalValue(val: Formula | Provable | null | undefined, goalObject: Formula | Provable): boolean {
@@ -406,6 +428,14 @@ function computeNodeOutput(
         if (in0 instanceof Formula && in1 instanceof Formula && 
             in2 instanceof Provable && in3 instanceof Provable) {
             return checkModusPonens(in0, in1, in2, in3);
+        }
+    }
+
+    if (node.type === 'premise') {
+        const formulaStr = node.subType;
+        const formula = parseFormula(formulaStr);
+        if (formula) {
+            return new Provable(formula);
         }
     }
 

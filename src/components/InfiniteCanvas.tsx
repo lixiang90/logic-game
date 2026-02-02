@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperat
 import { Tool, NodeData, NodeType, Wire, Port } from '@/types/game';
 import { getNodePorts, getAbsolutePortPosition, findWirePath } from '@/lib/gameUtils';
 import { solveCircuit } from '@/lib/circuit-solver';
+import { parseGoal } from '@/lib/logic-engine';
 
 interface Point {
     x: number;
@@ -18,6 +19,7 @@ interface InfiniteCanvasProps {
     onToolToggleType?: () => void;
     goalFormula?: string;
     onLevelComplete?: () => void;
+    initialState?: { nodes: NodeData[], wires: Wire[] };
 }
 
 export interface InfiniteCanvasHandle {
@@ -26,7 +28,7 @@ export interface InfiniteCanvasHandle {
     loadState: (state: { nodes: NodeData[], wires: Wire[] }) => void;
 }
 
-const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ activeTool, onToolClear, onToolRotate, onToolSetRotation, onToolToggleType, goalFormula, onLevelComplete }, ref) => {
+const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ activeTool, onToolClear, onToolRotate, onToolSetRotation, onToolToggleType, goalFormula, onLevelComplete, initialState }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
     const [scale, setScale] = useState<number>(1);
@@ -35,14 +37,22 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
     const [lastWireGridPos, setLastWireGridPos] = useState<Point | null>(null);
     const [lastMousePos, setLastMousePos] = useState<Point>({ x: 0, y: 0 });
     const [mouseGridPos, setMouseGridPos] = useState<Point | null>(null);
-    const [nodes, setNodes] = useState<NodeData[]>([]);
-    const [wires, setWires] = useState<Wire[]>([]);
+    const [nodes, setNodes] = useState<NodeData[]>(initialState?.nodes || []);
+    const [wires, setWires] = useState<Wire[]>(initialState?.wires || []);
     const [isSolved, setIsSolved] = useState<boolean>(false);
     const [activeNodeIds, setActiveNodeIds] = useState<Set<string>>(new Set());
     const [errorWireIds, setErrorWireIds] = useState<Set<string>>(new Set());
     const [errorNodePorts, setErrorNodePorts] = useState<Map<string, Set<string>>>(new Map());
     const [errorGoalPorts, setErrorGoalPorts] = useState<Set<string>>(new Set());
     const [flashPhase, setFlashPhase] = useState<number>(0);
+    const [wireValues, setWireValues] = useState<Map<string, string>>(new Map());
+    const [hoveredWireValue, setHoveredWireValue] = useState<{ x: number, y: number, value: string } | null>(null);
+
+    const displayGoalFormula = React.useMemo(() => {
+        if (!goalFormula) return '';
+        const parsed = parseGoal(goalFormula);
+        return parsed ? parsed.toString() : goalFormula;
+    }, [goalFormula]);
 
     // Animation Loop for Flashing and Flow
     useEffect(() => {
@@ -60,16 +70,17 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
     
     useEffect(() => {
         if (!goalFormula) return;
-        const { isSolved, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts } = solveCircuit(nodes, goalFormula);
+        const { isSolved, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues } = solveCircuit(nodes, goalFormula);
         setIsSolved(isSolved);
         setActiveNodeIds(activeNodeIds);
         setErrorWireIds(errorWireIds);
         setErrorNodePorts(errorNodePorts);
         setErrorGoalPorts(errorGoalPorts);
+        setWireValues(wireValues || new Map());
         if (isSolved) {
             onLevelComplete?.();
         }
-    }, [nodes, goalFormula, onLevelComplete]);
+    }, [nodes, wires, goalFormula, onLevelComplete]);
     
     // Expose methods to parent
     useImperativeHandle(ref, () => ({
@@ -85,10 +96,21 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             wires
         }),
         loadState: (state: { nodes: NodeData[], wires: Wire[] }) => {
-            setNodes(state.nodes);
+            let newNodes = state.nodes;
+            
+            // Merge missing nodes from initialState (e.g. locked/premise nodes added in updates)
+            if (initialState && initialState.nodes.length > 0) {
+                 const loadedIds = new Set(state.nodes.map(n => n.id));
+                 const missingNodes = initialState.nodes.filter(n => !loadedIds.has(n.id));
+                 if (missingNodes.length > 0) {
+                     newNodes = [...state.nodes, ...missingNodes];
+                 }
+            }
+
+            setNodes(newNodes);
             setWires(state.wires);
         }
-    }), [nodes, wires]);
+    }), [nodes, wires, initialState]);
 
     // Center view on mount
     useEffect(() => {
@@ -468,6 +490,116 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                 // Output: Rightmost vertex
                 drawPortCircle(dx + drawW, dy + drawH/2, 'provable', 'out');
             }
+        } else if (node.type === 'premise') {
+            // Dark Teal / Cyan Theme (Chip Style)
+            bgColor = '#0a2a2a'; 
+            borderColor = '#00ffcc'; 
+            textColor = '#00ffcc';
+            
+            const inset = 4; // Inset for the body to allow pins to stick out
+            const pinWidth = 8; // Width of the visual pin
+            const bodyR = 8; // Corner radius of the chip body
+
+            // 1. Draw Pins (underneath body)
+            if (!isGhost) {
+                const w = node.w;
+                const h = node.h;
+
+                const drawPinShape = (px: number, py: number, side: 't'|'b'|'l'|'r') => {
+                    ctx.fillStyle = borderColor;
+                    if (side === 't') {
+                         ctx.fillRect(px - pinWidth/2, dy, pinWidth, inset + 2); // +2 to overlap slightly with body
+                    } else if (side === 'b') {
+                         ctx.fillRect(px - pinWidth/2, dy + drawH - inset - 2, pinWidth, inset + 2);
+                    } else if (side === 'l') {
+                         ctx.fillRect(dx, py - pinWidth/2, inset + 2, pinWidth);
+                    } else if (side === 'r') {
+                         ctx.fillRect(dx + drawW - inset - 2, py - pinWidth/2, inset + 2, pinWidth);
+                    }
+                };
+
+                // Top (y=0)
+                for (let x = 1; x < w; x++) {
+                    const px = dx + x * GRID_SIZE;
+                    drawPinShape(px, dy, 't');
+                }
+                // Bottom (y=h)
+                for (let x = 1; x < w; x++) {
+                    const px = dx + x * GRID_SIZE;
+                    drawPinShape(px, dy + drawH, 'b');
+                }
+                // Left (x=0)
+                for (let y = 1; y < h; y++) {
+                    const py = dy + y * GRID_SIZE;
+                    drawPinShape(dx, py, 'l');
+                }
+                // Right (x=w)
+                for (let y = 1; y < h; y++) {
+                    const py = dy + y * GRID_SIZE;
+                    drawPinShape(dx + drawW, py, 'r');
+                }
+            }
+
+            // 2. Draw Body (Chip)
+            drawRoundedRect(ctx, dx + inset, dy + inset, drawW - inset*2, drawH - inset*2, bodyR);
+            ctx.fillStyle = bgColor;
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = borderColor;
+            ctx.stroke();
+
+            // Inner chip detail (Decorative Rect)
+            // Expand inner rect to fit text: use 70% of width/height
+            const innerW = drawW * 0.7;
+            const innerH = drawH * 0.7;
+            ctx.lineWidth = 1;
+            drawRoundedRect(ctx, dx + (drawW - innerW)/2, dy + (drawH - innerH)/2, innerW, innerH, 4);
+            ctx.stroke();
+
+            // Text (Formula)
+            ctx.fillStyle = textColor;
+            // Adjust font size based on length
+            const label = ('customLabel' in node ? node.customLabel : undefined) || node.subType || '?';
+            
+            // Add turnstile if not present
+            let displayLabel = label
+                .replace(/->/g, '→')
+                .replace(/-\./g, '¬');
+            
+            if (!displayLabel.startsWith('|-') && !displayLabel.startsWith('⊢')) {
+                displayLabel = '⊢ ' + displayLabel;
+            }
+            displayLabel = displayLabel.replace('|-', '⊢');
+
+            const fontSize = displayLabel.length > 8 ? 16 : 22;
+            ctx.font = `bold ${fontSize}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            ctx.fillText(displayLabel, dx + drawW/2, dy + drawH/2);
+
+            // 3. Ports (Interaction Circles)
+            if (!isGhost) {
+                const w = node.w;
+                const h = node.h;
+                
+                // Top
+                for (let x = 1; x < w; x++) {
+                    drawPortCircle(dx + x * GRID_SIZE, dy, 'provable', `out_t_${x}`);
+                }
+                // Bottom
+                for (let x = 1; x < w; x++) {
+                    drawPortCircle(dx + x * GRID_SIZE, dy + drawH, 'provable', `out_b_${x}`);
+                }
+                // Left
+                for (let y = 1; y < h; y++) {
+                    drawPortCircle(dx, dy + y * GRID_SIZE, 'provable', `out_l_${y}`);
+                }
+                // Right
+                for (let y = 1; y < h; y++) {
+                    drawPortCircle(dx + drawW, dy + y * GRID_SIZE, 'provable', `out_r_${y}`);
+                }
+            }
         }
 
         ctx.restore();
@@ -595,10 +727,10 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         ctx.textBaseline = 'middle';
         ctx.fillText("GOAL", 0, -20);
         
-        if (goalFormula) {
+        if (displayGoalFormula) {
             ctx.fillStyle = '#fff';
-            ctx.font = 'italic 24px serif';
-            ctx.fillText(goalFormula, 0, 20);
+            ctx.font = 'italic 24px "Times New Roman", serif';
+            ctx.fillText(displayGoalFormula, 0, 20);
         }
 
         const portR = 6;
@@ -906,6 +1038,51 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                 // Update last pos to CURRENT mouse pos, ready for next step
                 setLastWireGridPos({ x: gx, y: gy });
             }
+        } else {
+             // Tooltip Check
+             if (!activeTool) {
+                 const mouseGx = worldX / GRID_SIZE;
+                 const mouseGy = worldY / GRID_SIZE;
+                 const WIRE_HIT_THRESHOLD = 0.3;
+                 
+                 const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
+                    const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
+                    if (l2 === 0) return Math.hypot(px - x1, py - y1);
+                    let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+                    t = Math.max(0, Math.min(1, t));
+                    return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+                 };
+
+                 let foundValue: string | null = null;
+                 
+                 // Check wires
+                 for (const n of nodes) {
+                     if (n.type === 'wire') {
+                         const r = n.rotation || 0;
+                         let x1 = n.x, y1 = n.y, x2 = n.x, y2 = n.y;
+                         if (r === 0) x2 += n.w;
+                         else if (r === 1) y2 += n.h;
+                         else if (r === 2) { y1 += n.h; y2 += n.h; x2 += n.w; }
+                         else if (r === 3) { x1 += n.w; x2 += n.w; y2 += n.h; }
+                         
+                         if (distToSegment(mouseGx, mouseGy, x1, y1, x2, y2) <= WIRE_HIT_THRESHOLD) {
+                             const val = wireValues.get(n.id);
+                             if (val) {
+                                 foundValue = val;
+                                 break;
+                             }
+                         }
+                     }
+                 }
+                 
+                 if (foundValue) {
+                     setHoveredWireValue({ x: e.clientX, y: e.clientY, value: foundValue });
+                 } else {
+                     setHoveredWireValue(null);
+                 }
+             } else {
+                 setHoveredWireValue(null);
+             }
         }
     };
 
@@ -983,6 +1160,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
 
         if (bestCandidate) {
             const nodeToDelete = bestCandidate.node;
+            if (nodeToDelete.locked) return; // Cannot delete locked nodes
             setNodes(prev => prev.filter(n => n.id !== nodeToDelete.id));
         } else if (activeTool) {
              // Optional: Cancel tool
@@ -1006,16 +1184,39 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
     };
 
     return (
-        <canvas
-            ref={canvasRef}
-            className={`block w-full h-full ${activeTool ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            onContextMenu={handleContextMenu}
-            onWheel={handleWheel}
-        />
+        <div className="relative w-full h-full overflow-hidden bg-[#0f172a]">
+            <canvas
+                ref={canvasRef}
+                className={`block w-full h-full ${activeTool ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onContextMenu={handleContextMenu}
+                onWheel={handleWheel}
+            />
+            {hoveredWireValue && (
+                 <div style={{
+                     position: 'absolute',
+                     left: hoveredWireValue.x + 15,
+                     top: hoveredWireValue.y + 15,
+                     backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                     border: '1px solid #334155',
+                     padding: '6px 10px',
+                     borderRadius: '6px',
+                     color: '#e2e8f0',
+                     fontSize: '12px',
+                     fontFamily: '"Times New Roman", serif',
+                         fontStyle: 'italic',
+                         pointerEvents: 'none',
+                         whiteSpace: 'nowrap',
+                         zIndex: 100,
+                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                     }}>
+                         {hoveredWireValue.value}
+                     </div>
+            )}
+        </div>
     );
 });
 

@@ -1,16 +1,18 @@
 
-export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'wire';
+export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'wire' | 'premise';
 
 export interface NodeData {
     id: string;
     type: NodeType;
-    subType: string; // 'P', 'Q', 'implies', 'not', '1', '2', '3', 'mp'
+    subType: string; // 'P', 'Q', 'implies', 'not', '1', '2', '3', 'mp', 'premise'
     x: number; // Grid coordinate X
     y: number; // Grid coordinate Y
     w: number; // Width in grid units
     h: number; // Height in grid units
     rotation?: number; // 0: 0deg, 1: 90deg, 2: 180deg, 3: 270deg
     isActive?: boolean; // For atoms: true = glowing/emitting, false = off. Default true.
+    locked?: boolean; // If true, cannot be moved or deleted
+    customLabel?: string; // For displaying complex formulas on premise nodes
 }
 
 export interface Wire {

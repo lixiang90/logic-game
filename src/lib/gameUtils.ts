@@ -71,6 +71,22 @@ export const getNodePorts = (node: NodeData): Port[] => {
         ports.push({ id: 'in1', x: 0, y: 2.0, type: 'formula', isInput: true });
         ports.push({ id: 'in2', x: 0, y: 4.0, type: 'provable', isInput: true });
         ports.push({ id: 'in3', x: 0, y: 5.0, type: 'provable', isInput: true });
+    } else if (type === 'premise') {
+        // Chip Style: Output ports on all 4 sides
+        // Top and Bottom
+        for (let x = 1; x < w; x++) {
+            // Top
+            ports.push({ id: `out_t_${x}`, x: x, y: 0, type: 'provable', isInput: false });
+            // Bottom
+            ports.push({ id: `out_b_${x}`, x: x, y: h, type: 'provable', isInput: false });
+        }
+        // Left and Right
+        for (let y = 1; y < h; y++) {
+            // Left
+            ports.push({ id: `out_l_${y}`, x: 0, y: y, type: 'provable', isInput: false });
+            // Right
+            ports.push({ id: `out_r_${y}`, x: w, y: y, type: 'provable', isInput: false });
+        }
     }
 
     return ports;

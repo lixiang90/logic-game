@@ -5,6 +5,7 @@ import Toolbar from "@/components/Toolbar";
 import LevelGoal from "@/components/LevelGoal";
 import StartMenu from "@/components/StartMenu";
 import DraggableModal from "@/components/DraggableModal";
+import VariantSelector from "@/components/VariantSelector";
 import levels from "@/data/levels.json";
 import { useState, useRef, useEffect } from 'react';
 import { Tool } from '@/types/game';
@@ -16,6 +17,7 @@ export default function Home() {
   const [activeTool, setActiveTool] = useState<Tool | null>(null);
   const [currentLevelIndex, setCurrentLevelIndex] = useState(0);
   const [isLevelComplete, setIsLevelComplete] = useState(false);
+  const [isFreeBuild, setIsFreeBuild] = useState(false);
   const [gameState, setGameState] = useState<'menu' | 'playing'>('menu');
   const [pendingLoad, setPendingLoad] = useState<LevelState | null>(null);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
@@ -80,6 +82,10 @@ export default function Home() {
       setCurrentLevelIndex(prev => prev + 1);
       setIsLevelComplete(false);
       canvasRef.current?.resetView();
+    } else {
+      // Last level completed - enter Free Build mode
+      setIsFreeBuild(true);
+      setIsLevelComplete(false);
     }
   };
 
@@ -88,6 +94,9 @@ export default function Home() {
     SaveSystem.autoSave(emptySave); // Reset auto-save
     setCurrentLevelIndex(0);
     setPendingLoad({ nodes: [], wires: [] });
+    setIsLevelComplete(false);
+    setIsFreeBuild(false);
+    setActiveTool(null);
     setGameState('playing');
   };
 
@@ -99,6 +108,9 @@ export default function Home() {
         if (levelState) {
             setPendingLoad(levelState);
         }
+        setIsLevelComplete(false);
+        setIsFreeBuild(false);
+        setActiveTool(null);
         setGameState('playing');
     }
   };
@@ -112,6 +124,9 @@ export default function Home() {
         if (levelState) {
             setPendingLoad(levelState);
         }
+        setIsLevelComplete(false);
+        setIsFreeBuild(false);
+        setActiveTool(null);
         setGameState('playing');
     }
   };
@@ -170,6 +185,12 @@ export default function Home() {
     }
   };
 
+  const handleToolSetType = (subType: string) => {
+    if (activeTool) {
+        setActiveTool({ ...activeTool, subType });
+    }
+  };
+
   if (gameState === 'menu') {
     return <StartMenu onNewGame={handleNewGame} onContinue={handleContinue} onLoadGame={handleLoadGame} />;
   }
@@ -186,13 +207,22 @@ export default function Home() {
         onToolToggleType={handleToolToggleType}
         goalFormula={currentLevel.goal.formula}
         onLevelComplete={handleLevelComplete}
+        initialState={(currentLevel as any).initialState}
+      />
+
+      <VariantSelector 
+        activeTool={activeTool} 
+        onSelectVariant={handleToolSetType} 
       />
       
       {/* Save Button */}
       <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-2">
           <button 
               className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
-              onClick={() => setGameState('menu')}
+              onClick={() => {
+                  setActiveTool(null);
+                  setGameState('menu');
+              }}
               title="Main Menu"
           >
               <span role="img" aria-label="Menu">🔙</span>
@@ -215,7 +245,7 @@ export default function Home() {
 
       {/* Save Menu Modal */}
       {showSaveMenu && (
-        <div className="absolute inset-0 bg-black/60 z-[100] flex items-center justify-center backdrop-blur-sm">
+        <div className="absolute inset-0 bg-black/60 z-100 flex items-center justify-center backdrop-blur-sm">
             <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 shadow-2xl w-96">
                 <h2 className="text-2xl font-bold text-white mb-6 text-center">Save Game</h2>
                 <div className="flex flex-col gap-3">
@@ -258,7 +288,7 @@ export default function Home() {
                     onClick={handleNextLevel}
                     className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105 shadow-lg"
                 >
-                    Next Level
+                    {currentLevelIndex < levels.length - 1 ? "Next Level" : "Free Build"}
                 </button>
             </div>
         </DraggableModal>
@@ -267,7 +297,7 @@ export default function Home() {
       <Toolbar 
         activeTool={activeTool} 
         onSelectTool={setActiveTool} 
-        unlockedTools={currentLevel.unlockedTools}
+        unlockedTools={isFreeBuild ? ['atom:P', 'atom:Q', 'atom:R', 'gate:implies', 'gate:not', 'axiom:1', 'axiom:2', 'axiom:3', 'mp'] : currentLevel.unlockedTools}
       />
     </main>
   );

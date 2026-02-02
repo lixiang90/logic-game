@@ -43,5 +43,41 @@
       "formula": "|-(P->((P->P)->P))"
     },
     "unlockedTools": ["atom:P", "atom:Q", "gate:implies", "axiom:1"]
+  },
+  {
+    "id": "level-6",
+    "title": "Level 6: Modus Ponens",
+    "description": "Given assumptions P and P→Q, prove Q using Modus Ponens (MP).",
+    "goal": {
+      "formula": "|-Q"
+    },
+    "unlockedTools": ["atom:P", "atom:Q", "gate:implies", "mp"],
+    "initialState": {
+      "nodes": [
+        {
+          "id": "premise-1",
+          "type": "premise",
+          "subType": "P",
+          "customLabel": "P",
+          "x": -24,
+          "y": -6,
+          "w": 6,
+          "h": 6,
+          "locked": true
+        },
+        {
+          "id": "premise-2",
+          "type": "premise",
+          "subType": "P->Q",
+          "customLabel": "P->Q",
+          "x": -24,
+          "y": 6,
+          "w": 6,
+          "h": 6,
+          "locked": true
+        }
+      ],
+      "wires": []
+    }
   }
 ]
