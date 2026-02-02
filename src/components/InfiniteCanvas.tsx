@@ -125,7 +125,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
     // Configuration
     const GRID_SIZE = 25; // 1 logical unit = 25px. 2 units = 50px (Visual Grid)
     const BLOCK_STRIDE = 16;
-    const SUPER_BLOCK_STRIDE = 64;
+    const SUPER_BLOCK_STRIDE = 128; // 8 blocks
     const MIN_SCALE = 0.1;
     const MAX_SCALE = 5.0;
     const LOD_THRESHOLD_SMALL = 0.4;
@@ -643,15 +643,24 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         const getGridLines = (vertical: boolean) => {
             const min = vertical ? startX : startY;
             const max = vertical ? endX : endY;
-            const firstLine = Math.floor(min / step) * step;
+            
+            // Shift super block grid by 4 blocks to avoid origin overlap
+            const superBlockOffset = 4 * BLOCK_STRIDE * GRID_SIZE;
+
+            let firstLine = Math.floor(min / step) * step;
+
+            // Fix: When zoomed out (step is large), we must align firstLine to the superBlockOffset
+            // otherwise we skip the actual super block lines (e.g. iterating 0, 128... but lines are at 64, 192...)
+            if (step >= GRID_SIZE * SUPER_BLOCK_STRIDE) {
+                 const strideUnit = GRID_SIZE * SUPER_BLOCK_STRIDE;
+                 firstLine = Math.floor((min - superBlockOffset) / strideUnit) * strideUnit + superBlockOffset;
+            }
             
             const small: number[] = [];
             const block: number[] = [];
             const superBlock: number[] = [];
 
             for (let pos = firstLine; pos <= max; pos += step) {
-                // Shift super block grid by 32 units (2 blocks) to avoid origin overlap
-                const superBlockOffset = 32 * GRID_SIZE;
                 const isSuperBlockLine = Math.abs((pos - superBlockOffset) % (GRID_SIZE * SUPER_BLOCK_STRIDE)) < 1;
                 const isBlockLine = Math.abs(pos % (GRID_SIZE * BLOCK_STRIDE)) < 1;
 
