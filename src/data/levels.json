@@ -1,0 +1,47 @@
+[
+  {
+    "id": "level-1",
+    "title": "Level 1: Negation",
+    "description": "Construct the formula ¬P using the Atom P and the Not gate.",
+    "goal": {
+      "formula": "-.P"
+    },
+    "unlockedTools": ["atom:P", "gate:not"]
+  },
+  {
+    "id": "level-2",
+    "title": "Level 2: Implication",
+    "description": "Construct the formula P → Q using Atoms P, Q and the Implies gate.",
+    "goal": {
+      "formula": "P->Q"
+    },
+    "unlockedTools": ["atom:P", "atom:Q", "gate:implies"]
+  },
+  {
+    "id": "level-3",
+    "title": "Level 3: Nested Implication",
+    "description": "Construct the formula (P → Q) → R.",
+    "goal": {
+      "formula": "(P->Q)->R"
+    },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "gate:implies"]
+  },
+  {
+    "id": "level-4",
+    "title": "Level 4: First Proof",
+    "description": "Prove ⊢ (R → (P → R)) using Axiom I.",
+    "goal": {
+      "formula": "|-(R->(P->R))"
+    },
+    "unlockedTools": ["atom:P", "atom:R", "axiom:1"]
+  },
+  {
+    "id": "level-5",
+    "title": "Level 5: Second Proof",
+    "description": "Prove ⊢ (P → ((P → P) → P)) using Axiom I.",
+    "goal": {
+      "formula": "|-(P->((P->P)->P))"
+    },
+    "unlockedTools": ["atom:P", "atom:Q", "gate:implies", "axiom:1"]
+  }
+]

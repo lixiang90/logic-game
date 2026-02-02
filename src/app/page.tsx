@@ -1,65 +1,274 @@
-import Image from "next/image";
+'use client';
+
+import InfiniteCanvas, { InfiniteCanvasHandle } from "@/components/InfiniteCanvas";
+import Toolbar from "@/components/Toolbar";
+import LevelGoal from "@/components/LevelGoal";
+import StartMenu from "@/components/StartMenu";
+import DraggableModal from "@/components/DraggableModal";
+import levels from "@/data/levels.json";
+import { useState, useRef, useEffect } from 'react';
+import { Tool } from '@/types/game';
+import { SaveSystem, LevelState, SaveData } from '@/lib/saveSystem';
+import { NodeData, Wire } from '@/types/game';
 
 export default function Home() {
+  const canvasRef = useRef<InfiniteCanvasHandle>(null);
+  const [activeTool, setActiveTool] = useState<Tool | null>(null);
+  const [currentLevelIndex, setCurrentLevelIndex] = useState(0);
+  const [isLevelComplete, setIsLevelComplete] = useState(false);
+  const [gameState, setGameState] = useState<'menu' | 'playing'>('menu');
+  const [pendingLoad, setPendingLoad] = useState<LevelState | null>(null);
+  const [showSaveMenu, setShowSaveMenu] = useState(false);
+
+  const currentLevel = levels[currentLevelIndex];
+
+  // Auto-save every 30 seconds
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+
+    const interval = setInterval(() => {
+        if (canvasRef.current) {
+            const state = canvasRef.current.getState();
+            // Load existing auto-save to preserve other levels if needed
+            const existing = SaveSystem.loadAutoSave() || { timestamp: 0, levelIndex: 0, levelStates: {} };
+            
+            const saveData: SaveData = {
+                timestamp: Date.now(),
+                levelIndex: currentLevelIndex,
+                levelStates: {
+                    ...existing.levelStates,
+                    [currentLevelIndex]: state
+                }
+            };
+            SaveSystem.autoSave(saveData);
+            // console.log("Auto-saved");
+        }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [gameState, currentLevelIndex]);
+
+  // Handle pending state load
+  useEffect(() => {
+    if (gameState === 'playing' && pendingLoad && canvasRef.current) {
+        canvasRef.current.loadState(pendingLoad);
+        setPendingLoad(null);
+    }
+  }, [gameState, pendingLoad]);
+
+  const handleLevelComplete = () => {
+    setIsLevelComplete(true);
+  };
+
+  const handleNextLevel = () => {
+    if (currentLevelIndex < levels.length - 1) {
+      // Save progress before moving
+      if (canvasRef.current) {
+          const state = canvasRef.current.getState();
+          const currentSession = SaveSystem.loadAutoSave() || { timestamp: 0, levelIndex: 0, levelStates: {} };
+          const saveData: SaveData = {
+              timestamp: Date.now(),
+              levelIndex: currentLevelIndex + 1, // Advance to next level in save
+              levelStates: {
+                  ...currentSession.levelStates,
+                  [currentLevelIndex]: state // Save completed level state
+              }
+          };
+          SaveSystem.autoSave(saveData);
+      }
+
+      setCurrentLevelIndex(prev => prev + 1);
+      setIsLevelComplete(false);
+      canvasRef.current?.resetView();
+    }
+  };
+
+  const handleNewGame = () => {
+    const emptySave: SaveData = { timestamp: Date.now(), levelIndex: 0, levelStates: {} };
+    SaveSystem.autoSave(emptySave); // Reset auto-save
+    setCurrentLevelIndex(0);
+    setPendingLoad({ nodes: [], wires: [] });
+    setGameState('playing');
+  };
+
+  const handleContinue = () => {
+    const saved = SaveSystem.loadAutoSave();
+    if (saved) {
+        setCurrentLevelIndex(saved.levelIndex);
+        const levelState = saved.levelStates[saved.levelIndex];
+        if (levelState) {
+            setPendingLoad(levelState);
+        }
+        setGameState('playing');
+    }
+  };
+
+  const handleLoadGame = (slot: number) => {
+    const saved = SaveSystem.load(slot);
+    if (saved) {
+        SaveSystem.autoSave(saved); // Set as current session
+        setCurrentLevelIndex(saved.levelIndex);
+        const levelState = saved.levelStates[saved.levelIndex];
+        if (levelState) {
+            setPendingLoad(levelState);
+        }
+        setGameState('playing');
+    }
+  };
+
+  const handleSaveGame = (slot: number) => {
+    if (canvasRef.current) {
+        const state = canvasRef.current.getState();
+        // Use current session data (autoSave) as base to preserve history
+        const currentSession = SaveSystem.loadAutoSave() || { timestamp: 0, levelIndex: 0, levelStates: {} };
+        
+        const saveData: SaveData = {
+            timestamp: Date.now(),
+            levelIndex: currentLevelIndex,
+            levelStates: {
+                ...currentSession.levelStates,
+                [currentLevelIndex]: state
+            }
+        };
+        SaveSystem.save(slot, saveData);
+        SaveSystem.autoSave(saveData); // Update session too
+        setShowSaveMenu(false);
+        alert(`Game saved to slot ${slot}`);
+    }
+  };
+
+  const handleToolRotate = () => {
+    if (!activeTool) return;
+    
+    let newRotation;
+    if (activeTool.type === 'wire') {
+        // Wire: Toggle between 0 (Horizontal/Top) and 1 (Vertical/Left)
+        newRotation = ((activeTool.rotation || 0) + 1) % 2;
+    } else {
+        // Others: Cycle 0-3
+        newRotation = ((activeTool.rotation || 0) + 1) % 4;
+    }
+
+    setActiveTool({
+      ...activeTool,
+      rotation: newRotation
+    });
+  };
+
+  const handleToolSetRotation = (rotation: number) => {
+    if (!activeTool) return;
+    setActiveTool({
+        ...activeTool,
+        rotation
+    });
+  };
+
+  const handleToolToggleType = () => {
+    if (activeTool?.type === 'wire') {
+        const newType = activeTool.subType === 'formula' ? 'provable' : 'formula';
+        setActiveTool({ ...activeTool, subType: newType });
+    }
+  };
+
+  if (gameState === 'menu') {
+    return <StartMenu onNewGame={handleNewGame} onContinue={handleContinue} onLoadGame={handleLoadGame} />;
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className="w-screen h-screen overflow-hidden relative">
+      <InfiniteCanvas 
+        key={currentLevel.id} // Reset canvas on level change
+        ref={canvasRef}
+        activeTool={activeTool} 
+        onToolClear={() => setActiveTool(null)} 
+        onToolRotate={handleToolRotate}
+        onToolSetRotation={handleToolSetRotation}
+        onToolToggleType={handleToolToggleType}
+        goalFormula={currentLevel.goal.formula}
+        onLevelComplete={handleLevelComplete}
+      />
+      
+      {/* Save Button */}
+      <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-2">
+          <button 
+              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              onClick={() => setGameState('menu')}
+              title="Main Menu"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+              <span role="img" aria-label="Menu">🔙</span>
+          </button>
+          <button 
+              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              onClick={() => setShowSaveMenu(true)}
+              title="Save Game"
           >
-            Documentation
-          </a>
+              <span role="img" aria-label="Save Game">💾</span>
+          </button>
+          <button 
+              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              onClick={() => canvasRef.current?.resetView()}
+              title="Reset View"
+          >
+              <span role="img" aria-label="Home">🏠</span>
+          </button>
+      </div>
+
+      {/* Save Menu Modal */}
+      {showSaveMenu && (
+        <div className="absolute inset-0 bg-black/60 z-[100] flex items-center justify-center backdrop-blur-sm">
+            <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 shadow-2xl w-96">
+                <h2 className="text-2xl font-bold text-white mb-6 text-center">Save Game</h2>
+                <div className="flex flex-col gap-3">
+                    {[1,2,3,4].map(slot => (
+                        <button 
+                            key={slot}
+                            onClick={() => handleSaveGame(slot)}
+                            className="bg-slate-800 p-4 rounded text-white hover:bg-blue-600 border border-slate-600 transition-colors text-left flex justify-between items-center group"
+                        >
+                            <span>Slot {slot}</span>
+                            <span className="text-xs text-slate-500 group-hover:text-slate-200">
+                                {SaveSystem.getSlotInfo(slot) ? new Date(SaveSystem.getSlotInfo(slot)!.timestamp).toLocaleTimeString() : 'Empty'}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+                <button 
+                    onClick={() => setShowSaveMenu(false)}
+                    className="mt-6 w-full py-2 text-slate-400 hover:text-white border border-transparent hover:border-slate-600 rounded transition-colors"
+                >
+                    Cancel
+                </button>
+            </div>
         </div>
-      </main>
-    </div>
+      )}
+      
+      <LevelGoal 
+        level={currentLevelIndex + 1}
+        title={currentLevel.title}
+        goalFormula={currentLevel.goal.formula}
+        description={currentLevel.description}
+      />
+
+      {isLevelComplete && (
+        <DraggableModal title="Level Complete">
+            <div className="flex flex-col items-center gap-4">
+                <h2 className="text-4xl font-bold text-green-300">Level Complete!</h2>
+                <p className="text-slate-300">Great job! You proved the theorem.</p>
+                <button 
+                    onClick={handleNextLevel}
+                    className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105 shadow-lg"
+                >
+                    Next Level
+                </button>
+            </div>
+        </DraggableModal>
+      )}
+
+      <Toolbar 
+        activeTool={activeTool} 
+        onSelectTool={setActiveTool} 
+        unlockedTools={currentLevel.unlockedTools}
+      />
+    </main>
   );
 }
