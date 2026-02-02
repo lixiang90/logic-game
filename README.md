@@ -24,8 +24,8 @@ A visual puzzle game where you prove logic theorems by building circuits on an i
 ### Game Mechanics
 1. **Goal**: Check the target formula/theorem displayed at the top of the screen.
 2. **Wiring**: Connect input nodes to output nodes using the correct type of wires.
-   - **Formula Wires** (Purple): Represent abstract formulas or definitions.
-   - **Provable Wires** (Orange): Represent concrete proofs or derived truths.
+   - **Formula Wires** (Blue): Represent abstract formulas or definitions.
+   - **Provable Wires** (Yellow): Represent concrete proofs or derived truths.
 3. **Validation**: Successfully connecting the circuit according to logic rules will complete the level.
 
 ## Tech Stack
@@ -62,8 +62,8 @@ A visual puzzle game where you prove logic theorems by building circuits on an i
 ### 游戏机制
 1. **目标**：查看屏幕顶部显示的目标公式或定理。
 2. **连线**：使用正确类型的导线连接输入节点和输出节点。
-   - **公式型导线 (Formula)**：紫色，代表抽象公式或定义。
-   - **可证型导线 (Provable)**：橙色，代表具体的证明或推导出的真理。
+   - **公式型导线 (Formula)**：蓝色，代表抽象公式或定义。
+   - **可证型导线 (Provable)**：黄色，代表具体的证明或推导出的真理。
 3. **验证**：根据逻辑规则成功连接电路即可通关。
 
 ## 技术栈
