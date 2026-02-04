@@ -30,6 +30,7 @@ export type TranslationKey =
     | 'provableWire'
     | 'pressToSwitch'
     | 'selected'
+    | 'autoSave'
     // Level Titles and Descriptions
     | 'level-1-title' | 'level-1-desc'
     | 'level-2-title' | 'level-2-desc'
@@ -70,6 +71,7 @@ export const translations: Record<Language, Record<string, string>> = {
         provableWire: 'Provable Wire',
         pressToSwitch: 'Press T to switch variant',
         selected: 'SELECTED',
+        autoSave: 'Auto Save',
         
         'level-1-title': 'Level 1: Negation',
         'level-1-desc': 'Construct the formula ¬P using the Atom P and the Not gate.',
@@ -112,10 +114,11 @@ export const translations: Record<Language, Record<string, string>> = {
         greatJob: '干得好！',
         logicWire: '逻辑线',
         provableWire: '证明线',
-        pressToSwitch: '按 T 键切换类型',
+        pressToSwitch: '按 T 切换样式',
         selected: '已选择',
+        autoSave: '自动存档',
 
-        'level-1-title': '第 1 关：否定',
+        'level-1-title': '第 1 关: 否定',
         'level-1-desc': '使用原子 P 和非门构造公式 ¬P。',
         'level-2-title': '第 2 关：蕴含',
         'level-2-desc': '使用原子 P、Q 和蕴含门构造公式 P → Q。',

@@ -26,12 +26,8 @@ export const SaveSystem = {
     },
 
     autoSave: (data: SaveData) => {
-        if (typeof window === 'undefined') return;
-        try {
-            localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(data));
-        } catch (e) {
-            console.error("Auto-save failed", e);
-        }
+        // Auto-save now writes to Slot 1
+        SaveSystem.save(1, data);
     },
 
     load: (slot: number): SaveData | null => {
@@ -46,19 +42,13 @@ export const SaveSystem = {
     },
 
     loadAutoSave: (): SaveData | null => {
-        if (typeof window === 'undefined') return null;
-        try {
-            const item = localStorage.getItem(AUTO_SAVE_KEY);
-            return item ? JSON.parse(item) : null;
-        } catch (e) {
-            console.error("Load auto-save failed", e);
-            return null;
-        }
+        // Load from Slot 1
+        return SaveSystem.load(1);
     },
 
     hasAutoSave: (): boolean => {
-        if (typeof window === 'undefined') return false;
-        return !!localStorage.getItem(AUTO_SAVE_KEY);
+        // Check if Slot 1 exists
+        return !!SaveSystem.load(1);
     },
 
     getSlotInfo: (slot: number): { timestamp: number, levelIndex: number } | null => {
