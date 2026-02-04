@@ -7,12 +7,14 @@ import StartMenu from "@/components/StartMenu";
 import DraggableModal from "@/components/DraggableModal";
 import VariantSelector from "@/components/VariantSelector";
 import SettingsModal from "@/components/SettingsModal";
+import TutorialOverlay from "@/components/TutorialOverlay";
 import levels from "@/data/levels.json";
 import { useState, useRef, useEffect } from 'react';
 import { Tool } from '@/types/game';
 import { SaveSystem, LevelState, SaveData } from '@/lib/saveSystem';
 import { NodeData, Wire } from '@/types/game';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useTutorial } from '@/contexts/TutorialContext';
 import { TranslationKey } from '@/data/translations';
 
 interface Level {
@@ -28,6 +30,7 @@ interface Level {
 
 export default function Home() {
   const { t, language } = useLanguage();
+  const { startTutorial, dispatchAction, resetTutorials, forceStartTutorial } = useTutorial();
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const [activeTool, setActiveTool] = useState<Tool | null>(null);
   const [currentLevelIndex, setCurrentLevelIndex] = useState(0);
@@ -86,8 +89,22 @@ export default function Home() {
     }
   }, [gameState, pendingLoad]);
 
+  // Tutorial Logic
+  useEffect(() => {
+    if (gameState === 'playing') {
+      startTutorial(currentLevelIndex);
+    }
+  }, [gameState, currentLevelIndex, startTutorial]);
+
+  useEffect(() => {
+    if (activeTool) {
+      dispatchAction('SELECT_TOOL', { toolType: activeTool.type, toolSubType: activeTool.subType });
+    }
+  }, [activeTool, dispatchAction]);
+
   const handleLevelComplete = () => {
     setIsLevelComplete(true);
+    dispatchAction('LEVEL_COMPLETE');
   };
 
   const handleNextLevel = () => {
@@ -109,17 +126,20 @@ export default function Home() {
 
       setCurrentLevelIndex(prev => prev + 1);
       setIsLevelComplete(false);
+      setActiveTool(null);
       canvasRef.current?.resetView();
     } else {
       // Last level completed - enter Free Build mode
       setIsFreeBuild(true);
       setIsLevelComplete(false);
+      setActiveTool(null);
     }
   };
 
   const handleNewGame = () => {
     const emptySave: SaveData = { timestamp: Date.now(), levelIndex: 0, levelStates: {} };
     SaveSystem.autoSave(emptySave); // Reset auto-save
+    resetTutorials(); // Reset tutorial progress
     setCurrentLevelIndex(0);
     setPendingLoad({ nodes: [], wires: [] });
     setIsLevelComplete(false);
@@ -263,6 +283,15 @@ export default function Home() {
           >
               <span role="img" aria-label="Menu">🔙</span>
           </button>
+          
+          <button 
+              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              onClick={() => forceStartTutorial(currentLevelIndex)}
+              title="Help / Tutorial"
+          >
+              <span role="img" aria-label="Help">❓</span>
+          </button>
+
           <button 
               className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => setShowSaveMenu(true)}
@@ -347,6 +376,7 @@ export default function Home() {
         onSelectTool={setActiveTool} 
         unlockedTools={isFreeBuild ? ['atom:P', 'atom:Q', 'atom:R', 'gate:implies', 'gate:not', 'axiom:1', 'axiom:2', 'axiom:3', 'mp'] : currentLevel.unlockedTools}
       />
+      <TutorialOverlay />
     </main>
   );
 }

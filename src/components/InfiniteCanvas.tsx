@@ -5,6 +5,7 @@ import { Tool, NodeData, NodeType, Wire, Port } from '@/types/game';
 import { getNodePorts, getAbsolutePortPosition, findWirePath } from '@/lib/gameUtils';
 import { solveCircuit } from '@/lib/circuit-solver';
 import { parseGoal } from '@/lib/logic-engine';
+import { useTutorial } from '@/contexts/TutorialContext';
 
 interface Point {
     x: number;
@@ -29,8 +30,12 @@ export interface InfiniteCanvasHandle {
 }
 
 const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ activeTool, onToolClear, onToolRotate, onToolSetRotation, onToolToggleType, goalFormula, onLevelComplete, initialState }, ref) => {
+    const { dispatchAction, currentStep } = useTutorial();
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
+    const [offset, setOffset] = useState<Point>(() => ({
+        x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
+        y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0
+    }));
     const [scale, setScale] = useState<number>(1);
     const [isDragging, setIsDragging] = useState<boolean>(false);
     const [isWirePainting, setIsWirePainting] = useState<boolean>(false);
@@ -39,13 +44,21 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
     const [mouseGridPos, setMouseGridPos] = useState<Point | null>(null);
     const [nodes, setNodes] = useState<NodeData[]>(initialState?.nodes || []);
     const [wires, setWires] = useState<Wire[]>(initialState?.wires || []);
-    const [isSolved, setIsSolved] = useState<boolean>(false);
-    const [activeNodeIds, setActiveNodeIds] = useState<Set<string>>(new Set());
-    const [errorWireIds, setErrorWireIds] = useState<Set<string>>(new Set());
-    const [errorNodePorts, setErrorNodePorts] = useState<Map<string, Set<string>>>(new Map());
-    const [errorGoalPorts, setErrorGoalPorts] = useState<Set<string>>(new Set());
+    
+    // Memoize circuit solution to avoid useEffect/setState cycle
+    const { isSolved, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues } = React.useMemo(() => {
+        if (!goalFormula) return {
+            isSolved: false,
+            activeNodeIds: new Set<string>(),
+            errorWireIds: new Set<string>(),
+            errorNodePorts: new Map<string, Set<string>>(),
+            errorGoalPorts: new Set<string>(),
+            wireValues: new Map<string, string>()
+        };
+        return solveCircuit(nodes, goalFormula);
+    }, [nodes, wires, goalFormula]);
+
     const [flashPhase, setFlashPhase] = useState<number>(0);
-    const [wireValues, setWireValues] = useState<Map<string, string>>(new Map());
     const [hoveredWireValue, setHoveredWireValue] = useState<{ x: number, y: number, value: string } | null>(null);
 
     const displayGoalFormula = React.useMemo(() => {
@@ -68,19 +81,12 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         return () => cancelAnimationFrame(animationFrameId);
     }, []);
     
+    // Handle Level Completion
     useEffect(() => {
-        if (!goalFormula) return;
-        const { isSolved, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues } = solveCircuit(nodes, goalFormula);
-        setIsSolved(isSolved);
-        setActiveNodeIds(activeNodeIds);
-        setErrorWireIds(errorWireIds);
-        setErrorNodePorts(errorNodePorts);
-        setErrorGoalPorts(errorGoalPorts);
-        setWireValues(wireValues || new Map());
         if (isSolved) {
             onLevelComplete?.();
         }
-    }, [nodes, wires, goalFormula, onLevelComplete]);
+    }, [isSolved, onLevelComplete]);
     
     // Expose methods to parent
     useImperativeHandle(ref, () => ({
@@ -111,14 +117,6 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             setWires(state.wires);
         }
     }), [nodes, wires, initialState]);
-
-    // Center view on mount
-    useEffect(() => {
-        setOffset({
-            x: window.innerWidth / 2,
-            y: window.innerHeight / 2
-        });
-    }, []);
 
     // Removed wire dragging state as requested
 
@@ -740,7 +738,9 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         
         if (displayGoalFormula) {
             ctx.fillStyle = '#fff';
-            ctx.font = 'italic 24px "Times New Roman", serif';
+            // Dynamically adjust font size based on formula length
+            const fontSize = displayGoalFormula.length > 15 ? 18 : 24;
+            ctx.font = `italic ${fontSize}px "Times New Roman", serif`;
             ctx.fillText(displayGoalFormula, 0, 20);
         }
 
@@ -789,6 +789,13 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             drawNode(ctx, node, node.x * GRID_SIZE, node.y * GRID_SIZE);
         });
 
+        // --- Ghost Nodes from Tutorial ---
+        if (currentStep && currentStep.ghostNodes) {
+            currentStep.ghostNodes.forEach(ghost => {
+                drawNode(ctx, ghost as Tool, ghost.x * GRID_SIZE, ghost.y * GRID_SIZE, true);
+            });
+        }
+
         // --- Ghost Node (Active Tool) ---
         if (activeTool && mouseGridPos) {
             drawNode(ctx, activeTool, mouseGridPos.x * GRID_SIZE, mouseGridPos.y * GRID_SIZE, true);
@@ -809,7 +816,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             // Level Solved indicator handled by HTML overlay in parent
         }
 
-    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, goalFormula, isSolved, errorGoalPorts, flashPhase]);
+    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, goalFormula, displayGoalFormula, isSolved, errorGoalPorts, flashPhase, currentStep]);
 
     // Handle Window Resize
     useEffect(() => {
@@ -914,6 +921,22 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                     // Only add if not duplicate
                     if (!isDuplicate) {
                         setNodes(prev => [...prev, newNode]);
+                        if (newNode.type === 'wire') {
+                             dispatchAction('CONNECT_WIRE', { 
+                                 x: newNode.x, 
+                                 y: newNode.y, 
+                                 w: newNode.w, 
+                                 h: newNode.h, 
+                                 rotation: newNode.rotation 
+                             });
+                        } else {
+                             dispatchAction('PLACE_NODE', { 
+                                 type: newNode.type, 
+                                 subType: newNode.subType,
+                                 x: newNode.x,
+                                 y: newNode.y
+                             });
+                        }
                     }
                     
                     // Start wire painting if wire tool
@@ -1059,6 +1082,15 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
 
                 if (!collision && !goalCollision) {
                     setNodes(prev => [...prev, newNode]);
+                    if (newNode.type === 'wire') {
+                         dispatchAction('CONNECT_WIRE', { 
+                             x: newNode.x, 
+                             y: newNode.y, 
+                             w: newNode.w, 
+                             h: newNode.h, 
+                             rotation: newNode.rotation 
+                         });
+                    }
                 }
                 
                 // Update last pos to CURRENT effective mouse pos, ready for next step

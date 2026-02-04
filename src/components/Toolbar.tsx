@@ -40,6 +40,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
                 <div className="h-12 flex items-center gap-4">
                     {/* Pointer / Select Tool */}
                     <div 
+                        id="tool-select"
                         onClick={() => onSelectTool(null)}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                 text-slate-200 bg-slate-800 border border-slate-600
@@ -57,6 +58,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
 
                     {/* Wire Tool */}
                     <div 
+                        id="tool-wire"
                         onClick={() => handleSelect('wire', 'formula', 1, 1)}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                 text-slate-200 bg-slate-800 border border-slate-600
@@ -90,6 +92,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
                     {/* Atom P */}
                     {isUnlocked('atom', 'P') && (
                     <div 
+                        id="tool-atom-P"
                         onClick={() => handleSelect('atom', 'P', 4, 4)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                 text-[#00d0ff] border border-[#00d0ff] bg-linear-to-br from-[#0a1a2a] to-[#151520] 
@@ -157,8 +160,9 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
                     {/* Not */}
                     {isUnlocked('gate', 'not') && (
                     <div 
+                        id="tool-gate-not"
                         onClick={() => handleSelect('gate', 'not', 4, 4)}
-                        className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
+                        className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                 text-[#ff4400] bg-[rgba(255,68,0,0.1)] 
                                 hover:-translate-y-1 hover:scale-110 active:scale-95
                                 ${isActive('not') ? activeClass : ''}`}
