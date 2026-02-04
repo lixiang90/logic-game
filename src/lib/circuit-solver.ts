@@ -496,10 +496,12 @@ function getGoalPorts() {
     return ports;
 }
 
-function isEqual(a: any, b: any): boolean {
+function isEqual(a: unknown, b: unknown): boolean {
     if (a === b) return true;
     if (a == null || b == null) return false;
-    if (a.equals && b.equals) return a.equals(b);
+    if ((a instanceof Formula || a instanceof Provable)) {
+        return a.equals(b);
+    }
     return false;
 }
 

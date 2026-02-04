@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { Tool, NodeType } from '@/types/game';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface ToolbarProps {
     activeTool: Tool | null;
@@ -11,6 +12,8 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: ToolbarProps) {
+    const { t } = useLanguage();
+
     const handleSelect = (type: NodeType, subType: string, w: number, h: number) => {
         onSelectTool({ type, subType, w, h, rotation: 0 });
     };
@@ -32,7 +35,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
             {/* Tools Group (Pointer & Wire) */}
             <div className="flex flex-col items-center gap-2">
                 <div className="h-[15px] flex items-center">
-                    <span className="text-[10px] text-transparent select-none font-bold uppercase tracking-widest">Tools</span>
+                    <span className="text-[10px] text-transparent select-none font-bold uppercase tracking-widest">{t('tools')}</span>
                 </div>
                 <div className="h-12 flex items-center gap-4">
                     {/* Pointer / Select Tool */}
@@ -81,7 +84,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
             {/* ATOMS Section */}
             <div className="flex flex-col items-center gap-2">
                 <div className="h-[15px] flex items-center">
-                    <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">Atoms</span>
+                    <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('atoms')}</span>
                 </div>
                 <div className="h-12 flex items-center gap-3">
                     {/* Atom P */}
@@ -133,7 +136,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
             {/* GATES Section */}
             <div className="flex flex-col items-center gap-2">
                 <div className="h-[15px] flex items-center">
-                    <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">Gates</span>
+                    <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('gates')}</span>
                 </div>
                 <div className="h-12 flex items-center gap-3">
                     {/* Implies */}
@@ -176,7 +179,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
             {/* AXIOMS Section */}
             <div className="flex flex-col items-center gap-2">
                 <div className="h-[15px] flex items-center">
-                    <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">Axioms</span>
+                    <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('axioms')}</span>
                 </div>
                 <div className="h-12 flex items-center gap-3">
                     {/* Axiom 1 */}
@@ -231,7 +234,7 @@ export default function Toolbar({ activeTool, onSelectTool, unlockedTools }: Too
             {/* RULES Section */}
             <div className="flex flex-col items-center gap-2">
                 <div className="h-[15px] flex items-center">
-                    <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">Rules</span>
+                    <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('rules')}</span>
                 </div>
                 <div className="h-12 flex items-center gap-3">
                     {/* MP Rule */}

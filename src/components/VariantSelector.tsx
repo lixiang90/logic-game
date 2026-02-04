@@ -1,5 +1,6 @@
 import React from 'react';
 import { Tool } from '@/types/game';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface VariantSelectorProps {
     activeTool: Tool | null;
@@ -7,20 +8,27 @@ interface VariantSelectorProps {
 }
 
 const VariantSelector: React.FC<VariantSelectorProps> = ({ activeTool, onSelectVariant }) => {
+    const { t } = useLanguage();
+
     if (!activeTool || activeTool.type !== 'wire') {
         return null;
     }
 
     const variants = [
-        { id: 'formula', label: 'Logic Wire', color: '#38bdf8' },
-        { id: 'provable', label: 'Provable Wire', color: '#facc15' }
+        { id: 'formula', label: t('logicWire'), color: '#38bdf8' },
+        { id: 'provable', label: t('provableWire'), color: '#facc15' }
     ];
 
     return (
         <div className="fixed right-8 top-1/3 -translate-y-1/2 z-40 flex flex-col items-end pointer-events-none">
             <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto">
                 <div className="text-slate-400 text-xs font-bold mb-3 text-right uppercase tracking-wider">
-                    Press <span className="bg-slate-700 px-1.5 py-0.5 rounded text-white mx-0.5">T</span> to switch variant
+                    {t('pressToSwitch').split('T').map((part, i, arr) => (
+                        <React.Fragment key={i}>
+                            {part}
+                            {i < arr.length - 1 && <span className="bg-slate-700 px-1.5 py-0.5 rounded text-white mx-0.5">T</span>}
+                        </React.Fragment>
+                    ))}
                 </div>
                 
                 <div className="flex gap-3">
@@ -55,7 +63,7 @@ const VariantSelector: React.FC<VariantSelectorProps> = ({ activeTool, onSelectV
                                 
                                 {isActive && (
                                     <div className="absolute -bottom-2 bg-white text-slate-900 text-[10px] font-bold px-1.5 rounded-full shadow-sm">
-                                        SELECTED
+                                        {t('selected')}
                                     </div>
                                 )}
                             </button>

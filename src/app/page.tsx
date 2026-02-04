@@ -6,13 +6,28 @@ import LevelGoal from "@/components/LevelGoal";
 import StartMenu from "@/components/StartMenu";
 import DraggableModal from "@/components/DraggableModal";
 import VariantSelector from "@/components/VariantSelector";
+import SettingsModal from "@/components/SettingsModal";
 import levels from "@/data/levels.json";
 import { useState, useRef, useEffect } from 'react';
 import { Tool } from '@/types/game';
 import { SaveSystem, LevelState, SaveData } from '@/lib/saveSystem';
 import { NodeData, Wire } from '@/types/game';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { TranslationKey } from '@/data/translations';
+
+interface Level {
+  id: string;
+  title: string;
+  description: string;
+  goal: {
+    formula: string;
+  };
+  unlockedTools: string[];
+  initialState?: LevelState;
+}
 
 export default function Home() {
+  const { t, language } = useLanguage();
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const [activeTool, setActiveTool] = useState<Tool | null>(null);
   const [currentLevelIndex, setCurrentLevelIndex] = useState(0);
@@ -21,8 +36,21 @@ export default function Home() {
   const [gameState, setGameState] = useState<'menu' | 'playing'>('menu');
   const [pendingLoad, setPendingLoad] = useState<LevelState | null>(null);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [saveSlots, setSaveSlots] = useState<Record<number, { timestamp: number, levelIndex: number } | null>>({});
 
-  const currentLevel = levels[currentLevelIndex];
+  const currentLevel = levels[currentLevelIndex] as Level;
+
+  // Load save slots when menu opens
+  useEffect(() => {
+    if (showSaveMenu) {
+        const slots: Record<number, { timestamp: number, levelIndex: number } | null> = {};
+        [1, 2, 3, 4].forEach(slot => {
+            slots[slot] = SaveSystem.getSlotInfo(slot);
+        });
+        setSaveSlots(slots);
+    }
+  }, [showSaveMenu]);
 
   // Auto-save every 30 seconds
   useEffect(() => {
@@ -131,14 +159,22 @@ export default function Home() {
     }
   };
 
+  // Use state for timestamp to avoid hydration mismatch
+  const [timestamp, setTimestamp] = useState<number>(0);
+
+  useEffect(() => {
+    setTimestamp(Date.now());
+  }, []);
+
   const handleSaveGame = (slot: number) => {
     if (canvasRef.current) {
         const state = canvasRef.current.getState();
         // Use current session data (autoSave) as base to preserve history
         const currentSession = SaveSystem.loadAutoSave() || { timestamp: 0, levelIndex: 0, levelStates: {} };
         
+        const now = Date.now();
         const saveData: SaveData = {
-            timestamp: Date.now(),
+            timestamp: now,
             levelIndex: currentLevelIndex,
             levelStates: {
                 ...currentSession.levelStates,
@@ -207,7 +243,7 @@ export default function Home() {
         onToolToggleType={handleToolToggleType}
         goalFormula={currentLevel.goal.formula}
         onLevelComplete={handleLevelComplete}
-        initialState={(currentLevel as any).initialState}
+        initialState={currentLevel.initialState}
       />
 
       <VariantSelector 
@@ -216,38 +252,50 @@ export default function Home() {
       />
       
       {/* Save Button */}
-      <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-2">
+      <div className="absolute top-4 right-4 z-50 flex flex-row items-center gap-2">
           <button 
               className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => {
                   setActiveTool(null);
                   setGameState('menu');
               }}
-              title="Main Menu"
+              title={t('mainMenu')}
           >
               <span role="img" aria-label="Menu">🔙</span>
           </button>
           <button 
               className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => setShowSaveMenu(true)}
-              title="Save Game"
+              title={t('saveGame')}
           >
               <span role="img" aria-label="Save Game">💾</span>
           </button>
           <button 
               className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => canvasRef.current?.resetView()}
-              title="Reset View"
+              title={t('resetView')}
           >
               <span role="img" aria-label="Home">🏠</span>
           </button>
+          <button 
+              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              onClick={() => setShowSettings(true)}
+              title={t('settings')}
+          >
+              <span role="img" aria-label="Settings">⚙️</span>
+          </button>
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
 
       {/* Save Menu Modal */}
       {showSaveMenu && (
         <div className="absolute inset-0 bg-black/60 z-100 flex items-center justify-center backdrop-blur-sm">
             <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 shadow-2xl w-96">
-                <h2 className="text-2xl font-bold text-white mb-6 text-center">Save Game</h2>
+                <h2 className="text-2xl font-bold text-white mb-6 text-center">{t('saveGame')}</h2>
                 <div className="flex flex-col gap-3">
                     {[1,2,3,4].map(slot => (
                         <button 
@@ -255,9 +303,9 @@ export default function Home() {
                             onClick={() => handleSaveGame(slot)}
                             className="bg-slate-800 p-4 rounded text-white hover:bg-blue-600 border border-slate-600 transition-colors text-left flex justify-between items-center group"
                         >
-                            <span>Slot {slot}</span>
+                            <span>{t('slot')} {slot}</span>
                             <span className="text-xs text-slate-500 group-hover:text-slate-200">
-                                {SaveSystem.getSlotInfo(slot) ? new Date(SaveSystem.getSlotInfo(slot)!.timestamp).toLocaleTimeString() : 'Empty'}
+                                {saveSlots[slot] ? new Date(saveSlots[slot]!.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : t('emptySlot')}
                             </span>
                         </button>
                     ))}
@@ -266,7 +314,7 @@ export default function Home() {
                     onClick={() => setShowSaveMenu(false)}
                     className="mt-6 w-full py-2 text-slate-400 hover:text-white border border-transparent hover:border-slate-600 rounded transition-colors"
                 >
-                    Cancel
+                    {t('cancel')}
                 </button>
             </div>
         </div>
@@ -274,21 +322,21 @@ export default function Home() {
       
       <LevelGoal 
         level={currentLevelIndex + 1}
-        title={currentLevel.title}
+        title={t(`level-${currentLevelIndex + 1}-title` as TranslationKey) || currentLevel.title}
         goalFormula={currentLevel.goal.formula}
-        description={currentLevel.description}
+        description={t(`level-${currentLevelIndex + 1}-desc` as TranslationKey) || currentLevel.description}
       />
 
       {isLevelComplete && (
-        <DraggableModal title="Level Complete">
+        <DraggableModal title={t('levelComplete')}>
             <div className="flex flex-col items-center gap-4">
-                <h2 className="text-4xl font-bold text-green-300">Level Complete!</h2>
-                <p className="text-slate-300">Great job! You proved the theorem.</p>
+                <h2 className="text-4xl font-bold text-green-300">{t('levelComplete')}</h2>
+                <p className="text-slate-300">{t('greatJob') || 'Great job! You proved the theorem.'}</p>
                 <button 
                     onClick={handleNextLevel}
                     className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105 shadow-lg"
                 >
-                    {currentLevelIndex < levels.length - 1 ? "Next Level" : "Free Build"}
+                    {currentLevelIndex < levels.length - 1 ? t('nextLevel') : t('freeBuild')}
                 </button>
             </div>
         </DraggableModal>

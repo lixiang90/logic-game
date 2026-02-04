@@ -7,7 +7,7 @@
  * Abstract base class for all logical formulas.
  */
 export abstract class Formula {
-    abstract equals(other: any): boolean;
+    abstract equals(other: Formula | unknown): boolean;
     abstract toString(): string;
 }
 
@@ -22,7 +22,7 @@ export class Atom extends Formula {
         this.name = name;
     }
 
-    equals(other: any): boolean {
+    equals(other: Formula | unknown): boolean {
         return other instanceof Atom && other.name === this.name;
     }
 
@@ -42,7 +42,7 @@ export class Not extends Formula {
         this.child = child;
     }
 
-    equals(other: any): boolean {
+    equals(other: Formula | unknown): boolean {
         return other instanceof Not && this.child.equals(other.child);
     }
 
@@ -64,7 +64,7 @@ export class Implies extends Formula {
         this.right = right;
     }
 
-    equals(other: any): boolean {
+    equals(other: Formula | unknown): boolean {
         return other instanceof Implies && 
                this.left.equals(other.left) && 
                this.right.equals(other.right);
@@ -87,7 +87,7 @@ export class Provable {
         this.formula = formula;
     }
 
-    equals(other: any): boolean {
+    equals(other: Provable | unknown): boolean {
         return other instanceof Provable && this.formula.equals(other.formula);
     }
 
