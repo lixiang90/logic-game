@@ -600,7 +600,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             const parsedFormula = parseGoal(formulaStr);
             if (parsedFormula) {
                 const renderSize = Math.min(innerW, innerH) * 0.85;
-                formulaRenderer.render(ctx, parsedFormula, dx + drawW/2, dy + drawH/2, renderSize);
+                formulaRenderer.render(ctx, parsedFormula, dx + drawW/2, dy + drawH/2, renderSize, scale);
             } else {
                 ctx.fillStyle = textColor;
                 const fontSize = formulaStr.length > 8 ? 16 : 22;
@@ -721,7 +721,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                     
                     if (connectedValue && connectedValue.formula) {
                         const renderSize = Math.min(drawW - screenInset * 2, drawH - screenInset * 2) * 0.85;
-                        formulaRenderer.render(ctx, connectedValue.formula, dx + drawW / 2, dy + drawH / 2, renderSize);
+                        formulaRenderer.render(ctx, connectedValue.formula, dx + drawW / 2, dy + drawH / 2, renderSize, scale);
                     }
                 }
             }
@@ -737,7 +737,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         }
 
         ctx.restore();
-    }, [GRID_SIZE, activeNodeIds, errorWireIds, errorNodePorts, flashPhase, wireValues, nodes]);
+    }, [GRID_SIZE, activeNodeIds, errorWireIds, errorNodePorts, flashPhase, wireValues, nodes, scale]);
 
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
@@ -875,8 +875,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         if (goalFormula) {
             const parsedGoalFormula = parseGoal(goalFormula);
             if (parsedGoalFormula) {
-                const renderSize = Math.min(targetW, targetH) * 0.5;
-                formulaRenderer.render(ctx, parsedGoalFormula, 0, 20, renderSize);
+                const renderSize = Math.min(targetW, targetH) * 0.55;
+                formulaRenderer.render(ctx, parsedGoalFormula, 0, 25, renderSize, scale);
             } else {
                 ctx.fillStyle = '#fff';
                 const fontSize = displayGoalFormula.length > 15 ? 18 : 24;
