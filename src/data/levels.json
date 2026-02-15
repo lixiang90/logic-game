@@ -24,7 +24,7 @@
     "goal": {
       "formula": "(P->Q)->R"
     },
-    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "gate:implies"]
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "gate:implies", "display:small"]
   },
   {
     "id": "level-4",
@@ -33,7 +33,7 @@
     "goal": {
       "formula": "|-(R->(P->R))"
     },
-    "unlockedTools": ["atom:P", "atom:R", "axiom:1"]
+    "unlockedTools": ["atom:P", "atom:R", "axiom:1", "display:small"]
   },
   {
     "id": "level-5",
@@ -42,7 +42,7 @@
     "goal": {
       "formula": "|-(P->((P->P)->P))"
     },
-    "unlockedTools": ["atom:P", "atom:Q", "gate:implies", "axiom:1"]
+    "unlockedTools": ["atom:P", "atom:Q", "gate:implies", "axiom:1", "display:small"]
   },
   {
     "id": "level-6",
@@ -51,7 +51,7 @@
     "goal": {
       "formula": "|-Q"
     },
-    "unlockedTools": ["atom:P", "atom:Q", "gate:implies", "mp"],
+    "unlockedTools": ["atom:P", "atom:Q", "gate:implies", "mp", "display:small"],
     "initialState": {
       "nodes": [
         {

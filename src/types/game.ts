@@ -1,5 +1,5 @@
 
-export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'wire' | 'premise';
+export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'wire' | 'premise' | 'display';
 
 export interface NodeData {
     id: string;
@@ -29,7 +29,7 @@ export interface Port {
     id: string; // 'in0', 'in1', 'out'
     x: number; // Relative to node (unrotated) OR absolute? Let's use Relative for getPorts
     y: number;
-    type: 'formula' | 'provable';
+    type: 'formula' | 'provable' | 'any';
     isInput: boolean;
 }
 

@@ -24,6 +24,7 @@ export type TranslationKey =
     | 'gates'
     | 'axioms'
     | 'rules'
+    | 'display'
     | 'cancel'
     | 'greatJob'
     | 'logicWire'
@@ -39,7 +40,13 @@ export type TranslationKey =
     | 'tut-l1-pick-wire' 
     | 'tut-l1-connect-1' | 'tut-l1-connect-2'
     | 'tut-l1-finish'
-    | 'tut-l2-combined' | 'tut-l3-combined'
+    | 'tut-l2-start'
+    | 'tut-l2-pick-p' | 'tut-l2-place-p'
+    | 'tut-l2-pick-q' | 'tut-l2-place-q'
+    | 'tut-l2-pick-implies' | 'tut-l2-place-implies'
+    | 'tut-l2-pick-wire'
+    | 'tut-l2-wire-p' | 'tut-l2-wire-q' | 'tut-l2-connect-goal'
+    | 'tut-l3-combined'
     | 'tut-l4-combined' | 'tut-l5-combined'
     | 'tut-l6-combined'
     // Level Titles and Descriptions
@@ -76,6 +83,7 @@ export const translations: Record<Language, Record<string, string>> = {
         gates: 'Gates',
         axioms: 'Axioms',
         rules: 'Rules',
+        display: 'Display',
         cancel: 'Cancel',
         greatJob: 'Great job!',
         logicWire: 'Logic Wire',
@@ -101,10 +109,20 @@ export const translations: Record<Language, Record<string, string>> = {
         'tut-l1-finish': 'Excellent! The circuit matches the goal. The level is complete.',
         
         // Level 2
-        'tut-l2-combined': 'Level 2: Implication (->)\n\nIn this level, we focus on structure. The Implication gate combines two sub-formulas into a conditional statement.\n\nConnect Atom P to the first input and Atom Q to the second input to construct the formula P -> Q.\n\nControls Tip: Hold "Ctrl" while dragging to paint wires in one direction continuously. Press "R" to rotate gates, and Right-click to delete.',
+        'tut-l2-start': 'Level 2: Implication\n\nYour goal is to build the formula P → Q. This requires two atoms and an Implication gate.',
+        'tut-l2-pick-p': 'First, select the Atom P from the toolbar.',
+        'tut-l2-place-p': 'Place Atom P at the marked position (dashed outline).',
+        'tut-l2-pick-q': 'Now select the Atom Q from the toolbar.',
+        'tut-l2-place-q': 'Place Atom Q at the marked position.',
+        'tut-l2-pick-implies': 'Select the Implication gate (→). It has two inputs: the first for the antecedent, the second for the consequent.',
+        'tut-l2-place-implies': 'Place the Implication gate at the marked position.\nTip: Press "R" to rotate, Right-click to delete.',
+        'tut-l2-pick-wire': 'Select the Logic Wire tool to connect the components.',
+        'tut-l2-wire-p': 'Connect Atom P to the top input (in0) of the Implication gate. Draw the wires following the dotted outline.\n\nClick "Next" when done.',
+        'tut-l2-wire-q': 'Connect Atom Q to the bottom input (in1) of the Implication gate.\n\nClick "Next" when done.',
+        'tut-l2-connect-goal': 'Connect the output of the Implication gate to the Central Goal Block input to complete the level!',
 
         // Level 3
-        'tut-l3-combined': 'Level 3: Nested Implication\n\nGoal: (P -> Q) -> R\n\nThis requires chaining gates. First connect P and Q to an Implication gate, then connect its output to another Implication gate with R.\n\nTesting Tip: Click on any Atom to toggle it True/False and verify your circuit.',
+        'tut-l3-combined': 'Level 3: Nested Implication\n\nGoal: (P -> Q) -> R\n\nThis requires chaining gates. First connect P and Q to an Implication gate, then connect its output to another Implication gate with R.\n\nNew Tool: Display!\nA Display shows the visual representation of any connected formula. Connect a wire (blue or yellow) to see its graphical form.\n\nTesting Tip: Click on any Atom to toggle it True/False and verify your circuit.',
 
         // Level 4
         'tut-l4-combined': 'Level 4: Axiom I (P -> (Q -> P))\n\nAxiom I produces a Provable Formula (Yellow wire) from input formulas (Blue wires).\n\nWire Types:\n• Blue: Formula (Data)\n• Yellow: Provable (Theorem)\n• Tip: Press "T" to switch wire type.\n\nTo prove R -> (P -> R):\n1. Place "Axiom 1".\n2. Connect R to input A (Blue).\n3. Connect P to input B (Blue).\n4. Connect output to Goal (Yellow).\n\nWarning: Match wire and port colors! If you connect the wrong wire type or merge different signals, the wire/port will flash to indicate an error.',
@@ -152,6 +170,7 @@ export const translations: Record<Language, Record<string, string>> = {
         gates: '逻辑门',
         axioms: '公理',
         rules: '规则',
+        display: '显示屏',
         cancel: '取消',
         greatJob: '干得好！',
         logicWire: '逻辑线',
@@ -175,12 +194,22 @@ export const translations: Record<Language, Record<string, string>> = {
         'tut-l1-connect-1': '将原子 P 的输出连接到非门的输入。',
         'tut-l1-connect-2': '将非门的输出连接到中央目标区的输入。',
         'tut-l1-finish': '太棒了！电路符合目标。关卡完成。',
-
+        
         // Level 2
-        'tut-l2-combined': '第 2 关：蕴含 (->)\n\n本关关注公式的结构形式。蕴含门将两个子公式组合成一个条件语句。\n\n将原子 P 连接到第一个输入，原子 Q 连接到第二个输入，以构造公式 P -> Q。\n\n操作提示：按住 "Ctrl" 键拖动鼠标可以向一个方向连续绘制导线。按 "R" 键旋转逻辑门，右键点击可删除元件。',
+        'tut-l2-start': '第 2 关：蕴含\n\n你的目标是构建公式 P → Q。这需要两个原子和一个蕴含门。',
+        'tut-l2-pick-p': '首先，从工具栏选择原子 P。',
+        'tut-l2-place-p': '将原子 P 放置在标记位置（虚线框）。',
+        'tut-l2-pick-q': '现在从工具栏选择原子 Q。',
+        'tut-l2-place-q': '将原子 Q 放置在标记位置。',
+        'tut-l2-pick-implies': '选择蕴含门 (→)。它有两个输入：第一个用于前件，第二个用于后件。',
+        'tut-l2-place-implies': '将蕴含门放置在标记位置。\n提示：按 "R" 键旋转，右键点击删除。',
+        'tut-l2-pick-wire': '选择逻辑线工具来连接组件。',
+        'tut-l2-wire-p': '将原子 P 连接到蕴含门的顶部输入 (in0)。按照虚线轮廓绘制导线。\n\n完成后点击"下一步"。',
+        'tut-l2-wire-q': '将原子 Q 连接到蕴含门的底部输入 (in1)。\n\n完成后点击"下一步"。',
+        'tut-l2-connect-goal': '将蕴含门的输出连接到中央目标区的输入即可完成关卡！',
 
         // Level 3
-        'tut-l3-combined': '第 3 关：嵌套蕴含\n\n目标：(P -> Q) -> R\n\n这需要级联逻辑门。首先连接 P 和 Q 到一个蕴含门，然后将其输出连接到另一个以 R 为输入的蕴含门。\n\n测试提示：点击任何原子可切换其真/假状态，用来验证你的电路逻辑。',
+        'tut-l3-combined': '第 3 关：嵌套蕴含\n\n目标：(P -> Q) -> R\n\n这需要级联逻辑门。首先连接 P 和 Q 到一个蕴含门，然后将其输出连接到另一个以 R 为输入的蕴含门。\n\n新工具：显示屏！\n显示屏可以显示连接公式的图形化表示。连接导线（蓝色或黄色）即可查看其图形形式。\n\n测试提示：点击任何原子可切换其真/假状态，用来验证你的电路逻辑。',
 
         // Level 4
         'tut-l4-combined': '第 4 关：公理 I (P -> (Q -> P))\n\n公理 I 接收公式输入（蓝线）并产生可证公式输出（黄线）。\n\n导线类型：\n• 蓝色：普通公式\n• 黄色：可证命题\n• 提示：按 "T" 键切换导线颜色。\n\n要证明 R -> (P -> R)：\n1. 放置 "Axiom 1"。\n2. 用蓝线连接 R 到输入 A。\n3. 用蓝线连接 P 到输入 B。\n4. 用黄线连接输出到目标。\n\n注意：请确保导线与端口颜色匹配。若连接错误的导线类型，或将传输不同信号的导线连接在一起，导线和端口会闪烁以提示错误。',

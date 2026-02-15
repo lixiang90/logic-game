@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { TutorialStep, TutorialTriggerType, LevelTutorial } from '@/types/tutorial';
 import { tutorials } from '@/data/tutorials';
 
@@ -25,6 +25,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     const [activeTutorial, setActiveTutorial] = useState<LevelTutorial | null>(null);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
     const [isTutorialActive, setIsTutorialActive] = useState(false);
+    const isAdvancingRef = useRef(false);
     const [completedTutorials, setCompletedTutorials] = useState<number[]>(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('completed_tutorials');
@@ -54,6 +55,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
         setActiveTutorial(null);
         setIsTutorialActive(false);
         setCurrentStepIndex(0);
+        isAdvancingRef.current = false;
     }, []);
 
     const startTutorial = useCallback((levelIndex: number) => {
@@ -65,6 +67,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
             setActiveTutorial(tutorial);
             setCurrentStepIndex(0);
             setIsTutorialActive(true);
+            isAdvancingRef.current = false;
         } else {
             // No tutorial or already completed
             setActiveTutorial(null);
@@ -100,6 +103,9 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     const dispatchAction = useCallback((action: TutorialTriggerType, params?: Record<string, unknown>) => {
         if (!isTutorialActive || !activeTutorial) return;
 
+        // Prevent multiple rapid advances (debounce)
+        if (isAdvancingRef.current) return;
+
         const currentStep = activeTutorial.steps[currentStepIndex];
         if (currentStep.trigger === action) {
             // Check params if needed
@@ -110,18 +116,22 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
                 if (!match) return;
             }
             
+            // Set advancing flag
+            isAdvancingRef.current = true;
+            
             // Advance automatically
-            // We need to call the function that advances the step.
-            // Since we can't easily call nextStepSimple due to circular deps or closure issues if defined differently,
-            // let's just inline the logic or use a ref for nextStep if needed.
-            // Or just use nextStepSimple which is memoized.
-             if (currentStepIndex < activeTutorial.steps.length - 1) {
+            if (currentStepIndex < activeTutorial.steps.length - 1) {
                 setCurrentStepIndex(prev => prev + 1);
             } else {
                 saveCompleted(activeTutorial.levelIndex);
                 setIsTutorialActive(false);
                 setActiveTutorial(null);
             }
+            
+            // Reset flag after a short delay
+            setTimeout(() => {
+                isAdvancingRef.current = false;
+            }, 500);
         }
     }, [isTutorialActive, activeTutorial, currentStepIndex, saveCompleted]);
 

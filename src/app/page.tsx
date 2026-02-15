@@ -1,7 +1,7 @@
 'use client';
 
 import InfiniteCanvas, { InfiniteCanvasHandle } from "@/components/InfiniteCanvas";
-import Toolbar from "@/components/Toolbar";
+import Toolbar, { SelectMode } from "@/components/Toolbar";
 import LevelGoal from "@/components/LevelGoal";
 import StartMenu from "@/components/StartMenu";
 import DraggableModal from "@/components/DraggableModal";
@@ -33,6 +33,7 @@ export default function Home() {
   const { startTutorial, dispatchAction, resetTutorials, forceStartTutorial } = useTutorial();
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const [activeTool, setActiveTool] = useState<Tool | null>(null);
+  const [selectMode, setSelectMode] = useState<SelectMode>('pointer');
   const [currentLevelIndex, setCurrentLevelIndex] = useState(0);
   const [isLevelComplete, setIsLevelComplete] = useState(false);
   const [isFreeBuild, setIsFreeBuild] = useState(false);
@@ -257,6 +258,7 @@ export default function Home() {
         key={currentLevel.id} // Reset canvas on level change
         ref={canvasRef}
         activeTool={activeTool} 
+        selectMode={selectMode}
         onToolClear={() => setActiveTool(null)} 
         onToolRotate={handleToolRotate}
         onToolSetRotation={handleToolSetRotation}
@@ -373,7 +375,9 @@ export default function Home() {
 
       <Toolbar 
         activeTool={activeTool} 
-        onSelectTool={setActiveTool} 
+        onSelectTool={setActiveTool}
+        selectMode={selectMode}
+        onSelectModeChange={setSelectMode}
         unlockedTools={isFreeBuild ? ['atom:P', 'atom:Q', 'atom:R', 'gate:implies', 'gate:not', 'axiom:1', 'axiom:2', 'axiom:3', 'mp'] : currentLevel.unlockedTools}
       />
       <TutorialOverlay />

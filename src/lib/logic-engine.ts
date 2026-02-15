@@ -75,6 +75,69 @@ export class Implies extends Formula {
     }
 }
 
+export class And extends Formula {
+    readonly left: Formula;
+    readonly right: Formula;
+
+    constructor(left: Formula, right: Formula) {
+        super();
+        this.left = left;
+        this.right = right;
+    }
+
+    equals(other: Formula | unknown): boolean {
+        return other instanceof And && 
+               this.left.equals(other.left) && 
+               this.right.equals(other.right);
+    }
+
+    toString(): string {
+        return `(${this.left.toString()} ∧ ${this.right.toString()})`;
+    }
+}
+
+export class Or extends Formula {
+    readonly left: Formula;
+    readonly right: Formula;
+
+    constructor(left: Formula, right: Formula) {
+        super();
+        this.left = left;
+        this.right = right;
+    }
+
+    equals(other: Formula | unknown): boolean {
+        return other instanceof Or && 
+               this.left.equals(other.left) && 
+               this.right.equals(other.right);
+    }
+
+    toString(): string {
+        return `(${this.left.toString()} ∨ ${this.right.toString()})`;
+    }
+}
+
+export class Equiv extends Formula {
+    readonly left: Formula;
+    readonly right: Formula;
+
+    constructor(left: Formula, right: Formula) {
+        super();
+        this.left = left;
+        this.right = right;
+    }
+
+    equals(other: Formula | unknown): boolean {
+        return other instanceof Equiv && 
+               this.left.equals(other.left) && 
+               this.right.equals(other.right);
+    }
+
+    toString(): string {
+        return `(${this.left.toString()} ↔ ${this.right.toString()})`;
+    }
+}
+
 /**
  * Represents a provable statement (e.g., ⊢ P).
  * Note: This wraps a Formula but is distinct from a Formula itself in the type system context of the game.
@@ -159,7 +222,6 @@ export function checkModusPonens(A: Formula, B: Formula, provA: Provable, provIm
  * - Parentheses: (A)
  */
 export function parseFormula(str: string): Formula | null {
-    // Tokenizer
     const tokens: string[] = [];
     let i = 0;
     while (i < str.length) {
@@ -186,6 +248,24 @@ export function parseFormula(str: string): Formula | null {
         } else if (str.startsWith('->', i)) {
             tokens.push('→');
             i += 2;
+        } else if (c === '∧') {
+            tokens.push('∧');
+            i++;
+        } else if (c === '&' || c === '^') {
+            tokens.push('∧');
+            i++;
+        } else if (c === '∨') {
+            tokens.push('∨');
+            i++;
+        } else if (c === 'v' || c === 'V' || c === '|') {
+            tokens.push('∨');
+            i++;
+        } else if (c === '↔') {
+            tokens.push('↔');
+            i++;
+        } else if (str.startsWith('<->', i)) {
+            tokens.push('↔');
+            i += 3;
         } else if (/[A-Z]/.test(c)) {
             let atom = c;
             i++;
@@ -195,7 +275,7 @@ export function parseFormula(str: string): Formula | null {
             }
             tokens.push(atom);
         } else {
-            i++; // Skip unknown
+            i++;
         }
     }
 
@@ -203,15 +283,50 @@ export function parseFormula(str: string): Formula | null {
     const peek = () => tokens[tokenIdx];
     const consume = () => tokens[tokenIdx++];
 
-    function parseExpression(): Formula | null {
-        let left = parseTerm();
+    function parseEquiv(): Formula | null {
+        let left = parseImplies();
         if (!left) return null;
+        while (peek() === '↔') {
+            consume();
+            const right = parseImplies();
+            if (!right) return null;
+            left = new Equiv(left, right);
+        }
+        return left;
+    }
 
+    function parseImplies(): Formula | null {
+        let left = parseOr();
+        if (!left) return null;
         while (peek() === '→') {
             consume();
-            const right = parseExpression(); // Right associative
+            const right = parseImplies();
             if (!right) return null;
             left = new Implies(left, right);
+        }
+        return left;
+    }
+
+    function parseOr(): Formula | null {
+        let left = parseAnd();
+        if (!left) return null;
+        while (peek() === '∨') {
+            consume();
+            const right = parseAnd();
+            if (!right) return null;
+            left = new Or(left, right);
+        }
+        return left;
+    }
+
+    function parseAnd(): Formula | null {
+        let left = parseTerm();
+        if (!left) return null;
+        while (peek() === '∧') {
+            consume();
+            const right = parseTerm();
+            if (!right) return null;
+            left = new And(left, right);
         }
         return left;
     }
@@ -225,7 +340,7 @@ export function parseFormula(str: string): Formula | null {
             return new Not(child);
         } else if (t === '(') {
             consume();
-            const expr = parseExpression();
+            const expr = parseEquiv();
             if (peek() !== ')') return null;
             consume();
             return expr;
@@ -237,8 +352,8 @@ export function parseFormula(str: string): Formula | null {
     }
 
     try {
-        const result = parseExpression();
-        if (tokenIdx < tokens.length) return null; // Unconsumed tokens
+        const result = parseEquiv();
+        if (tokenIdx < tokens.length) return null;
         return result;
     } catch (e) {
         return null;
@@ -247,13 +362,17 @@ export function parseFormula(str: string): Formula | null {
 
 /**
  * Parses a goal string which might be a Formula or a Provable.
- * - If starts with "|-", it expects a Provable.
+ * - If starts with "|-" or "⊢", it expects a Provable.
  * - Otherwise, it expects a Formula.
  */
 export function parseGoal(str: string): Formula | Provable | null {
     str = str.trim();
     if (str.startsWith('|-')) {
         const formulaStr = str.substring(2);
+        const formula = parseFormula(formulaStr);
+        return formula ? new Provable(formula) : null;
+    } else if (str.startsWith('⊢')) {
+        const formulaStr = str.substring(1);
         const formula = parseFormula(formulaStr);
         return formula ? new Provable(formula) : null;
     } else {

@@ -87,6 +87,32 @@ export const getNodePorts = (node: NodeData): Port[] => {
             // Right
             ports.push({ id: `out_r_${y}`, x: w, y: y, type: 'provable', isInput: false });
         }
+    } else if (type === 'display') {
+        // Display: Input ports on all 4 sides, accepts both formula and provable
+        // Small display (4x4): 1 port per side at center
+        // Large display (8x8): 3 ports per side
+        if (w <= 4) {
+            // Small display: center port on each side
+            ports.push({ id: 'in_t', x: w / 2, y: 0, type: 'any', isInput: true });
+            ports.push({ id: 'in_b', x: w / 2, y: h, type: 'any', isInput: true });
+            ports.push({ id: 'in_l', x: 0, y: h / 2, type: 'any', isInput: true });
+            ports.push({ id: 'in_r', x: w, y: h / 2, type: 'any', isInput: true });
+        } else {
+            // Large display: 3 ports per side
+            const step = w / 4;
+            ports.push({ id: 'in_t1', x: step, y: 0, type: 'any', isInput: true });
+            ports.push({ id: 'in_t2', x: w / 2, y: 0, type: 'any', isInput: true });
+            ports.push({ id: 'in_t3', x: w - step, y: 0, type: 'any', isInput: true });
+            ports.push({ id: 'in_b1', x: step, y: h, type: 'any', isInput: true });
+            ports.push({ id: 'in_b2', x: w / 2, y: h, type: 'any', isInput: true });
+            ports.push({ id: 'in_b3', x: w - step, y: h, type: 'any', isInput: true });
+            ports.push({ id: 'in_l1', x: 0, y: step, type: 'any', isInput: true });
+            ports.push({ id: 'in_l2', x: 0, y: h / 2, type: 'any', isInput: true });
+            ports.push({ id: 'in_l3', x: 0, y: h - step, type: 'any', isInput: true });
+            ports.push({ id: 'in_r1', x: w, y: step, type: 'any', isInput: true });
+            ports.push({ id: 'in_r2', x: w, y: h / 2, type: 'any', isInput: true });
+            ports.push({ id: 'in_r3', x: w, y: h - step, type: 'any', isInput: true });
+        }
     }
 
     return ports;

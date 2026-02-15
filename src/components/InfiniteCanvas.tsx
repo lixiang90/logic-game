@@ -4,8 +4,10 @@ import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperat
 import { Tool, NodeData, NodeType, Wire, Port } from '@/types/game';
 import { getNodePorts, getAbsolutePortPosition, findWirePath } from '@/lib/gameUtils';
 import { solveCircuit } from '@/lib/circuit-solver';
-import { parseGoal } from '@/lib/logic-engine';
+import { parseGoal, parseFormula, Provable } from '@/lib/logic-engine';
+import { formulaRenderer } from '@/lib/formula-renderer';
 import { useTutorial } from '@/contexts/TutorialContext';
+import { SelectMode } from '@/components/Toolbar';
 
 interface Point {
     x: number;
@@ -14,6 +16,7 @@ interface Point {
 
 interface InfiniteCanvasProps {
     activeTool: Tool | null;
+    selectMode?: SelectMode;
     onToolClear: () => void;
     onToolRotate?: () => void;
     onToolSetRotation?: (rotation: number) => void;
@@ -29,7 +32,7 @@ export interface InfiniteCanvasHandle {
     loadState: (state: { nodes: NodeData[], wires: Wire[] }) => void;
 }
 
-const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ activeTool, onToolClear, onToolRotate, onToolSetRotation, onToolToggleType, goalFormula, onLevelComplete, initialState }, ref) => {
+const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ activeTool, selectMode = 'pointer', onToolClear, onToolRotate, onToolSetRotation, onToolToggleType, goalFormula, onLevelComplete, initialState }, ref) => {
     const { dispatchAction, currentStep } = useTutorial();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [offset, setOffset] = useState<Point>(() => ({
@@ -60,6 +63,13 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
 
     const [flashPhase, setFlashPhase] = useState<number>(0);
     const [hoveredWireValue, setHoveredWireValue] = useState<{ x: number, y: number, value: string } | null>(null);
+    
+    // Box selection state
+    const [isBoxSelecting, setIsBoxSelecting] = useState<boolean>(false);
+    const [boxSelectStart, setBoxSelectStart] = useState<Point | null>(null);
+    const [boxSelectEnd, setBoxSelectEnd] = useState<Point | null>(null);
+    const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+    const [selectedWireIds, setSelectedWireIds] = useState<Set<string>>(new Set());
 
     const displayGoalFormula = React.useMemo(() => {
         if (!goalFormula) return '';
@@ -230,13 +240,14 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         
         const COLOR_FORMULA_PORT = '#38bdf8'; // Sky Blue
         const COLOR_PROVABLE_PORT = '#facc15'; // Yellow
+        const COLOR_ANY_PORT = '#a855f7'; // Purple for any type
 
         // Helper to draw a port circle
-        const drawPortCircle = (px: number, py: number, type: 'formula' | 'provable', portId?: string) => {
+        const drawPortCircle = (px: number, py: number, type: 'formula' | 'provable' | 'any', portId?: string) => {
             ctx.beginPath();
             ctx.arc(px, py, 5, 0, Math.PI * 2);
             
-            let fillStyle = type === 'formula' ? COLOR_FORMULA_PORT : COLOR_PROVABLE_PORT;
+            let fillStyle = type === 'formula' ? COLOR_FORMULA_PORT : (type === 'provable' ? COLOR_PROVABLE_PORT : COLOR_ANY_PORT);
             
             // Check error
             if (!isGhost && portId && 'id' in node && errorNodePorts.get(node.id)?.has(portId)) {
@@ -278,86 +289,109 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
 
         } else if (node.type === 'wire') {
             // Wire Segment Rendering
-            const lineY = 0;
-
-            ctx.beginPath();
-            ctx.moveTo(dx, dy + lineY);
-            ctx.lineTo(dx + drawW, dy + lineY);
+            // Wires are lines on the edges of the block:
+            // rotation 0: Top Edge (y), horizontal from x to x+w
+            // rotation 1: Left Edge (x), vertical from y to y+h
+            // rotation 2: Bottom Edge (y+h), horizontal from x to x+w
+            // rotation 3: Right Edge (x+w), vertical from y to y+h
+            
+            // Restore transform since we're drawing directly
+            ctx.restore();
+            ctx.save();
+            
+            if (isGhost) {
+                ctx.globalAlpha = 0.5;
+            }
+            
+            // Glow effect for active wires
+            const shouldGlowWire = isGhost 
+                ? false 
+                : ('id' in node && activeNodeIds.has(node.id));
+            if (shouldGlowWire) {
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = 'rgba(255, 255, 100, 0.6)';
+            }
             
             let strokeStyle = node.subType === 'formula' ? '#38bdf8' : '#facc15';
             
             // Check Error
             if (!isGhost && 'id' in node && errorWireIds.has(node.id)) {
-                 // Formula Error: Purple, Provable Error: Orange
-                 strokeStyle = node.subType === 'formula' ? '#d946ef' : '#f97316';
+                strokeStyle = node.subType === 'formula' ? '#d946ef' : '#f97316';
             }
-
-            // Draw Base Solid Line
+            
             ctx.strokeStyle = strokeStyle;
             ctx.lineWidth = 4;
             ctx.lineCap = 'round';
             ctx.setLineDash([]);
+            
+            // Calculate line position based on rotation
+            let lineX1: number, lineY1: number, lineX2: number, lineY2: number;
+            
+            if (rotation === 0) {
+                // Top Edge: horizontal line at y
+                lineX1 = x; lineY1 = y;
+                lineX2 = x + w; lineY2 = y;
+            } else if (rotation === 1) {
+                // Left Edge: vertical line at x
+                lineX1 = x; lineY1 = y;
+                lineX2 = x; lineY2 = y + h;
+            } else if (rotation === 2) {
+                // Bottom Edge: horizontal line at y+h
+                lineX1 = x; lineY1 = y + h;
+                lineX2 = x + w; lineY2 = y + h;
+            } else {
+                // rotation === 3: Right Edge: vertical line at x+w
+                lineX1 = x + w; lineY1 = y;
+                lineX2 = x + w; lineY2 = y + h;
+            }
+            
+            ctx.beginPath();
+            ctx.moveTo(lineX1, lineY1);
+            ctx.lineTo(lineX2, lineY2);
             ctx.stroke();
-
+            
             // Flow Animation Overlay for Active Wires
             if (!isGhost && 'id' in node && activeNodeIds.has(node.id) && !errorWireIds.has(node.id)) {
                 ctx.save();
-                
-                const spacing = 15; // Decreased spacing = More particles
-                const speed = 0.04; // Movement speed
+                const spacing = 15;
+                const speed = 0.04;
                 const time = Date.now();
                 const offset = (time * speed) % spacing;
-
                 ctx.shadowBlur = 8;
                 ctx.shadowColor = strokeStyle;
-                
-                // Color based on wire type
-                // formula (Purple) -> lighter purple
-                // provable (Orange) -> lighter orange
                 const particleColor = node.subType === 'formula' 
-                    ? 'rgba(240, 171, 252, 0.8)' // Light Purple
-                    : 'rgba(253, 186, 116, 0.8)'; // Light Orange
-
+                    ? 'rgba(240, 171, 252, 0.8)'
+                    : 'rgba(253, 186, 116, 0.8)';
                 ctx.fillStyle = particleColor;
-
-                // Draw two streams of particles moving in opposite directions
-                // This creates a "busy" flow effect without a specific directional bias
-                // reducing visual dissonance on bent wires.
                 
-                // We extend the range slightly to ensure smooth entry/exit at boundaries
-                const maxI = Math.ceil(drawW / spacing) + 1;
-
+                const lineLen = Math.sqrt((lineX2 - lineX1) ** 2 + (lineY2 - lineY1) ** 2);
+                const maxI = Math.ceil(lineLen / spacing) + 1;
+                
+                const dx = (lineX2 - lineX1) / lineLen;
+                const dy = (lineY2 - lineY1) / lineLen;
+                
                 for (let i = -1; i <= maxI; i++) {
-                    // Stream 1: Moving "Right" (relative to local coords)
                     const pos1 = i * spacing + offset;
-                    if (pos1 >= 0 && pos1 <= drawW) {
+                    if (pos1 >= 0 && pos1 <= lineLen) {
                         ctx.beginPath();
-                        // Smaller radius (1.5) for particles vs connector dots (2.0)
-                        ctx.arc(dx + pos1, dy + lineY, 1.5, 0, Math.PI * 2);
+                        ctx.arc(lineX1 + dx * pos1, lineY1 + dy * pos1, 1.5, 0, Math.PI * 2);
                         ctx.fill();
                     }
-
-                    // Stream 2: Moving "Left" (relative to local coords)
-                    // Offset by half spacing to interleave with Stream 1
                     const pos2 = i * spacing + (spacing / 2) - offset;
-                    if (pos2 >= 0 && pos2 <= drawW) {
+                    if (pos2 >= 0 && pos2 <= lineLen) {
                         ctx.beginPath();
-                        // Smaller radius (1.5) for particles vs connector dots (2.0)
-                        ctx.arc(dx + pos2, dy + lineY, 1.5, 0, Math.PI * 2);
+                        ctx.arc(lineX1 + dx * pos2, lineY1 + dy * pos2, 1.5, 0, Math.PI * 2);
                         ctx.fill();
                     }
                 }
-                
                 ctx.restore();
-            } else {
-                ctx.shadowBlur = 0;
             }
-
-            // Draw small connector dots at ends
+            
+            // Draw connector dots at ends
             ctx.fillStyle = '#fff';
             ctx.beginPath();
-            ctx.arc(dx, dy + lineY, 2, 0, Math.PI * 2);
-            ctx.arc(dx + drawW, dy + lineY, 2, 0, Math.PI * 2);
+            ctx.arc(lineX1, lineY1, 2, 0, Math.PI * 2);
+            ctx.arc(lineX2, lineY2, 2, 0, Math.PI * 2);
             ctx.fill();
 
         } else if (node.type === 'gate') {
@@ -547,34 +581,34 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             ctx.stroke();
 
             // Inner chip detail (Decorative Rect)
-            // Expand inner rect to fit text: use 70% of width/height
             const innerW = drawW * 0.7;
             const innerH = drawH * 0.7;
             ctx.lineWidth = 1;
             drawRoundedRect(ctx, dx + (drawW - innerW)/2, dy + (drawH - innerH)/2, innerW, innerH, 4);
             ctx.stroke();
 
-            // Text (Formula)
-            ctx.fillStyle = textColor;
-            // Adjust font size based on length
             const label = ('customLabel' in node ? node.customLabel : undefined) || node.subType || '?';
-            
-            // Add turnstile if not present
-            let displayLabel = label
+            let formulaStr = label
                 .replace(/->/g, '→')
-                .replace(/-\./g, '¬');
+                .replace(/-\./g, '¬')
+                .replace('|-', '⊢');
             
-            if (!displayLabel.startsWith('|-') && !displayLabel.startsWith('⊢')) {
-                displayLabel = '⊢ ' + displayLabel;
+            if (!formulaStr.startsWith('⊢') && !formulaStr.startsWith('|-')) {
+                formulaStr = '⊢ ' + formulaStr;
             }
-            displayLabel = displayLabel.replace('|-', '⊢');
 
-            const fontSize = displayLabel.length > 8 ? 16 : 22;
-            ctx.font = `bold ${fontSize}px monospace`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            
-            ctx.fillText(displayLabel, dx + drawW/2, dy + drawH/2);
+            const parsedFormula = parseGoal(formulaStr);
+            if (parsedFormula) {
+                const renderSize = Math.min(innerW, innerH) * 0.85;
+                formulaRenderer.render(ctx, parsedFormula, dx + drawW/2, dy + drawH/2, renderSize);
+            } else {
+                ctx.fillStyle = textColor;
+                const fontSize = formulaStr.length > 8 ? 16 : 22;
+                ctx.font = `bold ${fontSize}px monospace`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(formulaStr, dx + drawW/2, dy + drawH/2);
+            }
 
             // 3. Ports (Interaction Circles)
             if (!isGhost) {
@@ -598,10 +632,86 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                     drawPortCircle(dx + drawW, dy + y * GRID_SIZE, 'provable', `out_r_${y}`);
                 }
             }
+        } else if (node.type === 'display') {
+            // Display Node - renders connected formula/provable
+            bgColor = '#1a1a2e';
+            borderColor = '#6366f1';
+            
+            const isLarge = w > 4;
+            const bodyR = isLarge ? 12 : 8;
+            
+            // Draw body
+            drawRoundedRect(ctx, dx, dy, drawW, drawH, bodyR);
+            ctx.fillStyle = bgColor;
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = borderColor;
+            ctx.stroke();
+            
+            // Inner screen area
+            const screenInset = isLarge ? 8 : 4;
+            drawRoundedRect(ctx, dx + screenInset, dy + screenInset, drawW - screenInset * 2, drawH - screenInset * 2, 4);
+            ctx.fillStyle = '#0a0a15';
+            ctx.fill();
+            ctx.strokeStyle = '#4f46e5';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            // Get connected value and render
+            if (!isGhost && 'id' in node) {
+                const nodePorts = getNodePorts(node as NodeData);
+                let connectedValue: { formula: ReturnType<typeof parseGoal>, type: string } | null = null;
+                
+                for (const port of nodePorts) {
+                    const absPos = getAbsolutePortPosition(node as NodeData, port);
+                    // Check for connected wire
+                    const wireNodes = nodes.filter(n => n.type === 'wire');
+                    for (const wire of wireNodes) {
+                        const s = { 
+                            vertical: (wire.rotation === 1 || wire.rotation === 3), 
+                            c: wire.rotation === 1 ? wire.x : (wire.rotation === 3 ? wire.x + wire.w : (wire.rotation === 0 ? wire.y : wire.y + wire.h)),
+                            min: wire.rotation === 1 || wire.rotation === 3 ? wire.y : wire.x,
+                            max: wire.rotation === 1 || wire.rotation === 3 ? wire.y + wire.h : wire.x + wire.w
+                        };
+                        const EPS = 0.5;
+                        let touch = false;
+                        if (s.vertical) {
+                            touch = Math.abs(absPos.x - s.c) < EPS && absPos.y >= s.min - EPS && absPos.y <= s.max + EPS;
+                        } else {
+                            touch = Math.abs(absPos.y - s.c) < EPS && absPos.x >= s.min - EPS && absPos.x <= s.max + EPS;
+                        }
+                        if (touch) {
+                            const val = wireValues.get(wire.id);
+                            if (val) {
+                                const parsed = parseGoal(val);
+                                if (parsed) {
+                                    connectedValue = { formula: parsed, type: wire.subType };
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (connectedValue) break;
+                }
+                
+                if (connectedValue && connectedValue.formula) {
+                    const renderSize = Math.min(drawW - screenInset * 2, drawH - screenInset * 2) * 0.85;
+                    formulaRenderer.render(ctx, connectedValue.formula, dx + drawW / 2, dy + drawH / 2, renderSize);
+                }
+            }
+            
+            // Draw ports
+            if (!isGhost) {
+                const nodePorts = getNodePorts(node as NodeData);
+                for (const port of nodePorts) {
+                    // Use local coordinates like other nodes (port.x, port.y are relative to node)
+                    drawPortCircle(dx + port.x * GRID_SIZE, dy + port.y * GRID_SIZE, 'any', port.id);
+                }
+            }
         }
 
         ctx.restore();
-    }, [GRID_SIZE, activeNodeIds, errorWireIds, errorNodePorts, flashPhase]);
+    }, [GRID_SIZE, activeNodeIds, errorWireIds, errorNodePorts, flashPhase, wireValues, nodes]);
 
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
@@ -734,14 +844,19 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         ctx.font = 'bold 32px "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText("GOAL", 0, -20);
+        ctx.fillText("GOAL", 0, -targetH/2 + 40);
         
-        if (displayGoalFormula) {
-            ctx.fillStyle = '#fff';
-            // Dynamically adjust font size based on formula length
-            const fontSize = displayGoalFormula.length > 15 ? 18 : 24;
-            ctx.font = `italic ${fontSize}px "Times New Roman", serif`;
-            ctx.fillText(displayGoalFormula, 0, 20);
+        if (goalFormula) {
+            const parsedGoalFormula = parseGoal(goalFormula);
+            if (parsedGoalFormula) {
+                const renderSize = Math.min(targetW, targetH) * 0.5;
+                formulaRenderer.render(ctx, parsedGoalFormula, 0, 20, renderSize);
+            } else {
+                ctx.fillStyle = '#fff';
+                const fontSize = displayGoalFormula.length > 15 ? 18 : 24;
+                ctx.font = `italic ${fontSize}px "Times New Roman", serif`;
+                ctx.fillText(displayGoalFormula, 0, 20);
+            }
         }
 
         const portR = 6;
@@ -768,20 +883,22 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
              ctx.stroke();
         };
 
-        const PORT_COUNT = TARGET_SIZE / 2; // 4 ports per side
-        for (let i = 0; i < PORT_COUNT; i++) {
-            // Ports at 1, 3, 5, 7 logical units relative to start
-            const offset = (i * 2 + 1) * GRID_SIZE;
-            const px = targetX + offset;
+        // Draw goal ports - one per 2 grid cells, matching getGoalPorts() logic
+        // Ports at -3, -1, 1, 3 relative to center (excluding corners at -4, 4)
+        const portOffsets = [-3, -1, 1, 3];
+        
+        // Top and Bottom edges
+        portOffsets.forEach(offset => {
+            const px = offset * GRID_SIZE;
             drawPort(px, targetY);
             drawPort(px, targetY + targetH);
-        }
-        for (let i = 0; i < PORT_COUNT; i++) {
-            const offset = (i * 2 + 1) * GRID_SIZE;
-            const py = targetY + offset;
+        });
+        // Left and Right edges
+        portOffsets.forEach(offset => {
+            const py = offset * GRID_SIZE;
             drawPort(targetX, py);
             drawPort(targetX + targetW, py);
-        }
+        });
         // --- Goal Block End ---
 
         // --- Nodes ---
@@ -801,6 +918,40 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             drawNode(ctx, activeTool, mouseGridPos.x * GRID_SIZE, mouseGridPos.y * GRID_SIZE, true);
         }
 
+        // --- Box Selection Rectangle ---
+        if (isBoxSelecting && boxSelectStart && boxSelectEnd) {
+            const x = Math.min(boxSelectStart.x, boxSelectEnd.x);
+            const y = Math.min(boxSelectStart.y, boxSelectEnd.y);
+            const w = Math.abs(boxSelectEnd.x - boxSelectStart.x);
+            const h = Math.abs(boxSelectEnd.y - boxSelectStart.y);
+            
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 2 / scale;
+            ctx.setLineDash([5 / scale, 5 / scale]);
+            ctx.strokeRect(x, y, w, h);
+            ctx.setLineDash([]);
+            
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.1)';
+            ctx.fillRect(x, y, w, h);
+        }
+        
+        // --- Selected Nodes Highlight ---
+        if (selectedNodeIds.size > 0) {
+            nodes.forEach(node => {
+                if (selectedNodeIds.has(node.id)) {
+                    const nx = node.x * GRID_SIZE;
+                    const ny = node.y * GRID_SIZE;
+                    const nw = node.w * GRID_SIZE;
+                    const nh = node.h * GRID_SIZE;
+                    
+                    ctx.strokeStyle = '#22c55e';
+                    ctx.lineWidth = 3 / scale;
+                    ctx.setLineDash([]);
+                    ctx.strokeRect(nx - 2, ny - 2, nw + 4, nh + 4);
+                }
+            });
+        }
+
         ctx.restore();
 
         // Debug Info
@@ -816,7 +967,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             // Level Solved indicator handled by HTML overlay in parent
         }
 
-    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, goalFormula, displayGoalFormula, isSolved, errorGoalPorts, flashPhase, currentStep]);
+    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, goalFormula, displayGoalFormula, isSolved, errorGoalPorts, flashPhase, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds]);
 
     // Handle Window Resize
     useEffect(() => {
@@ -836,6 +987,12 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
     useEffect(() => {
         draw();
     }, [draw]);
+
+    // Clear selection when tool or mode changes
+    useEffect(() => {
+        setSelectedNodeIds(new Set());
+        setSelectedWireIds(new Set());
+    }, [activeTool, selectMode]);
 
     // Key handlers
     useEffect(() => {
@@ -963,9 +1120,18 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                     return; 
                 }
 
-                // Pan start (Only if no tool is active)
-                setIsDragging(true);
-                setLastMousePos({ x: e.clientX, y: e.clientY });
+                // Box select mode
+                if (selectMode === 'box') {
+                    setIsBoxSelecting(true);
+                    setBoxSelectStart({ x: worldX, y: worldY });
+                    setBoxSelectEnd({ x: worldX, y: worldY });
+                    setSelectedNodeIds(new Set());
+                    setSelectedWireIds(new Set());
+                } else {
+                    // Pan start (Only if no tool is active)
+                    setIsDragging(true);
+                    setLastMousePos({ x: e.clientX, y: e.clientY });
+                }
             }
         }
     };
@@ -982,7 +1148,10 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         
         setMouseGridPos({ x: gx, y: gy });
 
-        if (isDragging) {
+        if (isBoxSelecting && boxSelectStart) {
+            // Update box selection end point
+            setBoxSelectEnd({ x: worldX, y: worldY });
+        } else if (isDragging) {
             const dx = e.clientX - lastMousePos.x;
             const dy = e.clientY - lastMousePos.y;
             setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
@@ -1145,6 +1314,33 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
     };
 
     const handleMouseUp = () => {
+        if (isBoxSelecting && boxSelectStart && boxSelectEnd) {
+            // Calculate selected nodes
+            const minX = Math.min(boxSelectStart.x, boxSelectEnd.x);
+            const maxX = Math.max(boxSelectStart.x, boxSelectEnd.x);
+            const minY = Math.min(boxSelectStart.y, boxSelectEnd.y);
+            const maxY = Math.max(boxSelectStart.y, boxSelectEnd.y);
+            
+            const newSelectedNodeIds = new Set<string>();
+            const newSelectedWireIds = new Set<string>();
+            
+            nodes.forEach(n => {
+                const nodeCenterX = (n.x + n.w / 2) * GRID_SIZE;
+                const nodeCenterY = (n.y + n.h / 2) * GRID_SIZE;
+                
+                if (nodeCenterX >= minX && nodeCenterX <= maxX && 
+                    nodeCenterY >= minY && nodeCenterY <= maxY) {
+                    if (!n.locked) {
+                        newSelectedNodeIds.add(n.id);
+                    }
+                }
+            });
+            
+            setSelectedNodeIds(newSelectedNodeIds);
+            setSelectedWireIds(newSelectedWireIds);
+            setIsBoxSelecting(false);
+        }
+        
         setIsDragging(false);
         setIsWirePainting(false);
         setLastWireGridPos(null);
@@ -1152,6 +1348,14 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
 
     const handleContextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
+        
+        // If there are selected nodes (box select mode), delete all selected
+        if (selectedNodeIds.size > 0) {
+            setNodes(prev => prev.filter(n => !selectedNodeIds.has(n.id)));
+            setSelectedNodeIds(new Set());
+            setSelectedWireIds(new Set());
+            return;
+        }
         
         // Calculate world coordinates in grid units
         const worldX = (e.clientX - offset.x) / scale;

@@ -221,7 +221,8 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
             const touchingIndices = findAllTouchingWires(absPos, wireNodes);
             touchingIndices.forEach(idx => {
                 const wire = wireNodes[idx];
-                if (wire.subType !== port.type) {
+                // 'any' type accepts both formula and provable
+                if (port.type !== 'any' && wire.subType !== port.type) {
                     addErrorPort(node.id, port.id);
                     markWireError(wire);
                 }
@@ -479,9 +480,9 @@ function getGoalPorts() {
     // Goal Block: [-4, -4] w=8 h=8
     const ports: {x: number, y: number}[] = [];
     const min = -4, max = 4;
-    // Ports at every integer offset relative to start (-4), excluding corners (-4, 4)
-    // -3, -2, -1, 0, 1, 2, 3
-    const steps = [-3, -2, -1, 0, 1, 2, 3];
+    // Ports at every 2 grid cells, excluding corners (-4, 4)
+    // -3, -1, 1, 3
+    const steps = [-3, -1, 1, 3];
     
     // Top (y=-4) and Bottom (y=4)
     steps.forEach(x => {
