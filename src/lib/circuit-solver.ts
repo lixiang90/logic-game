@@ -230,6 +230,60 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
         });
     });
 
+    // Check Display Nodes: All connected wires must have the same signal
+    nodes.forEach(node => {
+        if (node.type !== 'display') return;
+        const ports = getNodePorts(node);
+        const connectedValues: string[] = [];
+        const connectedWires: NodeData[] = [];
+        let hasConflictWire = false;
+        
+        ports.forEach(port => {
+            const absPos = getAbsolutePortPosition(node, port);
+            const touchingIndices = findAllTouchingWires(absPos, wireNodes);
+            touchingIndices.forEach(idx => {
+                const wire = wireNodes[idx];
+                connectedWires.push(wire);
+                
+                // Check if this wire is in a conflict net
+                const netIdx = nodeToNetIdx.get(wire.id);
+                if (netIdx !== undefined && conflictNetIndices.has(netIdx)) {
+                    hasConflictWire = true;
+                }
+            });
+        });
+        
+        // Get values of connected wires
+        connectedWires.forEach(wire => {
+            const netIdx = nodeToNetIdx.get(wire.id);
+            if (netIdx !== undefined) {
+                const val = netState[netIdx];
+                if (val !== null) {
+                    connectedValues.push(val.toString());
+                }
+            }
+        });
+        
+        // Check for conflict wire or different values
+        let hasError = hasConflictWire;
+        
+        // Check if all values are the same
+        if (connectedValues.length > 1) {
+            const firstValue = connectedValues[0];
+            const hasConflict = connectedValues.some(v => v !== firstValue);
+            if (hasConflict) {
+                hasError = true;
+            }
+        }
+        
+        if (hasError) {
+            // Mark all connected wires as errors
+            connectedWires.forEach(wire => markWireError(wire));
+            // Mark all ports as errors
+            ports.forEach(port => addErrorPort(node.id, port.id));
+        }
+    });
+
     // Check Goal Ports
     const goalPorts = getGoalPorts();
     const expectedGoalType = (goalObject instanceof Provable) ? 'provable' : 'formula';
@@ -264,10 +318,8 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
     // Collect wire values for tooltips
     const wireValues = new Map<string, string>();
     netState.forEach((val, netIdx) => {
-        if (val !== null) {
-            const valStr = val.toString();
-            nets[netIdx].forEach(w => wireValues.set(w.id, valStr));
-        }
+        const valStr = conflictNetIndices.has(netIdx) ? 'Error' : (val !== null ? val.toString() : '');
+        nets[netIdx].forEach(w => wireValues.set(w.id, valStr));
     });
 
     // Goal Block at [-4, -4] w=8 h=8

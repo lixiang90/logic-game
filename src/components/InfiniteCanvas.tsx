@@ -637,6 +637,14 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             bgColor = '#1a1a2e';
             borderColor = '#6366f1';
             
+            // Check for errors
+            const hasError = !isGhost && 'id' in node && 
+                Array.from(errorNodePorts.keys()).includes(node.id);
+            if (hasError) {
+                borderColor = '#ef4444';
+                bgColor = '#2a1a1a';
+            }
+            
             const isLarge = w > 4;
             const bodyR = isLarge ? 12 : 8;
             
@@ -653,50 +661,68 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             drawRoundedRect(ctx, dx + screenInset, dy + screenInset, drawW - screenInset * 2, drawH - screenInset * 2, 4);
             ctx.fillStyle = '#0a0a15';
             ctx.fill();
-            ctx.strokeStyle = '#4f46e5';
+            ctx.strokeStyle = hasError ? '#ef4444' : '#4f46e5';
             ctx.lineWidth = 1;
             ctx.stroke();
             
-            // Get connected value and render
+            // Show error message or connected value
             if (!isGhost && 'id' in node) {
-                const nodePorts = getNodePorts(node as NodeData);
-                let connectedValue: { formula: ReturnType<typeof parseGoal>, type: string } | null = null;
-                
-                for (const port of nodePorts) {
-                    const absPos = getAbsolutePortPosition(node as NodeData, port);
-                    // Check for connected wire
-                    const wireNodes = nodes.filter(n => n.type === 'wire');
-                    for (const wire of wireNodes) {
-                        const s = { 
-                            vertical: (wire.rotation === 1 || wire.rotation === 3), 
-                            c: wire.rotation === 1 ? wire.x : (wire.rotation === 3 ? wire.x + wire.w : (wire.rotation === 0 ? wire.y : wire.y + wire.h)),
-                            min: wire.rotation === 1 || wire.rotation === 3 ? wire.y : wire.x,
-                            max: wire.rotation === 1 || wire.rotation === 3 ? wire.y + wire.h : wire.x + wire.w
-                        };
-                        const EPS = 0.5;
-                        let touch = false;
-                        if (s.vertical) {
-                            touch = Math.abs(absPos.x - s.c) < EPS && absPos.y >= s.min - EPS && absPos.y <= s.max + EPS;
-                        } else {
-                            touch = Math.abs(absPos.y - s.c) < EPS && absPos.x >= s.min - EPS && absPos.x <= s.max + EPS;
-                        }
-                        if (touch) {
-                            const val = wireValues.get(wire.id);
-                            if (val) {
-                                const parsed = parseGoal(val);
-                                if (parsed) {
-                                    connectedValue = { formula: parsed, type: wire.subType };
-                                    break;
+                if (hasError) {
+                    // Show error indicator with flashing effect
+                    const errorSize = isLarge ? 48 : 32;
+                    const alpha = 0.5 + flashPhase * 0.5; // Flash between 0.5 and 1.0
+                    
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#ef4444';
+                    ctx.fillStyle = '#ef4444';
+                    ctx.font = `bold ${errorSize}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('!', dx + drawW / 2, dy + drawH / 2);
+                    ctx.restore();
+                } else {
+                    // Get connected value and render
+                    const nodePorts = getNodePorts(node as NodeData);
+                    let connectedValue: { formula: ReturnType<typeof parseGoal>, type: string } | null = null;
+                    
+                    for (const port of nodePorts) {
+                        const absPos = getAbsolutePortPosition(node as NodeData, port);
+                        // Check for connected wire
+                        const wireNodes = nodes.filter(n => n.type === 'wire');
+                        for (const wire of wireNodes) {
+                            const s = { 
+                                vertical: (wire.rotation === 1 || wire.rotation === 3), 
+                                c: wire.rotation === 1 ? wire.x : (wire.rotation === 3 ? wire.x + wire.w : (wire.rotation === 0 ? wire.y : wire.y + wire.h)),
+                                min: wire.rotation === 1 || wire.rotation === 3 ? wire.y : wire.x,
+                                max: wire.rotation === 1 || wire.rotation === 3 ? wire.y + wire.h : wire.x + wire.w
+                            };
+                            const EPS = 0.5;
+                            let touch = false;
+                            if (s.vertical) {
+                                touch = Math.abs(absPos.x - s.c) < EPS && absPos.y >= s.min - EPS && absPos.y <= s.max + EPS;
+                            } else {
+                                touch = Math.abs(absPos.y - s.c) < EPS && absPos.x >= s.min - EPS && absPos.x <= s.max + EPS;
+                            }
+                            if (touch) {
+                                const val = wireValues.get(wire.id);
+                                if (val && val !== 'Error') {
+                                    const parsed = parseGoal(val);
+                                    if (parsed) {
+                                        connectedValue = { formula: parsed, type: wire.subType };
+                                        break;
+                                    }
                                 }
                             }
                         }
+                        if (connectedValue) break;
                     }
-                    if (connectedValue) break;
-                }
-                
-                if (connectedValue && connectedValue.formula) {
-                    const renderSize = Math.min(drawW - screenInset * 2, drawH - screenInset * 2) * 0.85;
-                    formulaRenderer.render(ctx, connectedValue.formula, dx + drawW / 2, dy + drawH / 2, renderSize);
+                    
+                    if (connectedValue && connectedValue.formula) {
+                        const renderSize = Math.min(drawW - screenInset * 2, drawH - screenInset * 2) * 0.85;
+                        formulaRenderer.render(ctx, connectedValue.formula, dx + drawW / 2, dy + drawH / 2, renderSize);
+                    }
                 }
             }
             
@@ -1462,21 +1488,24 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                      position: 'absolute',
                      left: hoveredWireValue.x + 15,
                      top: hoveredWireValue.y + 15,
-                     backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                     border: '1px solid #334155',
+                     backgroundColor: hoveredWireValue.value === 'Error' ? 'rgba(127, 29, 29, 0.95)' : 'rgba(15, 23, 42, 0.95)',
+                     border: hoveredWireValue.value === 'Error' ? '1px solid #ef4444' : '1px solid #334155',
                      padding: '6px 10px',
                      borderRadius: '6px',
-                     color: '#e2e8f0',
+                     color: hoveredWireValue.value === 'Error' ? '#ef4444' : '#e2e8f0',
                      fontSize: '12px',
-                     fontFamily: '"Times New Roman", serif',
-                         fontStyle: 'italic',
-                         pointerEvents: 'none',
-                         whiteSpace: 'nowrap',
-                         zIndex: 100,
-                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-                     }}>
-                         {hoveredWireValue.value}
-                     </div>
+                     fontFamily: hoveredWireValue.value === 'Error' ? 'monospace' : '"Times New Roman", serif',
+                     fontStyle: hoveredWireValue.value === 'Error' ? 'normal' : 'italic',
+                     fontWeight: hoveredWireValue.value === 'Error' ? 'bold' : 'normal',
+                     pointerEvents: 'none',
+                     whiteSpace: 'nowrap',
+                     zIndex: 100,
+                     boxShadow: hoveredWireValue.value === 'Error' 
+                         ? '0 0 10px rgba(239, 68, 68, 0.5)' 
+                         : '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                 }}>
+                     {hoveredWireValue.value}
+                 </div>
             )}
         </div>
     );
