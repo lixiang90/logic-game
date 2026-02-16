@@ -49,6 +49,7 @@ export type TranslationKey =
     | 'tut-l3-combined'
     | 'tut-l4-combined' | 'tut-l5-combined'
     | 'tut-l6-combined' | 'tut-l7-combined'
+    | 'tut-l8-combined' | 'tut-l9-combined'
     // Level Titles and Descriptions
     | 'level-1-title' | 'level-1-desc'
     | 'level-2-title' | 'level-2-desc'
@@ -57,6 +58,8 @@ export type TranslationKey =
     | 'level-5-title' | 'level-5-desc'
     | 'level-6-title' | 'level-6-desc'
     | 'level-7-title' | 'level-7-desc'
+    | 'level-8-title' | 'level-8-desc'
+    | 'level-9-title' | 'level-9-desc'
     ;
 
 export const translations: Record<Language, Record<string, string>> = {
@@ -136,6 +139,12 @@ export const translations: Record<Language, Record<string, string>> = {
 
         // Level 7
         'tut-l7-combined': 'Level 7: MP2 Theorem\n\nGoal: Prove |-R from |-P, |-Q, and |-(P→(Q→R))\n\nThis requires using Modus Ponens twice:\n\nFirst MP:\n• Use |-P and |-(P→(Q→R)) to derive |-(Q→R)\n• Connect P and (Q→R) as the formula inputs\n• Connect |-P and |-(P→(Q→R)) as the provable inputs\n\nSecond MP:\n• Use |-Q and |-(Q→R) to derive |-R\n• Connect Q and R as the formula inputs\n• Connect |-Q and |-(Q→R) as the provable inputs\n\nFinally, connect the second MP output to the goal.\n\nNew Tool: Wire Bridge!\nThe Wire Bridge (⛩) allows wires to cross without merging. Use it when you need to route wires that would otherwise create unwanted connections. Place it between crossing wires and connect the wires to its ports.',
+        
+        // Level 8
+        'tut-l8-combined': 'Level 8: Axiom II\n\nAxiom II states: (A -> (B -> C)) -> ((A -> B) -> (A -> C)).\n\nGoal: (¬P -> (Q -> ¬R)) -> ((¬P -> Q) -> (¬P -> ¬R))\n\nThis matches Axiom II where:\nA = ¬P\nB = Q\nC = ¬R\n\nUse Axiom II node and construct the inputs A, B, C.\nUse Large Display to verify complex formulas!',
+
+        // Level 9
+        'tut-l9-combined': 'Level 9: Combined Proof\n\nGoal: ((P -> ¬(Q -> ¬R)) -> (P -> P))\n\nLet w = ¬(Q -> ¬R).\nTarget: (P -> w) -> (P -> P)\n\nSteps:\n1. Construct w = ¬(Q -> ¬R) using gates.\n2. Use Axiom I with A=P, B=w to get |-(P -> (w -> P)).\n3. Use Axiom II with A=P, B=(w->P), C=P to get |-((P -> (w -> P)) -> ((P -> w) -> (P -> P))).\n4. Use MP with results from 2 and 3 to get final result.\n\nUse Large Display to verify complex formulas!',
 
         'level-1-title': 'Level 1: Negation',
         'level-1-desc': 'Construct the formula ¬P using the Atom P and the Not gate.',
@@ -151,6 +160,10 @@ export const translations: Record<Language, Record<string, string>> = {
         'level-6-desc': 'Given assumptions P and P→Q, prove Q using Modus Ponens (MP).',
         'level-7-title': 'Level 7: MP2 Theorem',
         'level-7-desc': 'Given |-P, |-Q, and |-(P→(Q→R)), prove |-R using Modus Ponens twice.',
+        'level-8-title': 'Level 8: Axiom II',
+        'level-8-desc': 'Prove ⊢ (¬P -> (Q -> ¬R)) -> ((¬P -> Q) -> (¬P -> ¬R)) using Axiom II.',
+        'level-9-title': 'Level 9: Combined Proof',
+        'level-9-desc': 'Prove ⊢ ((P -> ¬(Q -> ¬R)) -> (P -> P)) using Axiom I, II, MP and Logic Gates. Hint: Let w = ¬(Q -> ¬R).',
     },
     zh: {
         gameTitle: '逻辑游戏',
@@ -229,6 +242,15 @@ export const translations: Record<Language, Record<string, string>> = {
         // Level 7
         'tut-l7-combined': '第 7 关：MP2 定理\n\n目标：从 |-P、|-Q 和 |-(P→(Q→R)) 证明 |-R\n\n这需要使用两次肯定前件律：\n\n第一次 MP：\n• 使用 |-P 和 |-(P→(Q→R)) 推导出 |-(Q→R)\n• 连接 P 和 (Q→R) 作为公式输入\n• 连接 |-P 和 |-(P→(Q→R)) 作为可证输入\n\n第二次 MP：\n• 使用 |-Q 和 |-(Q→R) 推导出 |-R\n• 连接 Q 和 R 作为公式输入\n• 连接 |-Q 和 |-(Q→R) 作为可证输入\n\n最后，将第二个 MP 的输出连接到目标。\n\n新工具：电线桥！\n电线桥 (⛩) 允许电线交叉而不合并。当你需要布线但电线会意外连接时，可以使用它。将电线桥放在交叉点，然后把电线连接到它的端口。',
 
+        // Level 8
+        'tut-l8-combined': '第 8 关：公理 II\n\n公理 II 内容为：(A -> (B -> C)) -> ((A -> B) -> (A -> C))。\n\n目标：(¬P -> (Q -> ¬R)) -> ((¬P -> Q) -> (¬P -> ¬R))\n\n这完全符合公理 II 的形式，其中：\nA = ¬P\nB = Q\nC = ¬R\n\n使用公理 II 节点并构造输入 A、B、C 即可。\n使用大显示屏来验证复杂的公式！',
+
+        // Level 9
+        'tut-l9-combined': '第 9 关：综合应用\n\n目标：((P -> ¬(Q -> ¬R)) -> (P -> P))\n\n令 w = ¬(Q -> ¬R)。\n目标化简为：(P -> w) -> (P -> P)\n\n步骤：\n1. 使用逻辑门构造 w = ¬(Q -> ¬R)。\n2. 使用公理 I (A=P, B=w) 得到 |-(P -> (w -> P))。\n3. 使用公理 II (A=P, B=(w->P), C=P) 得到 |-((P -> (w -> P)) -> ((P -> w) -> (P -> P)))。\n4. 对步骤 2 和 3 的结果使用 MP，得到最终结果。\n\n提示：使用大显示屏来验证复杂的公式！',
+
+        // Level 10
+        'tut-l10-combined': '第 10 关：Boss 关卡 - 同一律\n\n目标：证明 |- (P -> P)\n\n这是一个 Boss 关卡，你需要自己通过组合公理 I, II 和 MP 来完成证明。\n\n提示：\n你需要构造一个中间步骤，利用公理 I 和 II 推出：\n|- (P -> ((P -> P) -> P)) -> ((P -> (P -> P)) -> (P -> P))\n然后再通过 MP 和公理 I 消除前面的部分。',
+
         'level-1-title': '第 1 关: 否定',
         'level-1-desc': '使用原子 P 和非门构造公式 ¬P。',
         'level-2-title': '第 2 关：蕴含',
@@ -243,5 +265,11 @@ export const translations: Record<Language, Record<string, string>> = {
         'level-6-desc': '给定假设 P 和 P→Q，使用肯定前件律 (MP) 证明 Q。',
         'level-7-title': '第 7 关：MP2 定理',
         'level-7-desc': '给定 |-P、|-Q 和 |-(P→(Q→R))，两次运用肯定前件律证明 |-R。',
+        'level-8-title': '第 8 关：公理 II',
+        'level-8-desc': '引入公理 II。证明 ⊢ (¬P -> (Q -> ¬R)) -> ((¬P -> Q) -> (¬P -> ¬R))。',
+        'level-9-title': '第 9 关：综合应用',
+        'level-9-desc': '综合应用公理 I、II、MP 和逻辑门。证明 ⊢ ((P -> ¬(Q -> ¬R)) -> (P -> P))。\n\n提示：令 w = ¬(Q -> ¬R)。\n1. 用公理 I 得到 ⊢(P->(w->P))\n2. 用公理 II 得到 ⊢((P->(w->P))->((P->w)->(P->P)))\n3. 用 MP 得到 ⊢((P->w)->(P->P))',
+        'level-10-title': '第 10 关：同一律 (Boss)',
+        'level-10-desc': '证明同一律 ⊢ (P -> P)。这是一个 Boss 关卡！',
     }
 };

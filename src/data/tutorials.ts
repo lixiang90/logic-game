@@ -261,5 +261,56 @@ export const tutorials: Record<number, LevelTutorial> = {
                 position: 'center'
             }
         ]
+    },
+    7: {
+        levelIndex: 7,
+        steps: [
+            {
+                id: 'l8-combined',
+                textKey: 'tut-l8-combined',
+                trigger: 'LEVEL_COMPLETE',
+                position: 'center'
+            },
+            {
+                id: 'l8-finish',
+                textKey: 'tut-l1-finish',
+                trigger: 'LEVEL_COMPLETE',
+                position: 'center'
+            }
+        ]
+    },
+    8: {
+        levelIndex: 8,
+        steps: [
+            {
+                id: 'l9-combined',
+                textKey: 'tut-l9-combined',
+                trigger: 'LEVEL_COMPLETE',
+                position: 'center'
+            },
+            {
+                id: 'l9-finish',
+                textKey: 'tut-l1-finish',
+                trigger: 'LEVEL_COMPLETE',
+                position: 'center'
+            }
+        ]
+    },
+    9: {
+        levelIndex: 9,
+        steps: [
+            {
+                id: 'l10-combined',
+                textKey: 'tut-l10-combined',
+                trigger: 'LEVEL_COMPLETE',
+                position: 'center'
+            },
+            {
+                id: 'l10-finish',
+                textKey: 'tut-l1-finish',
+                trigger: 'LEVEL_COMPLETE',
+                position: 'center'
+            }
+        ]
     }
 };

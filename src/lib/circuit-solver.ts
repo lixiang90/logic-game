@@ -188,9 +188,14 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
                         if (wire.subType === port.type || port.type === 'any') {
                             const netIdx = nodeToNetIdx.get(wire.id);
                             if (netIdx !== undefined) {
-                                if (netState[netIdx] === null) {
-                                    netState[netIdx] = newVal;
-                                    changed = true;
+                                if (newVal !== null) {
+                                    const currentNetVal = netState[netIdx];
+                                    if (currentNetVal !== null && !isEqual(currentNetVal, newVal)) {
+                                        conflictNetIndices.add(netIdx);
+                                    } else if (currentNetVal === null) {
+                                        netState[netIdx] = newVal;
+                                        changed = true;
+                                    }
                                 }
                             }
                         }
@@ -322,9 +327,15 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
                     // Propagate to connected wires
                     for (const conn of [conn1, conn2]) {
                         if (conn.source === 'wire' && conn.netIdx !== undefined) {
-                            if (netState[conn.netIdx] === null) {
-                                netState[conn.netIdx] = newVal;
-                                changed = true;
+                            if (newVal !== null) {
+                                const netIdx = conn.netIdx;
+                                const currentNetVal = netState[netIdx];
+                                if (currentNetVal !== null && !isEqual(currentNetVal, newVal)) {
+                                    conflictNetIndices.add(netIdx);
+                                } else if (currentNetVal === null) {
+                                    netState[netIdx] = newVal;
+                                    changed = true;
+                                }
                             }
                         }
                     }
@@ -498,6 +509,36 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
             ports.forEach(port => addErrorPort(node.id, port.id));
         }
     });
+
+    // 5. Check Direct Node-to-Node Output Conflicts
+    const nonWireNodes = nodes.filter(n => n.type !== 'wire');
+    for (let i = 0; i < nonWireNodes.length; i++) {
+        const node = nonWireNodes[i];
+        const outputs = getNodePorts(node).filter(p => !p.isInput);
+        if (outputs.length === 0) continue;
+        
+        for (let j = i + 1; j < nonWireNodes.length; j++) {
+            const other = nonWireNodes[j];
+            const otherOutputs = getNodePorts(other).filter(p => !p.isInput);
+            if (otherOutputs.length === 0) continue;
+            
+            outputs.forEach(port => {
+                const absPos = getAbsolutePortPosition(node, port);
+                otherOutputs.forEach(otherPort => {
+                    const otherPos = getAbsolutePortPosition(other, otherPort);
+                    if (Math.abs(absPos.x - otherPos.x) < 0.1 && Math.abs(absPos.y - otherPos.y) < 0.1) {
+                         const val1 = state.get(node.id);
+                         const val2 = state.get(other.id);
+                         
+                         if (val1 && val2 && !isEqual(val1, val2)) {
+                             addErrorPort(node.id, port.id);
+                             addErrorPort(other.id, otherPort.id);
+                         }
+                    }
+                });
+            });
+        }
+    }
 
     // Check Goal Ports
     const goalPorts = getGoalPorts();

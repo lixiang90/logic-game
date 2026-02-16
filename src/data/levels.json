@@ -126,5 +126,32 @@
       ],
       "wires": []
     }
+  },
+  {
+    "id": "level-8",
+    "title": "Level 8: Axiom II",
+    "description": "Prove ⊢ (¬P -> (Q -> ¬R)) -> ((¬P -> Q) -> (¬P -> ¬R)) using Axiom II.",
+    "goal": {
+      "formula": "|-(-.P->(Q->-.R))->((-.P->Q)->(-.P->-.R))"
+    },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "gate:implies", "gate:not", "axiom:2", "display:small", "display:large", "bridge"]
+  },
+  {
+    "id": "level-9",
+    "title": "Level 9: Combined Proof",
+    "description": "Prove ⊢ ((P -> ¬(Q -> ¬R)) -> (P -> P)) using Axiom I, II, MP and Logic Gates.",
+    "goal": {
+      "formula": "|-((P->-.(Q->-.R))->(P->P))"
+    },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "gate:implies", "gate:not", "axiom:1", "axiom:2", "mp", "display:small", "display:large", "bridge"]
+  },
+  {
+    "id": "level-10",
+    "title": "Level 10: Identity Theorem (Boss)",
+    "description": "Prove ⊢ (P -> P). This is the first Boss Level!",
+    "goal": {
+      "formula": "|-(P->P)"
+    },
+    "unlockedTools": ["atom:P", "gate:implies", "axiom:1", "axiom:2", "mp", "display:small", "display:large", "bridge"]
   }
 ]
