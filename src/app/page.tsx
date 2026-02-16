@@ -378,7 +378,7 @@ export default function Home() {
         onSelectTool={setActiveTool}
         selectMode={selectMode}
         onSelectModeChange={setSelectMode}
-        unlockedTools={isFreeBuild ? ['atom:P', 'atom:Q', 'atom:R', 'gate:implies', 'gate:not', 'axiom:1', 'axiom:2', 'axiom:3', 'mp'] : currentLevel.unlockedTools}
+        unlockedTools={isFreeBuild ? ['atom:P', 'atom:Q', 'atom:R', 'gate:implies', 'gate:not', 'axiom:1', 'axiom:2', 'axiom:3', 'mp', 'bridge', 'display:small', 'display:large'] : currentLevel.unlockedTools}
       />
       <TutorialOverlay />
     </main>

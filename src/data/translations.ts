@@ -48,7 +48,7 @@ export type TranslationKey =
     | 'tut-l2-wire-p' | 'tut-l2-wire-q' | 'tut-l2-connect-goal'
     | 'tut-l3-combined'
     | 'tut-l4-combined' | 'tut-l5-combined'
-    | 'tut-l6-combined'
+    | 'tut-l6-combined' | 'tut-l7-combined'
     // Level Titles and Descriptions
     | 'level-1-title' | 'level-1-desc'
     | 'level-2-title' | 'level-2-desc'
@@ -56,6 +56,7 @@ export type TranslationKey =
     | 'level-4-title' | 'level-4-desc'
     | 'level-5-title' | 'level-5-desc'
     | 'level-6-title' | 'level-6-desc'
+    | 'level-7-title' | 'level-7-desc'
     ;
 
 export const translations: Record<Language, Record<string, string>> = {
@@ -133,6 +134,9 @@ export const translations: Record<Language, Record<string, string>> = {
         // Level 6
         'tut-l6-combined': 'Level 6: Modus Ponens (MP)\n\nThis level introduces the Modus Ponens (MP) rule: If P is true, and P -> Q is true, then Q is true.\n\nInstructions:\n1. Place the "Modus Ponens" node.\n2. Connect Atom P to the MP\'s first BLUE input port (in1).\n3. Connect Atom Q to the MP\'s second BLUE input port (in2).\n4. Connect the left premise |-P (Yellow wire) to the MP\'s first YELLOW input port (in3).\n5. Connect the left premise |-(P->Q) (Yellow wire) to the MP\'s second YELLOW input port (in4).\n6. Connect the MP output to the goal.\n\nTip: If you hide this hint, you can always click the "❓" button in the top right corner to show it again.',
 
+        // Level 7
+        'tut-l7-combined': 'Level 7: MP2 Theorem\n\nGoal: Prove |-R from |-P, |-Q, and |-(P→(Q→R))\n\nThis requires using Modus Ponens twice:\n\nFirst MP:\n• Use |-P and |-(P→(Q→R)) to derive |-(Q→R)\n• Connect P and (Q→R) as the formula inputs\n• Connect |-P and |-(P→(Q→R)) as the provable inputs\n\nSecond MP:\n• Use |-Q and |-(Q→R) to derive |-R\n• Connect Q and R as the formula inputs\n• Connect |-Q and |-(Q→R) as the provable inputs\n\nFinally, connect the second MP output to the goal.\n\nNew Tool: Wire Bridge!\nThe Wire Bridge (⛩) allows wires to cross without merging. Use it when you need to route wires that would otherwise create unwanted connections. Place it between crossing wires and connect the wires to its ports.',
+
         'level-1-title': 'Level 1: Negation',
         'level-1-desc': 'Construct the formula ¬P using the Atom P and the Not gate.',
         'level-2-title': 'Level 2: Implication',
@@ -145,6 +149,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'level-5-desc': 'Prove ⊢ (P → ((P → P) → P)) using Axiom I.',
         'level-6-title': 'Level 6: Modus Ponens',
         'level-6-desc': 'Given assumptions P and P→Q, prove Q using Modus Ponens (MP).',
+        'level-7-title': 'Level 7: MP2 Theorem',
+        'level-7-desc': 'Given |-P, |-Q, and |-(P→(Q→R)), prove |-R using Modus Ponens twice.',
     },
     zh: {
         gameTitle: '逻辑游戏',
@@ -220,6 +226,9 @@ export const translations: Record<Language, Record<string, string>> = {
         // Level 6
         'tut-l6-combined': '第 6 关：肯定前件 (Modus Ponens)\n\n本关引入 Modus Ponens (MP) 规则：如果已知 P 为真，且 P -> Q 为真，则 Q 为真。\n\n操作步骤：\n1. 放置 "Modus Ponens" 节点。\n2. 将原子 P 连接到 MP 的第一个蓝色输入端口 (in1)。\n3. 将原子 Q 连接到 MP 的第二个蓝色输入端口 (in2)。\n4. 将左侧的 |-P 前提（黄色线）连接到 MP 的第一个黄色输入端口 (in3)。\n5. 将左侧的 |-(P->Q) 前提（黄色线）连接到 MP 的第二个黄色输入端口 (in4)。\n6. 将 MP 的输出连接到目标。\n\n提示：如果你关闭了提示，可以随时点击右上角的 "❓" 按钮重新查看。',
 
+        // Level 7
+        'tut-l7-combined': '第 7 关：MP2 定理\n\n目标：从 |-P、|-Q 和 |-(P→(Q→R)) 证明 |-R\n\n这需要使用两次肯定前件律：\n\n第一次 MP：\n• 使用 |-P 和 |-(P→(Q→R)) 推导出 |-(Q→R)\n• 连接 P 和 (Q→R) 作为公式输入\n• 连接 |-P 和 |-(P→(Q→R)) 作为可证输入\n\n第二次 MP：\n• 使用 |-Q 和 |-(Q→R) 推导出 |-R\n• 连接 Q 和 R 作为公式输入\n• 连接 |-Q 和 |-(Q→R) 作为可证输入\n\n最后，将第二个 MP 的输出连接到目标。\n\n新工具：电线桥！\n电线桥 (⛩) 允许电线交叉而不合并。当你需要布线但电线会意外连接时，可以使用它。将电线桥放在交叉点，然后把电线连接到它的端口。',
+
         'level-1-title': '第 1 关: 否定',
         'level-1-desc': '使用原子 P 和非门构造公式 ¬P。',
         'level-2-title': '第 2 关：蕴含',
@@ -232,5 +241,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'level-5-desc': '使用公理 I 证明 ⊢ (P → ((P → P) → P))。',
         'level-6-title': '第 6 关：肯定前件',
         'level-6-desc': '给定假设 P 和 P→Q，使用肯定前件律 (MP) 证明 Q。',
+        'level-7-title': '第 7 关：MP2 定理',
+        'level-7-desc': '给定 |-P、|-Q 和 |-(P→(Q→R))，两次运用肯定前件律证明 |-R。',
     }
 };

@@ -244,5 +244,22 @@ export const tutorials: Record<number, LevelTutorial> = {
                 position: 'center'
             }
         ]
+    },
+    6: {
+        levelIndex: 6,
+        steps: [
+            {
+                id: 'l7-combined',
+                textKey: 'tut-l7-combined',
+                trigger: 'LEVEL_COMPLETE',
+                position: 'center'
+            },
+            {
+                id: 'l7-finish',
+                textKey: 'tut-l1-finish',
+                trigger: 'LEVEL_COMPLETE',
+                position: 'center'
+            }
+        ]
     }
 };

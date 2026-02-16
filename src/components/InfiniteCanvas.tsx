@@ -734,6 +734,80 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                     drawPortCircle(dx + port.x * GRID_SIZE, dy + port.y * GRID_SIZE, 'any', port.id);
                 }
             }
+        } else if (node.type === 'bridge') {
+            // Wire Bridge - small 2x2 node that allows wires to cross
+            // Visual: One wire appears to go over the other (overpass effect)
+            
+            const bridgeActive = !isGhost && 'id' in node && activeNodeIds.has(node.id);
+            
+            const bridgeColor = '#374151';
+            const activeColor = '#4b5563';
+            const bottomLineColor = bridgeActive ? '#9ca3af' : '#6b7280';
+            const topLineColor = bridgeActive ? '#f3f4f6' : '#d1d5db';
+            
+            ctx.fillStyle = bridgeActive ? activeColor : bridgeColor;
+            ctx.strokeStyle = bridgeActive ? '#9ca3af' : '#4b5563';
+            ctx.lineWidth = 1;
+            
+            // Draw bridge body - rounded rectangle
+            const br = 4;
+            drawRoundedRect(ctx, dx, dy, drawW, drawH, br);
+            ctx.fill();
+            ctx.stroke();
+            
+            const cx = dx + drawW / 2;
+            const cy = dy + drawH / 2;
+            const gapSize = 6;
+            const lineThickness = 3;
+            
+            // First, draw the "bottom" horizontal wire with a gap at intersection
+            ctx.strokeStyle = bottomLineColor;
+            ctx.lineWidth = lineThickness;
+            ctx.lineCap = 'butt';
+            
+            // Horizontal line (left part, up to gap)
+            ctx.beginPath();
+            ctx.moveTo(dx + drawW * 0.15, cy);
+            ctx.lineTo(cx - gapSize / 2, cy);
+            ctx.stroke();
+            
+            // Horizontal line (right part, from gap)
+            ctx.beginPath();
+            ctx.moveTo(cx + gapSize / 2, cy);
+            ctx.lineTo(dx + drawW * 0.85, cy);
+            ctx.stroke();
+            
+            // Draw shadow/depth under the vertical bridge (pillow effect)
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, gapSize / 2 + 1, gapSize / 2 + 1, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw the "top" vertical wire that goes over (the bridge)
+            ctx.strokeStyle = topLineColor;
+            ctx.lineWidth = lineThickness;
+            ctx.lineCap = 'round';
+            
+            ctx.beginPath();
+            ctx.moveTo(cx, dy + drawH * 0.15);
+            ctx.lineTo(cx, dy + drawH * 0.85);
+            ctx.stroke();
+            
+            // Draw highlight on the vertical wire to enhance 3D effect
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cx - 1, dy + drawH * 0.2);
+            ctx.lineTo(cx - 1, dy + drawH * 0.8);
+            ctx.stroke();
+            
+            // Draw ports
+            if (!isGhost) {
+                const nodePorts = getNodePorts(node as NodeData);
+                for (const port of nodePorts) {
+                    drawPortCircle(dx + port.x * GRID_SIZE, dy + port.y * GRID_SIZE, 'any', port.id);
+                }
+            }
         }
 
         ctx.restore();

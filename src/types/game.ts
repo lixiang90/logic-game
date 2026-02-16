@@ -1,5 +1,5 @@
 
-export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'wire' | 'premise' | 'display';
+export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'wire' | 'premise' | 'display' | 'bridge';
 
 export interface NodeData {
     id: string;

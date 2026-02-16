@@ -79,5 +79,52 @@
       ],
       "wires": []
     }
+  },
+  {
+    "id": "level-7",
+    "title": "Level 7: MP Theorem",
+    "description": "Given |-P, |-Q, and |-(P→(Q→R)), prove |-R using Modus Ponens twice.",
+    "goal": {
+      "formula": "|-R"
+    },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "gate:implies", "mp", "display:small", "bridge"],
+    "initialState": {
+      "nodes": [
+        {
+          "id": "premise-1",
+          "type": "premise",
+          "subType": "P",
+          "customLabel": "P",
+          "x": -28,
+          "y": -12,
+          "w": 6,
+          "h": 6,
+          "locked": true
+        },
+        {
+          "id": "premise-2",
+          "type": "premise",
+          "subType": "Q",
+          "customLabel": "Q",
+          "x": -28,
+          "y": 0,
+          "w": 6,
+          "h": 6,
+          "locked": true
+        },
+        {
+          "id": "premise-3",
+          "type": "premise",
+          "subType": "P->(Q->R)",
+          "customLabel": "P->(Q->R)",
+          "x": -28,
+          "y": 12,
+          "w": 6,
+          "h": 6,
+          "locked": true
+        }
+      ],
+      "wires": []
+    }
   }
 ]

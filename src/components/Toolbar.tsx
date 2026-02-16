@@ -27,6 +27,7 @@ export default function Toolbar({ activeTool, onSelectTool, selectMode = 'pointe
         if (type === 'wire') return true; // Wire always unlocked
         if (type === 'mp' && unlockedTools.includes('mp')) return true;
         if (type === 'display' && subType && unlockedTools.includes(`display:${subType}`)) return true;
+        if (type === 'bridge') return unlockedTools.includes('bridge');
         return unlockedTools.includes(`${type}:${subType}`);
     };
 
@@ -99,6 +100,27 @@ export default function Toolbar({ activeTool, onSelectTool, selectMode = 'pointe
                             </svg>
                         )}
                     </div>
+
+                    {/* Wire Bridge Tool */}
+                    {isUnlocked('bridge') && (
+                    <div 
+                        id="tool-bridge"
+                        onClick={() => handleSelect('bridge', 'bridge', 2, 2)}
+                        className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
+                                text-slate-200 bg-slate-800 border border-slate-600
+                                hover:-translate-y-1 hover:bg-slate-700 hover:scale-110 active:scale-95 rounded-md
+                                ${activeTool?.type === 'bridge' ? activeClass : ''}`}
+                        title="Wire Bridge - Allows wires to cross without merging (R to rotate)"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M6 12h4"></path>
+                            <path d="M14 12h4"></path>
+                            <path d="M12 6v4"></path>
+                            <path d="M12 14v4"></path>
+                            <circle cx="12" cy="12" r="3" fill="none"></circle>
+                        </svg>
+                    </div>
+                    )}
                 </div>
             </div>
 

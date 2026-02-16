@@ -113,6 +113,24 @@ export const getNodePorts = (node: NodeData): Port[] => {
             ports.push({ id: 'in_r2', x: w, y: h / 2, type: 'any', isInput: true });
             ports.push({ id: 'in_r3', x: w, y: h - step, type: 'any', isInput: true });
         }
+    } else if (type === 'bridge') {
+        // Wire Bridge: 2x2 node with 4 ports (left, right, top, bottom)
+        // Allows wires to cross without merging
+        // Each port is bidirectional - signal passes through to opposite side
+        const w2 = w / 2;
+        const h2 = h / 2;
+        
+        // Left port (west) - connects to right
+        ports.push({ id: 'left', x: 0, y: h2, type: 'any', isInput: true });
+        
+        // Right port (east) - connects to left
+        ports.push({ id: 'right', x: w, y: h2, type: 'any', isInput: true });
+        
+        // Top port (north) - connects to bottom
+        ports.push({ id: 'top', x: w2, y: 0, type: 'any', isInput: true });
+        
+        // Bottom port (south) - connects to top
+        ports.push({ id: 'bottom', x: w2, y: h, type: 'any', isInput: true });
     }
 
     return ports;

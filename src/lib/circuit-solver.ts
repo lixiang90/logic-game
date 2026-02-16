@@ -133,20 +133,236 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
     const netState = new Array<Formula | Provable | null>(nets.length).fill(null);
     const conflictNetIndices = new Set<number>(); // Track short-circuited nets
 
+    // Bridge channel states: bridge.id -> { horizontalFormula, horizontalProvable, verticalFormula, verticalProvable }
+    const bridgeChannels = new Map<string, { 
+        hf: Formula | null, 
+        hp: Provable | null, 
+        vf: Formula | null, 
+        vp: Provable | null 
+    }>();
+
     let changed = true;
     let iterations = 0;
     const MAX_ITERATIONS = 50;
+
+    // Helper to get port absolute position
+    const getPortAbsPos = (node: NodeData, portId: string) => {
+        const ports = getNodePorts(node);
+        const port = ports.find(p => p.id === portId);
+        if (!port) return null;
+        return getAbsolutePortPosition(node, port);
+    };
+
+    // Helper to find net touching a bridge port
+    const findNetAtPort = (node: NodeData, portId: string, wireType?: string): number | null => {
+        const absPos = getPortAbsPos(node, portId);
+        if (!absPos) return null;
+        const idx = findTouchingWire(absPos, wireNodes, wireType);
+        if (idx === -1) return null;
+        return nodeToNetIdx.get(wireNodes[idx].id) ?? null;
+    };
 
     while (changed && iterations < MAX_ITERATIONS) {
         changed = false;
         iterations++;
 
-        // Update Nodes
+        // Step 1: Process source nodes (Atom, Premise) FIRST so bridges can read from them
         for (const node of nodes) {
-            if (node.type === 'wire') continue; // Wires handled by nets
+            if (node.type === 'wire' || node.type === 'bridge') continue;
+            if (node.type !== 'atom' && node.type !== 'premise') continue;
 
             const oldVal = state.get(node.id);
-            const newVal = computeNodeOutput(node, nodes, state, netState, nodeToNetIdx);
+            const newVal = computeNodeOutput(node, nodes, state, netState, nodeToNetIdx, bridgeChannels);
+
+            if (!isEqual(oldVal, newVal)) {
+                state.set(node.id, newVal);
+                changed = true;
+                
+                // Push output to connected wires
+                const outputPorts = getNodePorts(node).filter(p => !p.isInput);
+                for (const port of outputPorts) {
+                    const absPos = getAbsolutePortPosition(node, port);
+                    const touchingWireIdx = findTouchingWire(absPos, wireNodes, port.type);
+                    if (touchingWireIdx !== -1) {
+                        const wire = wireNodes[touchingWireIdx];
+                        if (wire.subType === port.type || port.type === 'any') {
+                            const netIdx = nodeToNetIdx.get(wire.id);
+                            if (netIdx !== undefined) {
+                                if (netState[netIdx] === null) {
+                                    netState[netIdx] = newVal;
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Step 2: Process bridges so MP and gates can read from them
+        for (const node of nodes) {
+            if (node.type !== 'bridge') continue;
+
+            // Initialize bridge channels with 4 separate tracks
+            if (!bridgeChannels.has(node.id)) {
+                bridgeChannels.set(node.id, { hf: null, hp: null, vf: null, vp: null });
+            }
+            const channels = bridgeChannels.get(node.id)!;
+
+            // Helper to get value and type at a bridge port - reads from node state directly
+            const getPortConnection = (portId: string): { value: Formula | Provable | null; type: 'formula' | 'provable' | null; source: 'wire' | 'node' | 'bridge' | null; netIdx?: number } => {
+                const portPos = getPortAbsPos(node, portId);
+                if (!portPos) return { value: null, type: null, source: null };
+
+                const EPS = 0.1;
+
+                // 1. Check for touching wire
+                for (let i = 0; i < wireNodes.length; i++) {
+                    const wire = wireNodes[i];
+                    const s = getWireSegment(wire);
+                    let touch = false;
+                    if (s.vertical) {
+                        touch = Math.abs(portPos.x - s.c) < EPS && portPos.y >= s.min - EPS && portPos.y <= s.max + EPS;
+                    } else {
+                        touch = Math.abs(portPos.y - s.c) < EPS && portPos.x >= s.min - EPS && portPos.x <= s.max + EPS;
+                    }
+                    if (touch) {
+                        const netIdx = nodeToNetIdx.get(wire.id);
+                        if (netIdx !== undefined) {
+                            return { 
+                                value: netState[netIdx], 
+                                type: wire.subType === 'formula' ? 'formula' : 'provable',
+                                source: 'wire',
+                                netIdx: netIdx
+                            };
+                        }
+                    }
+                }
+
+                // 2. Check for direct node output connection - READ FROM STATE
+                for (const otherNode of nodes) {
+                    if (otherNode.id === node.id || otherNode.type === 'wire') continue;
+
+                    // For bridges, read from their channels
+                    if (otherNode.type === 'bridge') {
+                        const otherPorts = getNodePorts(otherNode);
+                        for (const otherPort of otherPorts) {
+                            const otherPos = getAbsolutePortPosition(otherNode, otherPort);
+                            if (Math.abs(otherPos.x - portPos.x) < EPS && Math.abs(otherPos.y - portPos.y) < EPS) {
+                                const otherChannels = bridgeChannels.get(otherNode.id);
+                                if (otherChannels) {
+                                    const isHorizontal = otherPort.id === 'left' || otherPort.id === 'right';
+                                    if (isHorizontal) {
+                                        if (otherChannels.hf !== null) return { value: otherChannels.hf, type: 'formula', source: 'bridge' };
+                                        if (otherChannels.hp !== null) return { value: otherChannels.hp, type: 'provable', source: 'bridge' };
+                                    } else {
+                                        if (otherChannels.vf !== null) return { value: otherChannels.vf, type: 'formula', source: 'bridge' };
+                                        if (otherChannels.vp !== null) return { value: otherChannels.vp, type: 'provable', source: 'bridge' };
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // For regular nodes, check if output port touches our port
+                        const otherPorts = getNodePorts(otherNode).filter(p => !p.isInput);
+                        for (const otherPort of otherPorts) {
+                            const otherPos = getAbsolutePortPosition(otherNode, otherPort);
+                            if (Math.abs(otherPos.x - portPos.x) < EPS && Math.abs(otherPos.y - portPos.y) < EPS) {
+                                const otherVal = state.get(otherNode.id);
+                                if (otherVal !== null && otherVal !== undefined) {
+                                    const isFormula = otherVal instanceof Formula && !(otherVal instanceof Provable);
+                                    return { 
+                                        value: otherVal, 
+                                        type: isFormula ? 'formula' : 'provable',
+                                        source: 'node'
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return { value: null, type: null, source: null };
+            };
+
+            // Get connections at each port
+            const leftConn = getPortConnection('left');
+            const rightConn = getPortConnection('right');
+            const topConn = getPortConnection('top');
+            const bottomConn = getPortConnection('bottom');
+
+            // Process channels
+            const processChannel = (
+                conn1: ReturnType<typeof getPortConnection>, 
+                conn2: ReturnType<typeof getPortConnection>,
+                channelKey: 'hf' | 'hp' | 'vf' | 'vp'
+            ) => {
+                const type1 = conn1.type;
+                const type2 = conn2.type;
+                
+                if (!type1 && !type2) return;
+                if (type1 && type2 && type1 !== type2) return;
+                
+                const effectiveType = type1 || type2;
+                if (!effectiveType) return;
+
+                const values: (Formula | Provable)[] = [];
+                if (conn1.value !== null) values.push(conn1.value);
+                if (conn2.value !== null) values.push(conn2.value);
+
+                if (values.length > 0) {
+                    const newVal = values[0];
+                    const oldVal = channels[channelKey];
+                    
+                    if (!isEqual(oldVal, newVal)) {
+                        (channels as Record<typeof channelKey, Formula | Provable | null>)[channelKey] = newVal;
+                        changed = true;
+                    }
+
+                    // Propagate to connected wires
+                    for (const conn of [conn1, conn2]) {
+                        if (conn.source === 'wire' && conn.netIdx !== undefined) {
+                            if (netState[conn.netIdx] === null) {
+                                netState[conn.netIdx] = newVal;
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            };
+
+            // Process channels
+            if ((leftConn.type === 'formula' || rightConn.type === 'formula') && 
+                (!leftConn.type || !rightConn.type || leftConn.type === rightConn.type)) {
+                processChannel(leftConn, rightConn, 'hf');
+            }
+            if ((leftConn.type === 'provable' || rightConn.type === 'provable') && 
+                (!leftConn.type || !rightConn.type || leftConn.type === rightConn.type)) {
+                processChannel(leftConn, rightConn, 'hp');
+            }
+            if ((topConn.type === 'formula' || bottomConn.type === 'formula') && 
+                (!topConn.type || !bottomConn.type || topConn.type === bottomConn.type)) {
+                processChannel(topConn, bottomConn, 'vf');
+            }
+            if ((topConn.type === 'provable' || bottomConn.type === 'provable') && 
+                (!topConn.type || !bottomConn.type || topConn.type === bottomConn.type)) {
+                processChannel(topConn, bottomConn, 'vp');
+            }
+
+            // Mark bridge as active
+            if (channels.hf !== null || channels.hp !== null || channels.vf !== null || channels.vp !== null) {
+                state.set(node.id, channels.hf || channels.hp || channels.vf || channels.vp);
+            }
+        }
+
+        // Update Nodes (excluding bridges) - AFTER bridges so they can read bridge values
+        // Step 3: Process remaining nodes (gates, axioms, mp) - AFTER bridges
+        for (const node of nodes) {
+            if (node.type === 'wire' || node.type === 'bridge') continue;
+            if (node.type === 'atom' || node.type === 'premise') continue; // Already processed
+
+            const oldVal = state.get(node.id);
+            const newVal = computeNodeOutput(node, nodes, state, netState, nodeToNetIdx, bridgeChannels);
 
             if (!isEqual(oldVal, newVal)) {
                 state.set(node.id, newVal);
@@ -161,7 +377,7 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
                     if (touchingWireIdx !== -1) {
                         const wire = wireNodes[touchingWireIdx];
                         // Strict Type Check: Wire must match Port type
-                        if (wire.subType === port.type) {
+                        if (wire.subType === port.type || port.type === 'any') {
                             const netIdx = nodeToNetIdx.get(wire.id);
                             if (netIdx !== undefined) {
                                 const oldNetVal = netState[netIdx];
@@ -169,7 +385,6 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
                                 // Conflict Detection (Short Circuit)
                                 if (oldNetVal !== null && !isEqual(oldNetVal, newVal)) {
                                     conflictNetIndices.add(netIdx);
-                                    // Do not update value to prevent oscillation
                                 } else if (!isEqual(oldNetVal, newVal)) {
                                     netState[netIdx] = newVal;
                                     changed = true;
@@ -389,7 +604,8 @@ function computeNodeOutput(
     allNodes: NodeData[], 
     state: CircuitState, 
     netState: (Formula | Provable | null)[],
-    nodeToNetIdx: Map<string, number>
+    nodeToNetIdx: Map<string, number>,
+    bridgeChannels: Map<string, { hf: Formula | null; hp: Provable | null; vf: Formula | null; vp: Provable | null }>
 ): Formula | Provable | null {
 
     // Helper to get input value
@@ -419,13 +635,49 @@ function computeNodeOutput(
         for (const otherNode of allNodes) {
             if (otherNode.id === node.id || otherNode.type === 'wire') continue;
             
-            // Get output ports of otherNode
-            const otherPorts = getNodePorts(otherNode).filter(p => !p.isInput);
-            for (const otherPort of otherPorts) {
-                const otherAbsPos = getAbsolutePortPosition(otherNode, otherPort);
-                if (Math.abs(otherAbsPos.x - absPos.x) < EPS && Math.abs(otherAbsPos.y - absPos.y) < EPS) {
-                    const val = state.get(otherNode.id);
-                    if (val) return val;
+            if (otherNode.type === 'bridge') {
+                // Check if connected to a bridge port
+                const bridgePorts = getNodePorts(otherNode);
+                for (const bridgePort of bridgePorts) {
+                    const bridgePos = getAbsolutePortPosition(otherNode, bridgePort);
+                    if (Math.abs(bridgePos.x - absPos.x) < EPS && Math.abs(bridgePos.y - absPos.y) < EPS) {
+                        // Get value from bridge channel
+                        const otherChannels = bridgeChannels.get(otherNode.id);
+                        if (otherChannels) {
+                            // Determine which channel based on port direction
+                            const isHorizontal = bridgePort.id === 'left' || bridgePort.id === 'right';
+                            let val: Formula | Provable | null = null;
+                            
+                            if (isHorizontal) {
+                                if (port.type === 'formula' || port.type === 'any') {
+                                    val = otherChannels.hf;
+                                }
+                                if (!val && (port.type === 'provable' || port.type === 'any')) {
+                                    val = otherChannels.hp;
+                                }
+                            } else {
+                                if (port.type === 'formula' || port.type === 'any') {
+                                    val = otherChannels.vf;
+                                }
+                                if (!val && (port.type === 'provable' || port.type === 'any')) {
+                                    val = otherChannels.vp;
+                                }
+                            }
+                            
+                            if (val) return val;
+                        }
+                    }
+                }
+                continue; // Skip the regular port filtering for bridges
+            } else {
+                // Get output ports of otherNode
+                const otherPorts = getNodePorts(otherNode).filter(p => !p.isInput);
+                for (const otherPort of otherPorts) {
+                    const otherAbsPos = getAbsolutePortPosition(otherNode, otherPort);
+                    if (Math.abs(otherAbsPos.x - absPos.x) < EPS && Math.abs(otherAbsPos.y - absPos.y) < EPS) {
+                        const val = state.get(otherNode.id);
+                        if (val) return val;
+                    }
                 }
             }
         }
@@ -491,6 +743,9 @@ function computeNodeOutput(
             return new Provable(formula);
         }
     }
+
+    // Bridge nodes are handled separately in the main solver loop
+    // They don't use computeNodeOutput because they have multiple independent channels
 
     return null;
 }

@@ -69,7 +69,7 @@ export default function TutorialOverlay() {
             {/* Tutorial Message Box */}
             <div className={`fixed z-[100] w-64 p-6 bg-slate-900/95 text-white rounded-xl shadow-2xl border border-blue-500/50 backdrop-blur-sm transition-all duration-300 ${currentPositionClass}`}>
                 <div className="flex flex-col gap-4">
-                    <div className="text-sm font-medium leading-relaxed whitespace-pre-wrap">
+                    <div className="text-sm font-medium leading-relaxed whitespace-pre-wrap overflow-y-auto max-h-[calc(100vh-220px)] pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
                         {t(currentStep.textKey)}
                     </div>
                     
