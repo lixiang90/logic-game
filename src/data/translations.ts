@@ -50,6 +50,7 @@ export type TranslationKey =
     | 'tut-l4-combined' | 'tut-l5-combined'
     | 'tut-l6-combined' | 'tut-l7-combined'
     | 'tut-l8-combined' | 'tut-l9-combined'
+    | 'tut-l10-combined'
     // Level Titles and Descriptions
     | 'level-1-title' | 'level-1-desc'
     | 'level-2-title' | 'level-2-desc'
@@ -60,6 +61,7 @@ export type TranslationKey =
     | 'level-7-title' | 'level-7-desc'
     | 'level-8-title' | 'level-8-desc'
     | 'level-9-title' | 'level-9-desc'
+    | 'level-10-title' | 'level-10-desc'
     ;
 
 export const translations: Record<Language, Record<string, string>> = {
@@ -146,6 +148,9 @@ export const translations: Record<Language, Record<string, string>> = {
         // Level 9
         'tut-l9-combined': 'Level 9: Combined Proof\n\nGoal: ((P -> ¬(Q -> ¬R)) -> (P -> P))\n\nLet w = ¬(Q -> ¬R).\nTarget: (P -> w) -> (P -> P)\n\nSteps:\n1. Construct w = ¬(Q -> ¬R) using gates.\n2. Use Axiom I with A=P, B=w to get |-(P -> (w -> P)).\n3. Use Axiom II with A=P, B=(w->P), C=P to get |-((P -> (w -> P)) -> ((P -> w) -> (P -> P))).\n4. Use MP with results from 2 and 3 to get final result.\n\nUse Large Display to verify complex formulas!',
 
+        // Level 10
+        'tut-l10-combined': 'Level 10: Boss Level - Identity Theorem\n\nGoal: Prove |- (P -> P)\n\nThis is a Boss Level! You need to combine Axiom I, II, and MP yourself to complete the proof.\n\nHint:\nYou need to construct an intermediate step using Axiom I and II to derive:\n|- (P -> ((P -> P) -> P)) -> ((P -> (P -> P)) -> (P -> P))\nThen use MP and Axiom I to eliminate the antecedent.',
+
         'level-1-title': 'Level 1: Negation',
         'level-1-desc': 'Construct the formula ¬P using the Atom P and the Not gate.',
         'level-2-title': 'Level 2: Implication',
@@ -164,6 +169,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'level-8-desc': 'Prove ⊢ (¬P -> (Q -> ¬R)) -> ((¬P -> Q) -> (¬P -> ¬R)) using Axiom II.',
         'level-9-title': 'Level 9: Combined Proof',
         'level-9-desc': 'Prove ⊢ ((P -> ¬(Q -> ¬R)) -> (P -> P)) using Axiom I, II, MP and Logic Gates. Hint: Let w = ¬(Q -> ¬R).',
+        'level-10-title': 'Level 10: Identity Theorem (Boss)',
+        'level-10-desc': 'Prove ⊢ (P -> P). This is the first Boss Level!',
     },
     zh: {
         gameTitle: '逻辑游戏',
