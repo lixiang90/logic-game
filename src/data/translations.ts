@@ -66,7 +66,7 @@ export type TranslationKey =
 
 export const translations: Record<Language, Record<string, string>> = {
     en: {
-        gameTitle: 'Logic Game',
+        gameTitle: 'Logic Circuits',
         newGame: 'New Game',
         continue: 'Continue',
         loadGame: 'Load Game',

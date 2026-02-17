@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Logic Game",
+  title: "Logic Circuits",
   description: "A visual logic circuit puzzle game",
 };
 
