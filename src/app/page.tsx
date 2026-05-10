@@ -68,7 +68,8 @@ export default function Home() {
   }, [bgmVolume]);
 
   useEffect(() => {
-    const audio = new Audio('/audio/game_60s.mp3');
+    // Use a relative asset path so GitHub Pages project-site base paths still resolve correctly.
+    const audio = new Audio('audio/game_60s.mp3');
     audio.loop = true;
     audio.preload = 'auto';
     audio.volume = bgmVolume;
