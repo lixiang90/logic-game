@@ -7,9 +7,17 @@ interface StartMenuProps {
     onNewGame: () => void;
     onContinue: () => void;
     onLoadGame: (slot: number) => void;
+    bgmVolume: number;
+    onBgmVolumeChange: (volume: number) => void;
 }
 
-export default function StartMenu({ onNewGame, onContinue, onLoadGame }: StartMenuProps) {
+export default function StartMenu({
+    onNewGame,
+    onContinue,
+    onLoadGame,
+    bgmVolume,
+    onBgmVolumeChange,
+}: StartMenuProps) {
     const { t, language } = useLanguage();
     const [hasAutoSave, setHasAutoSave] = useState(false);
     const [slots, setSlots] = useState<({timestamp: number, levelIndex: number} | null)[]>([]);
@@ -28,7 +36,13 @@ export default function StartMenu({ onNewGame, onContinue, onLoadGame }: StartMe
     }, []);
 
     if (showSettings) {
-        return <SettingsModal onClose={() => setShowSettings(false)} />;
+        return (
+            <SettingsModal
+                onClose={() => setShowSettings(false)}
+                bgmVolume={bgmVolume}
+                onBgmVolumeChange={onBgmVolumeChange}
+            />
+        );
     }
 
     if (showLoadMenu) {

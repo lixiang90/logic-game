@@ -28,10 +28,14 @@ interface Level {
   initialState?: LevelState;
 }
 
+const BGM_STORAGE_KEY = 'logic-game-bgm-volume';
+const DEFAULT_BGM_VOLUME = 0.35;
+
 export default function Home() {
   const { t, language } = useLanguage();
   const { startTutorial, dispatchAction, resetTutorials, forceStartTutorial } = useTutorial();
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [activeTool, setActiveTool] = useState<Tool | null>(null);
   const [selectMode, setSelectMode] = useState<SelectMode>('pointer');
   const [currentLevelIndex, setCurrentLevelIndex] = useState(0);
@@ -42,8 +46,52 @@ export default function Home() {
   const [showSaveMenu, setShowSaveMenu] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [saveSlots, setSaveSlots] = useState<Record<number, { timestamp: number, levelIndex: number } | null>>({});
+  const [bgmVolume, setBgmVolume] = useState(DEFAULT_BGM_VOLUME);
 
   const currentLevel = levels[currentLevelIndex] as Level;
+
+  useEffect(() => {
+    const storedVolume = window.localStorage.getItem(BGM_STORAGE_KEY);
+    if (!storedVolume) return;
+
+    const parsedVolume = Number(storedVolume);
+    if (Number.isFinite(parsedVolume)) {
+      setBgmVolume(Math.min(1, Math.max(0, parsedVolume)));
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(BGM_STORAGE_KEY, String(bgmVolume));
+    if (audioRef.current) {
+      audioRef.current.volume = bgmVolume;
+    }
+  }, [bgmVolume]);
+
+  useEffect(() => {
+    const audio = new Audio('/audio/game_60s.mp3');
+    audio.loop = true;
+    audio.preload = 'auto';
+    audio.volume = bgmVolume;
+    audioRef.current = audio;
+
+    const tryPlay = () => {
+      audio.play().catch(() => {
+        // Ignore autoplay failures until the next user interaction.
+      });
+    };
+
+    tryPlay();
+    window.addEventListener('pointerdown', tryPlay);
+    window.addEventListener('keydown', tryPlay);
+
+    return () => {
+      window.removeEventListener('pointerdown', tryPlay);
+      window.removeEventListener('keydown', tryPlay);
+      audio.pause();
+      audio.currentTime = 0;
+      audioRef.current = null;
+    };
+  }, []);
 
   // Load save slots when menu opens
   useEffect(() => {
@@ -249,7 +297,15 @@ export default function Home() {
   };
 
   if (gameState === 'menu') {
-    return <StartMenu onNewGame={handleNewGame} onContinue={handleContinue} onLoadGame={handleLoadGame} />;
+    return (
+      <StartMenu
+        onNewGame={handleNewGame}
+        onContinue={handleContinue}
+        onLoadGame={handleLoadGame}
+        bgmVolume={bgmVolume}
+        onBgmVolumeChange={setBgmVolume}
+      />
+    );
   }
 
   return (
@@ -319,7 +375,11 @@ export default function Home() {
 
       {/* Settings Modal */}
       {showSettings && (
-        <SettingsModal onClose={() => setShowSettings(false)} />
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          bgmVolume={bgmVolume}
+          onBgmVolumeChange={setBgmVolume}
+        />
       )}
 
       {/* Save Menu Modal */}

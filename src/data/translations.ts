@@ -7,6 +7,7 @@ export type TranslationKey =
     | 'loadGame'
     | 'settings'
     | 'language'
+    | 'bgmVolume'
     | 'slot'
     | 'emptySlot'
     | 'load'
@@ -72,6 +73,7 @@ export const translations: Record<Language, Record<string, string>> = {
         loadGame: 'Load Game',
         settings: 'Settings',
         language: 'Language',
+        bgmVolume: 'Music Volume',
         slot: 'Slot',
         emptySlot: 'Empty Slot',
         load: 'Load',
@@ -179,6 +181,7 @@ export const translations: Record<Language, Record<string, string>> = {
         loadGame: '读取存档',
         settings: '设置',
         language: '语言',
+        bgmVolume: '音乐音量',
         slot: '存档',
         emptySlot: '空存档',
         load: '读取',
