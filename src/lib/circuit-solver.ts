@@ -1,11 +1,17 @@
 
 import { NodeData, Port } from '../types/game';
 import { getNodePorts, getAbsolutePortPosition } from './gameUtils';
-import { Atom, Formula, Implies, Not, Provable, createAxiom1, createAxiom2, createAxiom3, checkModusPonens, parseGoal, parseFormula } from './logic-engine';
+import { And, Atom, Equiv, Formula, Implies, Not, Or, Provable, createAxiom1, createAxiom2, createAxiom3, checkModusPonens, parseGoal, parseFormula } from './logic-engine';
 
 // --- Types ---
 
 type CircuitState = Map<string, Formula | Provable | null>;
+
+export interface GoalTargetDefinition {
+    id: string;
+    formula: string;
+    bounds: { x: number; y: number; w: number; h: number };
+}
 
 // --- Helpers ---
 
@@ -27,19 +33,21 @@ const getWireSegment = (node: NodeData) => {
 
 // --- Main Solver Function ---
 
-export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): { 
+export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTargets: GoalTargetDefinition[] = []): { 
     isSolved: boolean, 
     activeNodeIds: Set<string>,
     errorWireIds: Set<string>,
     errorNodePorts: Map<string, Set<string>>,
     errorGoalPorts: Set<string>,
-    wireValues: Map<string, string>
+    wireValues: Map<string, string>,
+    completedGoalIds: Set<string>,
+    goalErrorsById: Map<string, Set<string>>
 } {
     // console.log("Solving circuit for goal:", goalFormulaStr);
     
     // 1. Parse Goal Formula
-    const goalObject = parseGoal(goalFormulaStr);
-    if (!goalObject) {
+    const goalObject = goalFormulaStr ? parseGoal(goalFormulaStr) : null;
+    if (goalFormulaStr && !goalObject) {
         console.error("Failed to parse goal formula:", goalFormulaStr);
         return { 
             isSolved: false, 
@@ -47,7 +55,9 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
             errorWireIds: new Set(), 
             errorNodePorts: new Map(),
             errorGoalPorts: new Set(),
-            wireValues: new Map()
+            wireValues: new Map(),
+            completedGoalIds: new Set(),
+            goalErrorsById: new Map()
         };
     }
     // console.log("Parsed goal object:", goalObject.toString());
@@ -417,6 +427,7 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
     });
     const errorNodePorts = new Map<string, Set<string>>();
     const errorGoalPorts = new Set<string>();
+    const goalErrorsById = new Map<string, Set<string>>();
 
     // Helper to add error port
     const addErrorPort = (nodeId: string, portId: string) => {
@@ -540,20 +551,40 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
         }
     }
 
-    // Check Goal Ports
-    const goalPorts = getGoalPorts();
-    const expectedGoalType = (goalObject instanceof Provable) ? 'provable' : 'formula';
-    
-    goalPorts.forEach(gp => {
-        const touchingIndices = findAllTouchingWires(gp, wireNodes);
-        touchingIndices.forEach(idx => {
-            const wire = wireNodes[idx];
-            if (wire.subType !== expectedGoalType) {
-                // Mark goal port error (store coordinate key "x,y")
-                errorGoalPorts.add(`${gp.x},${gp.y}`);
-                markWireError(wire);
-            }
+    const allGoalTargets = [
+        ...(goalObject ? [{ id: '__default__', goalObject, ports: getGoalPorts() }] : []),
+        ...goalTargets
+            .map((target) => {
+                const parsed = parseGoal(target.formula);
+                if (!parsed) return null;
+                return {
+                    id: target.id,
+                    goalObject: parsed,
+                    ports: getGoalPortsForRect(target.bounds),
+                };
+            })
+            .filter((target): target is { id: string; goalObject: Formula | Provable; ports: { x: number; y: number }[] } => Boolean(target)),
+    ];
+
+    allGoalTargets.forEach((target) => {
+        const targetErrorPorts = new Set<string>();
+        const expectedType = target.goalObject instanceof Provable ? 'provable' : 'formula';
+
+        target.ports.forEach((gp) => {
+            const touchingIndices = findAllTouchingWires(gp, wireNodes);
+            touchingIndices.forEach((idx) => {
+                const wire = wireNodes[idx];
+                if (wire.subType !== expectedType) {
+                    targetErrorPorts.add(`${gp.x},${gp.y}`);
+                    markWireError(wire);
+                }
+            });
         });
+
+        goalErrorsById.set(target.id, targetErrorPorts);
+        if (target.id === '__default__') {
+            targetErrorPorts.forEach((key) => errorGoalPorts.add(key));
+        }
     });
 
     // 5. Check Goal
@@ -580,45 +611,59 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr: string): {
 
     // Goal Block at [-4, -4] w=8 h=8
     // const goalPorts = getGoalPorts(); // Already computed
-    for (const gp of goalPorts) {
-        // Strict Type Check: Goal port expects same type as goal object
-        const expectedType = expectedGoalType;
-        
-        // 1. Check Wire Connection
-        const touchingWireIdx = findTouchingWire(gp, wireNodes, expectedType);
-        if (touchingWireIdx !== -1) {
-            const wire = wireNodes[touchingWireIdx];
-            const netIdx = nodeToNetIdx.get(wire.id);
-            if (netIdx !== undefined) {
-                const val = netState[netIdx];
-                if (checkGoalValue(val, goalObject)) {
-                    return { isSolved: true, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues };
+    const completedGoalIds = new Set<string>();
+    allGoalTargets.forEach((target) => {
+        const expectedType = target.goalObject instanceof Provable ? 'provable' : 'formula';
+
+        for (const gp of target.ports) {
+            const touchingWireIdx = findTouchingWire(gp, wireNodes, expectedType);
+            if (touchingWireIdx !== -1) {
+                const wire = wireNodes[touchingWireIdx];
+                const netIdx = nodeToNetIdx.get(wire.id);
+                if (netIdx !== undefined) {
+                    const val = netState[netIdx];
+                    if (checkGoalValue(val, target.goalObject)) {
+                        completedGoalIds.add(target.id);
+                        return;
+                    }
                 }
             }
-        }
 
-        // 2. Check Direct Node Connection
-        const EPS = 0.1;
-        for (const node of nodes) {
-            if (node.type === 'wire') continue;
+            const EPS = 0.1;
+            for (const node of nodes) {
+                if (node.type === 'wire') continue;
 
-            const outputPorts = getNodePorts(node).filter(p => !p.isInput);
-            for (const port of outputPorts) {
-                // Check Type
-                if (port.type !== expectedType) continue;
+                const outputPorts = getNodePorts(node).filter(p => !p.isInput);
+                for (const port of outputPorts) {
+                    if (port.type !== expectedType) continue;
 
-                const absPos = getAbsolutePortPosition(node, port);
-                if (Math.abs(absPos.x - gp.x) < EPS && Math.abs(absPos.y - gp.y) < EPS) {
-                    const val = state.get(node.id);
-                    if (checkGoalValue(val, goalObject)) {
-                        return { isSolved: true, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues };
+                    const absPos = getAbsolutePortPosition(node, port);
+                    if (Math.abs(absPos.x - gp.x) < EPS && Math.abs(absPos.y - gp.y) < EPS) {
+                        const val = state.get(node.id);
+                        if (checkGoalValue(val, target.goalObject)) {
+                            completedGoalIds.add(target.id);
+                            return;
+                        }
                     }
                 }
             }
         }
-    }
+    });
 
-    return { isSolved: false, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues };
+    return {
+        isSolved: completedGoalIds.has('__default__'),
+        activeNodeIds,
+        errorWireIds,
+        errorNodePorts,
+        errorGoalPorts,
+        wireValues,
+        completedGoalIds,
+        goalErrorsById
+    };
+}
+
+export function solveCircuitGoals(nodes: NodeData[], goals: GoalTargetDefinition[]) {
+    return solveCircuit(nodes, undefined, goals);
 }
 
 function checkGoalValue(val: Formula | Provable | null | undefined, goalObject: Formula | Provable): boolean {
@@ -777,6 +822,57 @@ function computeNodeOutput(
         }
     }
 
+    if (node.type === 'theorem') {
+        const normalizeFormulaText = (text: string) => text.replace(/^\s*(\|-|⊢)\s*/, '').trim();
+
+        const substitute = (formula: Formula, mapping: Map<string, Formula>): Formula => {
+            if (formula instanceof Atom) {
+                return mapping.get(formula.name) ?? formula;
+            }
+            if (formula instanceof Not) {
+                return new Not(substitute(formula.child, mapping));
+            }
+            if (formula instanceof Implies) {
+                return new Implies(substitute(formula.left, mapping), substitute(formula.right, mapping));
+            }
+            if (formula instanceof And) {
+                return new And(substitute(formula.left, mapping), substitute(formula.right, mapping));
+            }
+            if (formula instanceof Or) {
+                return new Or(substitute(formula.left, mapping), substitute(formula.right, mapping));
+            }
+            if (formula instanceof Equiv) {
+                return new Equiv(substitute(formula.left, mapping), substitute(formula.right, mapping));
+            }
+            return formula;
+        };
+
+        const vars = node.theoremVars ?? [];
+        const premises = node.theoremPremises ?? [];
+        const conclusionText = normalizeFormulaText(node.theoremConclusion ?? '');
+        const conclusionTemplate = parseFormula(conclusionText);
+        if (!conclusionTemplate) return null;
+
+        const mapping = new Map<string, Formula>();
+        vars.forEach((v) => {
+            const input = getInput(`var_${v}`);
+            mapping.set(v, input instanceof Formula ? input : new Atom(v));
+        });
+
+        for (let i = 0; i < premises.length; i += 1) {
+            const premiseTemplate = parseFormula(normalizeFormulaText(premises[i]));
+            if (!premiseTemplate) return null;
+            const expectedPremise = substitute(premiseTemplate, mapping);
+
+            const provided = getInput(`prem_${i}`);
+            if (!(provided instanceof Provable)) return null;
+            if (!provided.formula.equals(expectedPremise)) return null;
+        }
+
+        const expectedConclusion = substitute(conclusionTemplate, mapping);
+        return new Provable(expectedConclusion);
+    }
+
     if (node.type === 'premise') {
         const formulaStr = node.subType;
         const formula = parseFormula(formulaStr);
@@ -825,22 +921,32 @@ function findAllTouchingWires(pos: {x: number, y: number}, wires: NodeData[]): n
 }
 
 function getGoalPorts() {
+    return getGoalPortsForRect({ x: -4, y: -4, w: 8, h: 8 });
+}
+
+export function getGoalPortsForRect(bounds: { x: number; y: number; w: number; h: number }) {
     // Goal Block: [-4, -4] w=8 h=8
     const ports: {x: number, y: number}[] = [];
-    const min = -4, max = 4;
+    const minX = bounds.x;
+    const minY = bounds.y;
+    const maxX = bounds.x + bounds.w;
+    const maxY = bounds.y + bounds.h;
     // Ports at every 2 grid cells, excluding corners (-4, 4)
     // -3, -1, 1, 3
-    const steps = [-3, -1, 1, 3];
+    const stepsX: number[] = [];
+    const stepsY: number[] = [];
+    for (let x = minX + 1; x < maxX; x += 2) stepsX.push(x);
+    for (let y = minY + 1; y < maxY; y += 2) stepsY.push(y);
     
     // Top (y=-4) and Bottom (y=4)
-    steps.forEach(x => {
-        ports.push({ x, y: min });
-        ports.push({ x, y: max });
+    stepsX.forEach(x => {
+        ports.push({ x, y: minY });
+        ports.push({ x, y: maxY });
     });
     // Left (x=-4) and Right (x=4)
-    steps.forEach(y => {
-        ports.push({ x: min, y });
-        ports.push({ x: max, y });
+    stepsY.forEach(y => {
+        ports.push({ x: minX, y });
+        ports.push({ x: maxX, y });
     });
     return ports;
 }

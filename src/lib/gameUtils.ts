@@ -71,6 +71,29 @@ export const getNodePorts = (node: NodeData): Port[] => {
         ports.push({ id: 'in1', x: 0, y: 2.0, type: 'formula', isInput: true });
         ports.push({ id: 'in2', x: 0, y: 4.0, type: 'provable', isInput: true });
         ports.push({ id: 'in3', x: 0, y: 5.0, type: 'provable', isInput: true });
+    } else if (type === 'theorem') {
+        ports.push({
+            id: 'out',
+            x: w,
+            y: h / 2,
+            type: 'provable',
+            isInput: false,
+        });
+
+        const vars = node.theoremVars ?? [];
+        const premises = node.theoremPremises ?? [];
+        const rows = Math.max(1, vars.length + premises.length);
+        const maxRows = Math.min(rows, Math.floor((h - 2) / 2));
+        const startY = 1;
+
+        for (let i = 0; i < Math.min(vars.length, maxRows); i += 1) {
+            ports.push({ id: `var_${vars[i]}`, x: 0, y: startY + i * 2, type: 'formula', isInput: true });
+        }
+
+        const premiseBaseRow = Math.min(vars.length, maxRows);
+        for (let i = 0; i < Math.min(premises.length, maxRows - premiseBaseRow); i += 1) {
+            ports.push({ id: `prem_${i}`, x: 0, y: startY + (premiseBaseRow + i) * 2, type: 'provable', isInput: true });
+        }
     } else if (type === 'premise') {
         // Chip Style: Output ports on all 4 sides
         // Top and Bottom

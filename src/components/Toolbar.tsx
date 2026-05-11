@@ -4,6 +4,7 @@
 import React from 'react';
 import { Tool, NodeType } from '@/types/game';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { TheoremChipInventoryEntry } from '@/types/stage2';
 
 export type SelectMode = 'pointer' | 'box';
 
@@ -13,13 +14,89 @@ interface ToolbarProps {
     selectMode?: SelectMode;
     onSelectModeChange?: (mode: SelectMode) => void;
     unlockedTools?: string[];
+    theoremInventory?: TheoremChipInventoryEntry[];
+    recommendedTheoremIds?: string[];
+    coins?: number;
 }
 
-export default function Toolbar({ activeTool, onSelectTool, selectMode = 'pointer', onSelectModeChange, unlockedTools }: ToolbarProps) {
+export default function Toolbar({
+    activeTool,
+    onSelectTool,
+    selectMode = 'pointer',
+    onSelectModeChange,
+    unlockedTools,
+    theoremInventory = [],
+    recommendedTheoremIds = [],
+    coins = 0
+}: ToolbarProps) {
     const { t } = useLanguage();
+    const [showTheoremLibrary, setShowTheoremLibrary] = React.useState(false);
 
     const handleSelect = (type: NodeType, subType: string, w: number, h: number) => {
         onSelectTool({ type, subType, w, h, rotation: 0 });
+    };
+
+    const normalizeTheoremFormula = (formula: string) => formula.replace(/^\s*(\|-|⊢)\s*/, '').trim();
+
+    const extractVariables = (parts: string[]) => {
+        const vars = new Set<string>();
+        parts.forEach((part) => {
+            const text = normalizeTheoremFormula(part);
+            const matches = text.match(/[A-Z][A-Za-z0-9]*/g) ?? [];
+            matches.forEach((m) => vars.add(m));
+        });
+        return Array.from(vars);
+    };
+
+    const theoremInventoryOrdered = React.useMemo(() => {
+        const theoremById = new Map(theoremInventory.map((entry) => [entry.theoremId, entry]));
+        const ordered: TheoremChipInventoryEntry[] = [];
+
+        recommendedTheoremIds.forEach((theoremId) => {
+            const entry = theoremById.get(theoremId);
+            if (entry) ordered.push(entry);
+        });
+
+        theoremInventory.forEach((entry) => {
+            if (!ordered.some((item) => item.theoremId === entry.theoremId)) {
+                ordered.push(entry);
+            }
+        });
+
+        return ordered;
+    }, [recommendedTheoremIds, theoremInventory]);
+
+    const pinnedTheorems = theoremInventoryOrdered.slice(0, 2);
+    const overflowTheorems = theoremInventoryOrdered.slice(2);
+
+    const canAffordTheorem = (theorem: TheoremChipInventoryEntry) =>
+        theorem.freeUsesRemaining > 0 || coins >= theorem.cost;
+
+    const handleTheoremSelect = (theorem: TheoremChipInventoryEntry) => {
+        if (!canAffordTheorem(theorem)) return;
+
+        const premises = theorem.premises ?? [];
+        const conclusion = normalizeTheoremFormula(theorem.formula);
+        const vars = extractVariables([...premises, conclusion]);
+        const portRows = Math.max(1, vars.length + premises.length);
+        const h = Math.max(6, portRows * 2 + 2);
+
+        onSelectTool({
+            type: 'theorem',
+            subType: theorem.theoremId,
+            customLabel: theorem.formula,
+            theoremId: theorem.theoremId,
+            sourceIslandId: theorem.sourceIslandId,
+            placementCost: theorem.cost,
+            theoremName: theorem.name,
+            theoremVars: vars,
+            theoremPremises: premises,
+            theoremConclusion: conclusion,
+            w: 10,
+            h,
+            rotation: 0,
+        });
+        setShowTheoremLibrary(false);
     };
 
     const isUnlocked = (type: string, subType?: string) => {
@@ -32,11 +109,39 @@ export default function Toolbar({ activeTool, onSelectTool, selectMode = 'pointe
     };
 
     const isActive = (subType: string) => activeTool?.subType === subType;
+    const isTheoremActive = (theoremId: string) => activeTool?.theoremId === theoremId;
     const isPointerActive = activeTool === null && selectMode === 'pointer';
     const isBoxSelectActive = activeTool === null && selectMode === 'box';
     const activeClass = "ring-2 ring-white ring-offset-2 ring-offset-slate-900";
+    const theoremButtonBaseClass = "h-12 min-w-[4.5rem] px-3 flex flex-col justify-center cursor-pointer transition-all duration-200 select-none relative border rounded-lg";
+
+    const renderTheoremButton = (theorem: TheoremChipInventoryEntry) => {
+        const isFree = theorem.freeUsesRemaining > 0;
+        const affordable = canAffordTheorem(theorem);
+        const disabled = !affordable;
+        const statusLabel = isFree ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}`;
+
+        return (
+            <button
+                key={theorem.theoremId}
+                type="button"
+                onClick={() => handleTheoremSelect(theorem)}
+                disabled={disabled}
+                className={`${theoremButtonBaseClass}
+                    ${disabled
+                        ? 'cursor-not-allowed border-slate-700 bg-slate-900/70 text-slate-500 opacity-60'
+                        : 'border-cyan-500/60 bg-slate-800 text-cyan-100 hover:-translate-y-1 hover:bg-slate-700 hover:shadow-[0_0_15px_rgba(34,211,238,0.2)] hover:scale-105 active:scale-95'}
+                    ${isTheoremActive(theorem.theoremId) ? activeClass : ''}`}
+                title={`${theorem.name} ${theorem.formula}`}
+            >
+                <span className="text-sm font-bold uppercase tracking-wide">{theorem.name}</span>
+                <span className="mt-1 text-[10px] text-slate-300">{statusLabel}</span>
+            </button>
+        );
+    };
 
     return (
+        <>
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur-xl border border-slate-500/50 px-6 py-4 rounded-2xl flex items-end gap-2 shadow-[0_0_40px_-10px_rgba(0,0,0,0.8)] z-50 pointer-events-auto ring-1 ring-white/10">
             
             {/* Tools Group (Pointer & Box Select & Wire) */}
@@ -123,6 +228,34 @@ export default function Toolbar({ activeTool, onSelectTool, selectMode = 'pointe
                     )}
                 </div>
             </div>
+
+            {theoremInventoryOrdered.length > 0 && (
+                <>
+                    <div className="w-px h-8 bg-slate-700 mb-2 mx-2"></div>
+
+                    <div className="flex flex-col items-center gap-2">
+                        <div className="h-[15px] flex items-center">
+                            <span className="text-[10px] text-cyan-300 tracking-widest uppercase font-bold">{t('theoremBar')}</span>
+                        </div>
+                        <div className="h-12 flex items-center gap-3">
+                            {pinnedTheorems.map(renderTheoremButton)}
+                            {overflowTheorems.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowTheoremLibrary(true)}
+                                    className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
+                                            text-slate-200 bg-slate-800 border border-slate-600
+                                            hover:-translate-y-1 hover:bg-slate-700 hover:scale-110 active:scale-95 rounded-md
+                                            ${showTheoremLibrary ? activeClass : ''}`}
+                                    title={t('theoremLibrary')}
+                                >
+                                    <span className="text-xl font-bold">+</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
 
             <div className="w-px h-8 bg-slate-700 mb-2 mx-2"></div>
 
@@ -354,5 +487,29 @@ export default function Toolbar({ activeTool, onSelectTool, selectMode = 'pointe
                 </div>
             </div>
         </div>
+        {showTheoremLibrary && theoremInventoryOrdered.length > 0 && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                <div className="w-[32rem] max-w-[90vw] rounded-2xl border border-cyan-500/30 bg-slate-900/95 p-5 shadow-2xl">
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">{t('theoremBar')}</div>
+                            <div className="text-xl font-bold text-white">{t('theoremLibrary')}</div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowTheoremLibrary(false)}
+                            className="rounded-lg border border-slate-700 px-3 py-1 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+                        >
+                            {t('cancel')}
+                        </button>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                        {theoremInventoryOrdered.map(renderTheoremButton)}
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 }

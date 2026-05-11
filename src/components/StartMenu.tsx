@@ -25,14 +25,16 @@ export default function StartMenu({
     const [showLoadMenu, setShowLoadMenu] = useState(false);
 
     useEffect(() => {
-        // Ensure this runs only on client side to avoid hydration mismatch
-        setHasAutoSave(SaveSystem.hasAutoSave());
-        const loadedSlots = [];
-        for (let i = 1; i <= 4; i++) {
-            const info = SaveSystem.getSlotInfo(i);
-            loadedSlots.push(info);
-        }
-        setSlots(loadedSlots);
+        const raf = requestAnimationFrame(() => {
+            setHasAutoSave(SaveSystem.hasAutoSave());
+            const loadedSlots: ({ timestamp: number; levelIndex: number } | null)[] = [];
+            for (let i = 1; i <= 4; i++) {
+                const info = SaveSystem.getSlotInfo(i);
+                loadedSlots.push(info);
+            }
+            setSlots(loadedSlots);
+        });
+        return () => cancelAnimationFrame(raf);
     }, []);
 
     if (showSettings) {

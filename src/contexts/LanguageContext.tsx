@@ -19,7 +19,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         // Load language preference from local storage if available
         const savedLang = localStorage.getItem('language') as Language;
         if (savedLang && (savedLang === 'zh' || savedLang === 'en')) {
-            setLanguage(savedLang);
+            const raf = requestAnimationFrame(() => {
+                setLanguage(savedLang);
+            });
+            return () => cancelAnimationFrame(raf);
         }
     }, []);
 

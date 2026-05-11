@@ -8,6 +8,28 @@ export type TranslationKey =
     | 'settings'
     | 'language'
     | 'bgmVolume'
+    | 'stage'
+    | 'chapter'
+    | 'coins'
+    | 'stage2Map'
+    | 'mainIsland'
+    | 'revealedFog'
+    | 'theoremChips'
+    | 'revealedIslands'
+    | 'mainObjective'
+    | 'supportIslands'
+    | 'optionalIslands'
+    | 'completedIsland'
+    | 'revealed'
+    | 'collectedTheorems'
+    | 'noTheoremsCollected'
+    | 'theoremCost'
+    | 'freeUsesRemaining'
+    | 'theoremBar'
+    | 'theoremLibrary'
+    | 'firstUseFree'
+    | 'notEnoughCoinsForTheorem'
+    | 'hiddenInFog'
     | 'slot'
     | 'emptySlot'
     | 'load'
@@ -63,6 +85,7 @@ export type TranslationKey =
     | 'level-8-title' | 'level-8-desc'
     | 'level-9-title' | 'level-9-desc'
     | 'level-10-title' | 'level-10-desc'
+    | 'level-11-title' | 'level-11-desc'
     ;
 
 export const translations: Record<Language, Record<string, string>> = {
@@ -74,6 +97,28 @@ export const translations: Record<Language, Record<string, string>> = {
         settings: 'Settings',
         language: 'Language',
         bgmVolume: 'Music Volume',
+        stage: 'Stage',
+        chapter: 'Chapter',
+        coins: 'Coins',
+        stage2Map: 'Floating Islands',
+        mainIsland: 'Main Island',
+        revealedFog: 'Revealed Fog',
+        theoremChips: 'Theorem Chips',
+        revealedIslands: 'Revealed Islands',
+        mainObjective: 'Main Objective',
+        supportIslands: 'Support Islands',
+        optionalIslands: 'Optional Islands',
+        completedIsland: 'Completed',
+        revealed: 'Revealed',
+        collectedTheorems: 'Collected Theorems',
+        noTheoremsCollected: 'No theorem chips collected yet.',
+        theoremCost: 'Cost',
+        freeUsesRemaining: 'Free Uses',
+        theoremBar: 'Theorems',
+        theoremLibrary: 'Theorem Library',
+        firstUseFree: 'First use free',
+        notEnoughCoinsForTheorem: 'Not enough coins to place this theorem chip again.',
+        hiddenInFog: 'Hidden by fog',
         slot: 'Slot',
         emptySlot: 'Empty Slot',
         load: 'Load',
@@ -173,6 +218,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'level-9-desc': 'Prove ⊢ ((P -> ¬(Q -> ¬R)) -> (P -> P)) using Axiom I, II, MP and Logic Gates. Hint: Let w = ¬(Q -> ¬R).',
         'level-10-title': 'Level 10: Identity Theorem (Boss)',
         'level-10-desc': 'Prove ⊢ (P -> P). This is the first Boss Level!',
+        'level-11-title': 'Level 11: Stage 2 - Syllogism',
+        'level-11-desc': 'Enter the floating islands and prove the syllogism theorem from the two premise chips.',
     },
     zh: {
         gameTitle: '逻辑游戏',
@@ -182,6 +229,28 @@ export const translations: Record<Language, Record<string, string>> = {
         settings: '设置',
         language: '语言',
         bgmVolume: '音乐音量',
+        stage: '大关',
+        chapter: '小关',
+        coins: '金币',
+        stage2Map: '悬浮岛地图',
+        mainIsland: '主目标岛',
+        revealedFog: '已驱散迷雾',
+        theoremChips: '定理芯片',
+        revealedIslands: '已显露岛屿',
+        mainObjective: '当前主目标',
+        supportIslands: '辅助岛',
+        optionalIslands: '可选岛',
+        completedIsland: '已完成',
+        revealed: '已显露',
+        collectedTheorems: '已收集定理',
+        noTheoremsCollected: '还没有收集到定理芯片。',
+        theoremCost: '费用',
+        freeUsesRemaining: '剩余免费次数',
+        theoremBar: '定理栏',
+        theoremLibrary: '定理库',
+        firstUseFree: '首次放置免费',
+        notEnoughCoinsForTheorem: '金币不足，无法再次放置这个定理芯片。',
+        hiddenInFog: '仍被迷雾遮蔽',
         slot: '存档',
         emptySlot: '空存档',
         load: '读取',
@@ -281,5 +350,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'level-9-desc': '综合应用公理 I、II、MP 和逻辑门。证明 ⊢ ((P -> ¬(Q -> ¬R)) -> (P -> P))。\n\n提示：令 w = ¬(Q -> ¬R)。\n1. 用公理 I 得到 ⊢(P->(w->P))\n2. 用公理 II 得到 ⊢((P->(w->P))->((P->w)->(P->P)))\n3. 用 MP 得到 ⊢((P->w)->(P->P))',
         'level-10-title': '第 10 关：同一律 (Boss)',
         'level-10-desc': '证明同一律 ⊢ (P -> P)。这是一个 Boss 关卡！',
+        'level-11-title': '第 11 关：第二大关 - 三段论',
+        'level-11-desc': '进入悬浮岛地图，从两个前提芯片出发证明三段论定理。',
     }
 };

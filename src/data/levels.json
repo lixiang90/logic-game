@@ -153,5 +153,18 @@
       "formula": "|-(P->P)"
     },
     "unlockedTools": ["atom:P", "gate:implies", "axiom:1", "axiom:2", "mp", "display:small", "display:large", "bridge"]
+  },
+  {
+    "id": "level-11",
+    "title": "Level 11: Stage 2 - Syllogism",
+    "description": "Enter the floating islands and prove the syllogism theorem from the two premise chips.",
+    "goal": {
+      "formula": "|-(P->R)"
+    },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "gate:implies", "axiom:1", "axiom:2", "mp", "display:small", "display:large", "bridge"],
+    "initialState": {
+      "nodes": [],
+      "wires": []
+    }
   }
 ]
