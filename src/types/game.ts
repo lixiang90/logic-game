@@ -1,5 +1,5 @@
 
-export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'wire' | 'premise' | 'display' | 'bridge';
+export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'wire' | 'premise' | 'theorem' | 'display' | 'bridge';
 
 export interface NodeData {
     id: string;
@@ -13,6 +13,13 @@ export interface NodeData {
     isActive?: boolean; // For atoms: true = glowing/emitting, false = off. Default true.
     locked?: boolean; // If true, cannot be moved or deleted
     customLabel?: string; // For displaying complex formulas on premise nodes
+    theoremId?: string; // Stage 2 theorem chip identifier when this premise comes from inventory
+    sourceIslandId?: string; // Stage 2 island that awarded this theorem chip
+    placementCost?: number; // Coin cost for repeated placements after free uses run out
+    theoremName?: string;
+    theoremVars?: string[];
+    theoremPremises?: string[];
+    theoremConclusion?: string;
 }
 
 export interface Wire {
@@ -39,4 +46,12 @@ export interface Tool {
     w: number;
     h: number;
     rotation?: number;
+    customLabel?: string;
+    theoremId?: string;
+    sourceIslandId?: string;
+    placementCost?: number;
+    theoremName?: string;
+    theoremVars?: string[];
+    theoremPremises?: string[];
+    theoremConclusion?: string;
 }

@@ -3,11 +3,12 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Tool, NodeData, NodeType, Wire, Port } from '@/types/game';
 import { getNodePorts, getAbsolutePortPosition, findWirePath } from '@/lib/gameUtils';
-import { solveCircuit } from '@/lib/circuit-solver';
+import { getGoalPortsForRect, solveCircuit, solveCircuitGoals } from '@/lib/circuit-solver';
 import { parseGoal, parseFormula, Provable } from '@/lib/logic-engine';
 import { formulaRenderer } from '@/lib/formula-renderer';
 import { useTutorial } from '@/contexts/TutorialContext';
 import { SelectMode } from '@/components/Toolbar';
+import { Stage2IslandDefinition, Stage2LevelConfig, Stage2MetaProgress } from '@/types/stage2';
 
 interface Point {
     x: number;
@@ -24,17 +25,60 @@ interface InfiniteCanvasProps {
     goalFormula?: string;
     onLevelComplete?: () => void;
     initialState?: { nodes: NodeData[], wires: Wire[] };
+    canPlaceNode?: (node: NodeData) => boolean;
+    onNodePlaced?: (node: NodeData) => void;
+    onStage2IslandComplete?: (islandId: string) => void;
+    stage2Config?: Stage2LevelConfig;
+    stage2Progress?: Stage2MetaProgress;
+    selectedStage2IslandId?: string | null;
 }
 
 export interface InfiniteCanvasHandle {
     resetView: () => void;
     getState: () => { nodes: NodeData[], wires: Wire[] };
     loadState: (state: { nodes: NodeData[], wires: Wire[] }) => void;
+    jumpToStage2Island: (islandId: string) => void;
 }
 
-const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ activeTool, selectMode = 'pointer', onToolClear, onToolRotate, onToolSetRotation, onToolToggleType, goalFormula, onLevelComplete, initialState }, ref) => {
+const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
+    activeTool,
+    selectMode = 'pointer',
+    onToolClear,
+    onToolRotate,
+    onToolSetRotation,
+    onToolToggleType,
+    goalFormula,
+    onLevelComplete,
+    initialState,
+    canPlaceNode,
+    onNodePlaced,
+    onStage2IslandComplete,
+    stage2Config,
+    stage2Progress,
+    selectedStage2IslandId,
+}, ref) => {
     const { dispatchAction, currentStep } = useTutorial();
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const stage2IslandRenderCacheRef = useRef<
+        Map<
+            string,
+            {
+                tilesPath: Path2D;
+                outlinePath: Path2D;
+                coarseLabel: string;
+            }
+        >
+    >(new Map());
+    const wasdStateRef = useRef<{ w: boolean; a: boolean; s: boolean; d: boolean; shift: boolean }>({
+        w: false,
+        a: false,
+        s: false,
+        d: false,
+        shift: false,
+    });
+    const wasdRafRef = useRef<number | null>(null);
+    const wasdLastFrameRef = useRef<number>(0);
+    const stage2InitialViewKeyRef = useRef<string | null>(null);
     const [offset, setOffset] = useState<Point>(() => ({
         x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
         y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0
@@ -47,19 +91,50 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
     const [mouseGridPos, setMouseGridPos] = useState<Point | null>(null);
     const [nodes, setNodes] = useState<NodeData[]>(initialState?.nodes || []);
     const [wires, setWires] = useState<Wire[]>(initialState?.wires || []);
+
+    const GRID_SIZE = 25;
+    const BLOCK_STRIDE = 16;
+    const SUPER_BLOCK_STRIDE = 128;
+    const MIN_SCALE = 0.1;
+    const MAX_SCALE = 5.0;
+    const LOD_THRESHOLD_SMALL = 0.4;
+    const LOD_THRESHOLD_BLOCK = 0.2;
     
+    const stage2UnlockedIslandIdSet = stage2Config
+        ? new Set(
+              stage2Progress?.unlockedIslandIds?.length ? stage2Progress.unlockedIslandIds : stage2Config.initialUnlockedIslandIds
+          )
+        : new Set<string>();
+
     // Memoize circuit solution to avoid useEffect/setState cycle
-    const { isSolved, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues } = React.useMemo(() => {
+    const { isSolved, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues, completedGoalIds, goalErrorsById } = React.useMemo(() => {
+        if (stage2Config) {
+            const goals = stage2Config.goalIslandIds
+                .filter((id) => stage2UnlockedIslandIdSet.has(id))
+                .map((id) => stage2Config.world.getIslandById(id))
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .filter((island) => Boolean(island.goalFormula && island.goalBounds))
+                .map((island) => ({
+                    id: island.id,
+                    formula: island.goalFormula!,
+                    bounds: island.goalBounds!,
+                }));
+
+            return solveCircuitGoals(nodes, goals);
+        }
+
         if (!goalFormula) return {
             isSolved: false,
             activeNodeIds: new Set<string>(),
             errorWireIds: new Set<string>(),
             errorNodePorts: new Map<string, Set<string>>(),
             errorGoalPorts: new Set<string>(),
-            wireValues: new Map<string, string>()
+            wireValues: new Map<string, string>(),
+            completedGoalIds: new Set<string>(),
+            goalErrorsById: new Map<string, Set<string>>()
         };
         return solveCircuit(nodes, goalFormula);
-    }, [nodes, wires, goalFormula]);
+    }, [nodes, wires, goalFormula, stage2Config, stage2UnlockedIslandIdSet]);
 
     const [flashPhase, setFlashPhase] = useState<number>(0);
     const [hoveredWireValue, setHoveredWireValue] = useState<{ x: number, y: number, value: string } | null>(null);
@@ -76,6 +151,22 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         const parsed = parseGoal(goalFormula);
         return parsed ? parsed.toString() : goalFormula;
     }, [goalFormula]);
+
+    const STAGE2_MARKER_SCALE_THRESHOLD = 0.38;
+    const STAGE2_DETAIL_SCALE_THRESHOLD = 0.95;
+
+    const selectedStage2Island = React.useMemo(() => {
+        if (!stage2Config) return null;
+        const islandId = selectedStage2IslandId ?? stage2Config.focusIslandId;
+        return stage2Config.world.getIslandById(islandId);
+    }, [selectedStage2IslandId, stage2Config]);
+
+    const showStage2InteriorDetails = scale >= STAGE2_DETAIL_SCALE_THRESHOLD;
+    const showStage2IslandOverlayDetails = stage2Config ? scale >= STAGE2_MARKER_SCALE_THRESHOLD : false;
+
+    useEffect(() => {
+        stage2IslandRenderCacheRef.current.clear();
+    }, [stage2Config?.levelId, stage2Progress?.mapSeed]);
 
     // Animation Loop for Flashing and Flow
     useEffect(() => {
@@ -114,30 +205,167 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         loadState: (state: { nodes: NodeData[], wires: Wire[] }) => {
             let newNodes = state.nodes;
             
-            // Merge missing nodes from initialState (e.g. locked/premise nodes added in updates)
             if (initialState && initialState.nodes.length > 0) {
-                 const loadedIds = new Set(state.nodes.map(n => n.id));
-                 const missingNodes = initialState.nodes.filter(n => !loadedIds.has(n.id));
-                 if (missingNodes.length > 0) {
-                     newNodes = [...state.nodes, ...missingNodes];
-                 }
+                const initialLockedPremises = initialState.nodes.filter(
+                    (node) => node.type === 'premise' && node.locked
+                );
+
+                if (initialLockedPremises.length > 0) {
+                    const initialPremiseById = new Map(initialLockedPremises.map((node) => [node.id, node]));
+
+                    newNodes = newNodes
+                        .filter((node) => {
+                            if (node.type !== 'premise' || !node.locked) return true;
+                            return initialPremiseById.has(node.id);
+                        })
+                        .map((node) => {
+                            if (node.type !== 'premise' || !node.locked) return node;
+                            const fresh = initialPremiseById.get(node.id);
+                            if (!fresh) return node;
+                            return {
+                                ...node,
+                                subType: fresh.subType,
+                                customLabel: fresh.customLabel,
+                                sourceIslandId: fresh.sourceIslandId,
+                            };
+                        });
+
+                    const loadedIds = new Set(newNodes.map((node) => node.id));
+                    const missingNodes = initialState.nodes.filter((node) => !loadedIds.has(node.id));
+                    if (missingNodes.length > 0) {
+                        newNodes = [...newNodes, ...missingNodes];
+                    }
+                } else {
+                    const loadedIds = new Set(newNodes.map((node) => node.id));
+                    const missingNodes = initialState.nodes.filter((node) => !loadedIds.has(node.id));
+                    if (missingNodes.length > 0) {
+                        newNodes = [...newNodes, ...missingNodes];
+                    }
+                }
+            }
+
+            if (stage2Config) {
+                const normalizeFormulaText = (text: string) => text.replace(/^\s*(\|-|⊢)\s*/, '').trim();
+                const extractVariables = (parts: string[]) => {
+                    const vars = new Set<string>();
+                    parts.forEach((part) => {
+                        const matches = normalizeFormulaText(part).match(/[A-Z][A-Za-z0-9]*/g) ?? [];
+                        matches.forEach((m) => vars.add(m));
+                    });
+                    return Array.from(vars);
+                };
+
+                const resolveTheoremMeta = (theoremId: string) => {
+                    const islands = stage2Config.goalIslandIds
+                        .map((id) => stage2Config.world.getIslandById(id))
+                        .filter((item): item is NonNullable<typeof item> => Boolean(item));
+                    const island =
+                        islands.find((i) => i.rewardTheorem?.theoremId === theoremId) ??
+                        islands.find((i) => i.name === theoremId);
+                    if (!island) return null;
+
+                    const premises = (island.premiseNodes ?? []).map((p) => p.formula);
+                    const conclusion = normalizeFormulaText(island.goalFormula ?? '');
+                    const vars = extractVariables([...premises, conclusion]);
+                    const portRows = Math.max(1, vars.length + premises.length);
+                    const h = Math.max(6, portRows * 2 + 2);
+
+                    return {
+                        theoremName: island.rewardTheorem?.name ?? island.name ?? theoremId,
+                        theoremVars: vars,
+                        theoremPremises: premises,
+                        theoremConclusion: conclusion,
+                        w: 10,
+                        h,
+                    };
+                };
+
+                newNodes = newNodes.map((node) => {
+                    if (!node.theoremId) return node;
+                    if (node.type === 'premise' && !node.locked) {
+                        const meta = resolveTheoremMeta(node.theoremId);
+                        if (!meta) return node;
+                        return {
+                            ...node,
+                            type: 'theorem',
+                            subType: node.theoremId,
+                            theoremName: meta.theoremName,
+                            theoremVars: meta.theoremVars,
+                            theoremPremises: meta.theoremPremises,
+                            theoremConclusion: meta.theoremConclusion,
+                            w: meta.w,
+                            h: meta.h,
+                        };
+                    }
+                    if (node.type === 'theorem') {
+                        if (node.theoremVars && node.theoremPremises && node.theoremConclusion) return node;
+                        const meta = resolveTheoremMeta(node.theoremId);
+                        if (!meta) return node;
+                        return {
+                            ...node,
+                            theoremName: meta.theoremName,
+                            theoremVars: meta.theoremVars,
+                            theoremPremises: meta.theoremPremises,
+                            theoremConclusion: meta.theoremConclusion,
+                            w: meta.w,
+                            h: meta.h,
+                        };
+                    }
+                    return node;
+                });
             }
 
             setNodes(newNodes);
             setWires(state.wires);
+        },
+        jumpToStage2Island: (islandId: string) => {
+            if (!stage2Config) return;
+            const island = stage2Config.world.getIslandById(islandId);
+            if (!island) return;
+            const islandCenterX = (island.mapBounds.x + island.mapBounds.w / 2) * GRID_SIZE;
+            const islandCenterY = (island.mapBounds.y + island.mapBounds.h / 2) * GRID_SIZE;
+            requestAnimationFrame(() => {
+                setOffset({
+                    x: window.innerWidth / 2 - islandCenterX * scale,
+                    y: window.innerHeight / 2 - islandCenterY * scale,
+                });
+            });
+        },
+    }), [GRID_SIZE, nodes, scale, wires, initialState, stage2Config]);
+
+    useEffect(() => {
+        if (!stage2Config) {
+            stage2InitialViewKeyRef.current = null;
+            return;
         }
-    }), [nodes, wires, initialState]);
+        const key = stage2Config.levelId;
+        if (stage2InitialViewKeyRef.current === key) return;
+        stage2InitialViewKeyRef.current = key;
+
+        const focusIsland = stage2Config.world.getIslandById(stage2Config.focusIslandId);
+        if (!focusIsland) return;
+        const islandCenterX = (focusIsland.mapBounds.x + focusIsland.mapBounds.w / 2) * GRID_SIZE;
+        const islandCenterY = (focusIsland.mapBounds.y + focusIsland.mapBounds.h / 2) * GRID_SIZE;
+        const raf = requestAnimationFrame(() => {
+            setOffset({
+                x: window.innerWidth / 2 - islandCenterX * scale,
+                y: window.innerHeight / 2 - islandCenterY * scale,
+            });
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [GRID_SIZE, scale, stage2Config]);
+
+    useEffect(() => {
+        if (!stage2Config || !stage2Progress) return;
+
+        completedGoalIds.forEach((goalId) => {
+            if (!stage2Progress.completedIslandIds.includes(goalId)) {
+                onStage2IslandComplete?.(goalId);
+            }
+        });
+    }, [completedGoalIds, onStage2IslandComplete, stage2Config, stage2Progress]);
 
     // Removed wire dragging state as requested
-
-    // Configuration
-    const GRID_SIZE = 25; // 1 logical unit = 25px. 2 units = 50px (Visual Grid)
-    const BLOCK_STRIDE = 16;
-    const SUPER_BLOCK_STRIDE = 128; // 8 blocks
-    const MIN_SCALE = 0.1;
-    const MAX_SCALE = 5.0;
-    const LOD_THRESHOLD_SMALL = 0.4;
-    const LOD_THRESHOLD_BLOCK = 0.2;
 
     // Helper: Draw Rounded Rectangle
     const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
@@ -522,6 +750,103 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                 // Output: Rightmost vertex
                 drawPortCircle(dx + drawW, dy + drawH/2, 'provable', 'out');
             }
+        } else if (node.type === 'theorem') {
+            bgColor = '#1a1226';
+            borderColor = '#fbbf24';
+            textColor = '#fde68a';
+
+            drawRoundedRect(ctx, dx, dy, drawW, drawH, 10);
+            ctx.fillStyle = bgColor;
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = borderColor;
+            ctx.stroke();
+
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(251, 191, 36, 0.45)';
+            drawRoundedRect(ctx, dx + 4, dy + 4, drawW - 8, drawH - 8, 6);
+            ctx.stroke();
+
+            const name = node.theoremName || node.subType || 'THM';
+            ctx.fillStyle = textColor;
+            ctx.font = 'bold 18px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(name.toUpperCase(), dx + drawW / 2, dy + 8);
+
+            const normalize = (text: string) => text.replace(/^\s*(\|-|⊢)\s*/, '').trim();
+            const premises = node.theoremPremises ?? [];
+            const conclusion = node.theoremConclusion ? normalize(node.theoremConclusion) : normalize(node.customLabel ?? '');
+
+            const contentX = dx + 10;
+            const contentY = dy + 36;
+            const contentW = drawW - 20;
+            const contentH = drawH - 48;
+            const leftW = contentW * 0.44;
+            const midW = contentW * 0.14;
+            const rightW = contentW - leftW - midW;
+
+            ctx.save();
+            ctx.globalAlpha = 0.9;
+            drawRoundedRect(ctx, contentX, contentY, contentW, contentH, 10);
+            ctx.fillStyle = 'rgba(2, 6, 23, 0.35)';
+            ctx.fill();
+            ctx.restore();
+
+            const renderProvable = (formulaText: string, cx: number, cy: number, w: number, h: number, sizeScale: number) => {
+                const parsed = parseGoal(`|-${normalize(formulaText)}`);
+                if (!parsed) return;
+                const renderSize = Math.min(w, h) * sizeScale;
+                formulaRenderer.render(ctx, parsed, cx, cy, renderSize, scale);
+            };
+
+            const renderPremiseCount = Math.min(2, premises.length);
+            if (renderPremiseCount > 0) {
+                const slotGap = 8;
+                const slotH = (contentH - slotGap * (renderPremiseCount - 1)) / renderPremiseCount;
+                for (let i = 0; i < renderPremiseCount; i += 1) {
+                    const sx = contentX + 6;
+                    const sy = contentY + i * (slotH + slotGap) + 6;
+                    const sw = leftW - 12;
+                    const sh = slotH - 12;
+                    drawRoundedRect(ctx, sx, sy, sw, sh, 8);
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+                    ctx.fill();
+                    ctx.lineWidth = 1;
+                    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+                    ctx.stroke();
+                    renderProvable(premises[i], sx + sw / 2, sy + sh / 2, sw, sh, 0.9);
+                }
+
+                if (premises.length > renderPremiseCount) {
+                    ctx.save();
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillStyle = 'rgba(226, 232, 240, 0.7)';
+                    ctx.font = `bold ${Math.max(10, 12 / Math.max(0.12, scale))}px sans-serif`;
+                    ctx.fillText(`+${premises.length - renderPremiseCount}`, contentX + 8, contentY + contentH - 8);
+                    ctx.restore();
+                }
+            }
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = `bold ${Math.max(18, Math.min(34, 26 / Math.max(0.12, scale)))}px sans-serif`;
+            ctx.fillText('⇒', contentX + leftW + midW / 2, contentY + contentH / 2);
+            ctx.restore();
+
+            const cx = contentX + leftW + midW + rightW / 2;
+            const cy = contentY + contentH / 2;
+            renderProvable(conclusion, cx, cy, rightW, contentH, 0.95);
+
+            if (!isGhost) {
+                const nodePorts = getNodePorts(node as NodeData);
+                for (const port of nodePorts) {
+                    drawPortCircle(dx + port.x * GRID_SIZE, dy + port.y * GRID_SIZE, port.type, port.id);
+                }
+            }
         } else if (node.type === 'premise') {
             // Dark Teal / Cyan Theme (Chip Style)
             bgColor = '#0a2a2a'; 
@@ -813,6 +1138,429 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         ctx.restore();
     }, [GRID_SIZE, activeNodeIds, errorWireIds, errorNodePorts, flashPhase, wireValues, nodes, scale]);
 
+    const drawStage2Backdrop = useCallback((ctx: CanvasRenderingContext2D) => {
+        if (!stage2Config) return;
+
+        const selectedIslandId = selectedStage2Island?.id ?? stage2Config.focusIslandId;
+        const focusIsland = stage2Config.world.getIslandById(selectedIslandId);
+
+        const completedIslandIds = new Set(stage2Progress?.completedIslandIds ?? []);
+
+        const getCenter = (island: Stage2IslandDefinition) => ({
+            x: island.mapBounds.x + island.mapBounds.w / 2,
+            y: island.mapBounds.y + island.mapBounds.h / 2,
+        });
+
+        const lod: 'coarse' | 'markers' | 'tiles' =
+            showStage2InteriorDetails ? 'tiles' : scale >= STAGE2_MARKER_SCALE_THRESHOLD ? 'markers' : 'coarse';
+
+        const palette = {
+            main: {
+                fill: 'rgba(12, 18, 34, 0.82)',
+                edge: 'rgba(148, 163, 184, 0.55)',
+            },
+            support: {
+                fill: 'rgba(10, 14, 28, 0.78)',
+                edge: 'rgba(148, 163, 184, 0.45)',
+            },
+            optional: {
+                fill: 'rgba(8, 10, 20, 0.72)',
+                edge: 'rgba(148, 163, 184, 0.35)',
+            },
+            completed: {
+                fill: 'rgba(6, 36, 30, 0.78)',
+                edge: 'rgba(52, 211, 153, 0.55)',
+            },
+            selectedGlow: 'rgba(14, 165, 233, 0.18)',
+            selectedEdge: 'rgba(56, 189, 248, 0.65)',
+            link: 'rgba(56, 189, 248, 0.12)',
+        } as const;
+
+        const getCoarseLabel = (island: Stage2IslandDefinition) => {
+            if (!island.goalFormula) return '';
+            const goalText = parseGoal(island.goalFormula)?.toString() ?? island.goalFormula;
+            const premiseText = (island.premiseNodes ?? []).map((premise) => premise.formula).join(', ');
+            const summary = premiseText.length > 0 ? `${premiseText} ⇒ ${goalText}` : goalText;
+            return summary.length > 64 ? `${summary.slice(0, 64)}...` : summary;
+        };
+
+        const buildIslandOutlinePath = (island: Stage2IslandDefinition) => {
+            const edgeMap = new Map<string, { ax: number; ay: number; bx: number; by: number }>();
+            const addOrToggleEdge = (ax: number, ay: number, bx: number, by: number) => {
+                const key =
+                    ax < bx || (ax === bx && ay <= by)
+                        ? `${ax},${ay},${bx},${by}`
+                        : `${bx},${by},${ax},${ay}`;
+                if (edgeMap.has(key)) {
+                    edgeMap.delete(key);
+                    return;
+                }
+                edgeMap.set(key, { ax, ay, bx, by });
+            };
+
+            island.buildTiles.forEach((tile) => {
+                const x0 = tile.x;
+                const y0 = tile.y;
+                const x1 = tile.x + 1;
+                const y1 = tile.y + 1;
+                addOrToggleEdge(x0, y0, x1, y0);
+                addOrToggleEdge(x1, y0, x1, y1);
+                addOrToggleEdge(x1, y1, x0, y1);
+                addOrToggleEdge(x0, y1, x0, y0);
+            });
+
+            const pointToNeighbors = new Map<string, string[]>();
+            const addNeighbor = (a: string, b: string) => {
+                const arr = pointToNeighbors.get(a);
+                if (arr) {
+                    arr.push(b);
+                } else {
+                    pointToNeighbors.set(a, [b]);
+                }
+            };
+
+            edgeMap.forEach((edge) => {
+                const a = `${edge.ax},${edge.ay}`;
+                const b = `${edge.bx},${edge.by}`;
+                addNeighbor(a, b);
+                addNeighbor(b, a);
+            });
+
+            const visitedUndirectedEdges = new Set<string>();
+            const toUndirectedEdgeKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+            const parsePoint = (key: string) => {
+                const [xs, ys] = key.split(',');
+                return { x: Number(xs), y: Number(ys) };
+            };
+
+            const outline = new Path2D();
+            const points = Array.from(pointToNeighbors.keys());
+            for (const startPoint of points) {
+                const neighbors = pointToNeighbors.get(startPoint);
+                if (!neighbors || neighbors.length === 0) continue;
+
+                for (const nextPoint of neighbors) {
+                    const firstEdgeKey = toUndirectedEdgeKey(startPoint, nextPoint);
+                    if (visitedUndirectedEdges.has(firstEdgeKey)) continue;
+
+                    const start = startPoint;
+                    let prev = startPoint;
+                    let cur = nextPoint;
+
+                    const startPos = parsePoint(start);
+                    outline.moveTo(startPos.x * GRID_SIZE, startPos.y * GRID_SIZE);
+
+                    visitedUndirectedEdges.add(firstEdgeKey);
+                    while (true) {
+                        const curPos = parsePoint(cur);
+                        outline.lineTo(curPos.x * GRID_SIZE, curPos.y * GRID_SIZE);
+
+                        const curNeighbors = pointToNeighbors.get(cur) ?? [];
+                        let candidate: string | null = null;
+                        if (curNeighbors.length === 1) {
+                            candidate = curNeighbors[0];
+                        } else {
+                            for (const n of curNeighbors) {
+                                if (n === prev) continue;
+                                const edgeKey = toUndirectedEdgeKey(cur, n);
+                                if (!visitedUndirectedEdges.has(edgeKey)) {
+                                    candidate = n;
+                                    break;
+                                }
+                            }
+                            if (!candidate) {
+                                candidate = curNeighbors.find((n) => n !== prev) ?? null;
+                            }
+                        }
+
+                        if (!candidate) break;
+                        if (candidate === start) {
+                            outline.closePath();
+                            break;
+                        }
+
+                        const edgeKey = toUndirectedEdgeKey(cur, candidate);
+                        if (visitedUndirectedEdges.has(edgeKey)) {
+                            outline.closePath();
+                            break;
+                        }
+                        visitedUndirectedEdges.add(edgeKey);
+                        prev = cur;
+                        cur = candidate;
+                    }
+                }
+            }
+
+            return outline;
+        };
+
+        const getIslandColors = (island: Stage2IslandDefinition, completed: boolean, selected: boolean) => {
+            if (completed) {
+                return {
+                    fill: palette.completed.fill,
+                    edge: selected ? palette.selectedEdge : palette.completed.edge,
+                };
+            }
+            const base = island.category === 'main' ? palette.main : island.category === 'support' ? palette.support : palette.optional;
+            return {
+                fill: base.fill,
+                edge: selected ? palette.selectedEdge : base.edge,
+            };
+        };
+
+        const getIslandCachedArtifacts = (island: Stage2IslandDefinition) => {
+            const cached = stage2IslandRenderCacheRef.current.get(island.id);
+            if (cached) return cached;
+
+            const tilesPath = new Path2D();
+            island.buildTiles.forEach((tile) => {
+                tilesPath.rect(tile.x * GRID_SIZE, tile.y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
+            });
+            const outlinePath = buildIslandOutlinePath(island);
+            const coarseLabel = getCoarseLabel(island);
+            const result = { tilesPath, outlinePath, coarseLabel };
+            stage2IslandRenderCacheRef.current.set(island.id, result);
+            return result;
+        };
+
+        const drawIslandCoarse = (island: Stage2IslandDefinition, unlocked: boolean, completed: boolean, selected: boolean) => {
+            const { x, y, w } = island.mapBounds;
+            const alpha = unlocked ? 1 : 0.18;
+            const colors = getIslandColors(island, completed, selected);
+            const { outlinePath } = getIslandCachedArtifacts(island);
+
+            ctx.save();
+            ctx.globalAlpha = alpha;
+
+            if (selected && unlocked) {
+                ctx.save();
+                ctx.fillStyle = palette.selectedGlow;
+                ctx.shadowBlur = 24 / Math.max(0.12, scale);
+                ctx.shadowColor = palette.selectedGlow;
+                ctx.fill(outlinePath, 'evenodd');
+                ctx.restore();
+            }
+
+            ctx.fillStyle = colors.fill;
+            ctx.fill(outlinePath, 'evenodd');
+
+            ctx.lineWidth = Math.max(1 / scale, GRID_SIZE * 0.035);
+            ctx.strokeStyle = colors.edge;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.stroke(outlinePath);
+
+            if (unlocked && island.name) {
+                const { coarseLabel } = getIslandCachedArtifacts(island);
+                const centerX = (x + w / 2) * GRID_SIZE;
+                const centerY = (island.mapBounds.y + island.mapBounds.h * 0.56) * GRID_SIZE;
+                const titleFontSize = Math.max(22, Math.min(58, 30 / Math.max(0.12, scale)));
+                const labelFontSize = Math.max(18, Math.min(46, 24 / Math.max(0.12, scale)));
+
+                const titleColor = completed
+                    ? 'rgba(110, 231, 183, 0.92)'
+                    : island.category === 'main'
+                      ? 'rgba(165, 243, 252, 0.95)'
+                      : island.category === 'support'
+                        ? 'rgba(196, 181, 253, 0.92)'
+                        : 'rgba(226, 232, 240, 0.85)';
+                const labelColor = completed ? 'rgba(167, 243, 208, 0.9)' : 'rgba(253, 230, 138, 0.92)';
+
+                ctx.save();
+                ctx.globalAlpha = 0.92;
+                ctx.shadowBlur = 10 / Math.max(0.12, scale);
+                ctx.shadowColor = 'rgba(2, 6, 23, 0.8)';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = 'rgba(2, 6, 23, 0.55)';
+                const padX = 14 / Math.max(0.12, scale);
+                const padY = 10 / Math.max(0.12, scale);
+                const boxW = Math.max(280 / Math.max(0.12, scale), w * GRID_SIZE * 0.78);
+                const boxH = titleFontSize * 2.35 + labelFontSize * 1.4 + padY * 2;
+                drawRoundedRect(ctx, centerX - boxW / 2, centerY - boxH / 2, boxW, boxH, 18 / Math.max(0.12, scale));
+                ctx.fill();
+
+                ctx.fillStyle = titleColor;
+                ctx.font = `bold ${titleFontSize}px sans-serif`;
+                ctx.fillText(island.name, centerX, centerY - titleFontSize * 0.9);
+                if (coarseLabel) {
+                    ctx.fillStyle = labelColor;
+                    ctx.font = `bold ${labelFontSize}px sans-serif`;
+                    ctx.fillText(coarseLabel, centerX, centerY + labelFontSize * 0.3);
+                }
+                ctx.restore();
+            }
+
+            ctx.restore();
+        };
+
+        const canvasW = ctx.canvas.width;
+        const canvasH = ctx.canvas.height;
+        const worldMinX = (-offset.x / scale) / GRID_SIZE;
+        const worldMaxX = ((canvasW - offset.x) / scale) / GRID_SIZE;
+        const worldMinY = (-offset.y / scale) / GRID_SIZE;
+        const worldMaxY = ((canvasH - offset.y) / scale) / GRID_SIZE;
+        const marginTilesX = stage2Config.world.chunkW * 2;
+        const marginTilesY = stage2Config.world.chunkH * 2;
+        const viewBounds = {
+            x: Math.floor(worldMinX - marginTilesX),
+            y: Math.floor(worldMinY - marginTilesY),
+            w: Math.ceil(worldMaxX - worldMinX + marginTilesX * 2),
+            h: Math.ceil(worldMaxY - worldMinY + marginTilesY * 2),
+        };
+
+        const islandsInView = stage2Config.world.getIslandsInBounds(viewBounds);
+        const selectedId = selectedIslandId;
+
+        if (lod !== 'coarse' && focusIsland) {
+            const focusCenter = getCenter(focusIsland);
+            stage2Config.goalIslandIds
+                .filter((id) => id !== focusIsland.id && stage2UnlockedIslandIdSet.has(id))
+                .map((id) => stage2Config.world.getIslandById(id))
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .forEach((island) => {
+                    const center = getCenter(island);
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.strokeStyle = palette.link;
+                    ctx.lineWidth = 0.25 * GRID_SIZE;
+                    ctx.setLineDash([0.5 * GRID_SIZE, 0.6 * GRID_SIZE]);
+                    const controlY = Math.min(center.y, focusCenter.y) - 4;
+                    ctx.moveTo(center.x * GRID_SIZE, center.y * GRID_SIZE);
+                    ctx.quadraticCurveTo(
+                        ((center.x + focusCenter.x) / 2) * GRID_SIZE,
+                        controlY * GRID_SIZE,
+                        focusCenter.x * GRID_SIZE,
+                        focusCenter.y * GRID_SIZE
+                    );
+                    ctx.stroke();
+                    ctx.restore();
+                });
+        }
+
+        islandsInView.forEach((islandBase) => {
+            const island: Stage2IslandDefinition = {
+                ...islandBase,
+                unlocked: stage2UnlockedIslandIdSet.has(islandBase.id),
+            };
+            const { x, y, w, h } = island.mapBounds;
+            const unlocked = island.unlocked;
+            const completed = completedIslandIds.has(island.id);
+            const selected = island.id === selectedId;
+
+            if (lod === 'tiles') {
+                const colors = getIslandColors(island, completed, selected);
+                const alpha = unlocked ? 1 : 0.22;
+                const { tilesPath } = getIslandCachedArtifacts(island);
+
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                if (selected && unlocked) {
+                    ctx.save();
+                    ctx.shadowBlur = 26 / Math.max(0.12, scale);
+                    ctx.shadowColor = palette.selectedGlow;
+                    ctx.fillStyle = palette.selectedGlow;
+                    ctx.fill(tilesPath);
+                    ctx.restore();
+                }
+
+                ctx.fillStyle = colors.fill;
+                ctx.fill(tilesPath);
+                ctx.lineWidth = Math.max(1 / scale, GRID_SIZE * 0.035);
+                ctx.strokeStyle = colors.edge;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.stroke(tilesPath);
+                ctx.restore();
+            } else {
+                drawIslandCoarse(island, unlocked, completed, selected);
+            }
+
+            if (unlocked && island.name && scale >= 0.26 && lod !== 'coarse') {
+                ctx.save();
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = completed ? 'rgba(110, 231, 183, 0.7)' : 'rgba(226, 232, 240, 0.62)';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.font = `bold ${Math.max(11, Math.min(18, w * GRID_SIZE * 0.06))}px sans-serif`;
+                ctx.fillText(island.name, (x + w / 2) * GRID_SIZE, (y - 0.8) * GRID_SIZE);
+                ctx.restore();
+            }
+        });
+    }, [
+        GRID_SIZE,
+        offset.x,
+        offset.y,
+        scale,
+        selectedStage2Island?.id,
+        showStage2InteriorDetails,
+        stage2Config,
+        stage2Progress?.completedIslandIds,
+        stage2UnlockedIslandIdSet,
+    ]);
+
+    const drawGoalBlock = useCallback((
+        ctx: CanvasRenderingContext2D,
+        bounds: { x: number; y: number; w: number; h: number },
+        goalFormulaText: string,
+        solved: boolean,
+        errorPorts: Set<string>
+    ) => {
+        const targetX = bounds.x * GRID_SIZE;
+        const targetY = bounds.y * GRID_SIZE;
+        const targetW = bounds.w * GRID_SIZE;
+        const targetH = bounds.h * GRID_SIZE;
+        const radius = 20;
+
+        ctx.save();
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = solved ? 'rgba(0, 255, 100, 0.6)' : 'rgba(255, 255, 255, 0.1)';
+        drawRoundedRect(ctx, targetX, targetY, targetW, targetH, radius);
+        ctx.fillStyle = solved ? '#0d2a1a' : '#0d0d12';
+        ctx.fill();
+        ctx.lineWidth = 3 / scale;
+        ctx.strokeStyle = solved ? '#00ff66' : '#666';
+        ctx.save();
+        ctx.setLineDash([5 / scale, 5 / scale]);
+        ctx.stroke();
+        ctx.restore();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = solved ? '#00ff66' : '#888';
+        ctx.font = 'bold 32px "Segoe UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('GOAL', targetX + targetW / 2, targetY + 40);
+
+        const parsedGoalFormula = parseGoal(goalFormulaText);
+        if (parsedGoalFormula) {
+            const renderSize = Math.min(targetW, targetH) * 0.55;
+            formulaRenderer.render(ctx, parsedGoalFormula, targetX + targetW / 2, targetY + targetH / 2 + 25, renderSize, scale);
+        } else {
+            ctx.fillStyle = '#fff';
+            ctx.font = `italic ${goalFormulaText.length > 15 ? 18 : 24}px "Times New Roman", serif`;
+            ctx.fillText(goalFormulaText, targetX + targetW / 2, targetY + targetH / 2 + 20);
+        }
+
+        const portR = 6;
+        getGoalPortsForRect(bounds).forEach((port) => {
+            const cx = port.x * GRID_SIZE;
+            const cy = port.y * GRID_SIZE;
+            let fillStyle = '#444';
+            if (errorPorts.has(`${port.x},${port.y}`) && flashPhase > 0.5) {
+                fillStyle = '#ef4444';
+            }
+            ctx.beginPath();
+            ctx.arc(cx, cy, portR, 0, Math.PI * 2);
+            ctx.fillStyle = fillStyle;
+            ctx.fill();
+            ctx.lineWidth = 2 / scale;
+            ctx.strokeStyle = solved ? '#00ff66' : '#666';
+            ctx.stroke();
+        });
+        ctx.restore();
+    }, [GRID_SIZE, flashPhase, scale]);
+
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -919,90 +1667,47 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         }
         // --- Grid Drawing End ---
 
-        // --- Goal Block Start ---
-        const TARGET_SIZE = 8;
-        const targetW = TARGET_SIZE * GRID_SIZE;
-        const targetH = TARGET_SIZE * GRID_SIZE;
-        const targetX = -targetW / 2;
-        const targetY = -targetH / 2;
-        const radius = 20;
+        drawStage2Backdrop(ctx);
 
-        ctx.shadowBlur = 30;
-        ctx.shadowColor = isSolved ? 'rgba(0, 255, 100, 0.6)' : 'rgba(255, 255, 255, 0.1)';
-        drawRoundedRect(ctx, targetX, targetY, targetW, targetH, radius);
-        ctx.fillStyle = isSolved ? '#0d2a1a' : '#0d0d12';
-        ctx.fill();
-        ctx.lineWidth = 3 / scale;
-        ctx.strokeStyle = isSolved ? '#00ff66' : '#666';
-        ctx.save();
-        ctx.setLineDash([5 / scale, 5 / scale]);
-        ctx.stroke();
-        ctx.restore();
-        ctx.shadowBlur = 0;
-
-        ctx.fillStyle = isSolved ? '#00ff66' : '#888';
-        ctx.font = 'bold 32px "Segoe UI", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText("GOAL", 0, -targetH/2 + 40);
-        
-        if (goalFormula) {
-            const parsedGoalFormula = parseGoal(goalFormula);
-            if (parsedGoalFormula) {
-                const renderSize = Math.min(targetW, targetH) * 0.55;
-                formulaRenderer.render(ctx, parsedGoalFormula, 0, 25, renderSize, scale);
-            } else {
-                ctx.fillStyle = '#fff';
-                const fontSize = displayGoalFormula.length > 15 ? 18 : 24;
-                ctx.font = `italic ${fontSize}px "Times New Roman", serif`;
-                ctx.fillText(displayGoalFormula, 0, 20);
-            }
+        if (!stage2Config && goalFormula) {
+            drawGoalBlock(ctx, { x: -4, y: -4, w: 8, h: 8 }, goalFormula, isSolved, errorGoalPorts);
         }
 
-        const portR = 6;
-        const drawPort = (cx: number, cy: number) => {
-             ctx.beginPath();
-             ctx.arc(cx, cy, portR, 0, Math.PI * 2);
-             
-             let fillStyle = '#444';
-             // Check Error
-             const lx = Math.round(cx / GRID_SIZE);
-             const ly = Math.round(cy / GRID_SIZE);
-             const key = `${lx},${ly}`;
-
-             if (errorGoalPorts.has(key)) {
-                  if (flashPhase > 0.5) {
-                      fillStyle = '#ef4444'; // Red
-                  }
-             }
-
-             ctx.fillStyle = fillStyle;
-             ctx.fill();
-             ctx.lineWidth = 2 / scale;
-             ctx.strokeStyle = isSolved ? '#00ff66' : '#666';
-             ctx.stroke();
-        };
-
-        // Draw goal ports - one per 2 grid cells, matching getGoalPorts() logic
-        // Ports at -3, -1, 1, 3 relative to center (excluding corners at -4, 4)
-        const portOffsets = [-3, -1, 1, 3];
-        
-        // Top and Bottom edges
-        portOffsets.forEach(offset => {
-            const px = offset * GRID_SIZE;
-            drawPort(px, targetY);
-            drawPort(px, targetY + targetH);
-        });
-        // Left and Right edges
-        portOffsets.forEach(offset => {
-            const py = offset * GRID_SIZE;
-            drawPort(targetX, py);
-            drawPort(targetX + targetW, py);
-        });
-        // --- Goal Block End ---
+        if (stage2Config && showStage2IslandOverlayDetails) {
+            stage2Config.goalIslandIds.forEach((islandId) => {
+                if (!stage2UnlockedIslandIdSet.has(islandId)) return;
+                const island = stage2Config.world.getIslandById(islandId);
+                if (!island?.goalBounds || !island.goalFormula) return;
+                drawGoalBlock(
+                    ctx,
+                    island.goalBounds,
+                    island.goalFormula,
+                    completedGoalIds.has(island.id),
+                    goalErrorsById.get(island.id) ?? new Set<string>()
+                );
+            });
+        }
 
         // --- Nodes ---
         nodes.forEach(node => {
+            if (stage2Config) {
+                if (!showStage2InteriorDetails) {
+                    if (
+                        node.type !== 'premise' ||
+                        !node.locked ||
+                        !node.sourceIslandId ||
+                        !stage2UnlockedIslandIdSet.has(node.sourceIslandId) ||
+                        !showStage2IslandOverlayDetails
+                    ) {
+                        return;
+                    }
+                } else if (node.type === 'premise' && node.locked && node.sourceIslandId) {
+                    if (!stage2UnlockedIslandIdSet.has(node.sourceIslandId)) {
+                        return;
+                    }
+                }
+            }
+
             drawNode(ctx, node, node.x * GRID_SIZE, node.y * GRID_SIZE);
         });
 
@@ -1067,7 +1772,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
             // Level Solved indicator handled by HTML overlay in parent
         }
 
-    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, goalFormula, displayGoalFormula, isSolved, errorGoalPorts, flashPhase, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds]);
+    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, showStage2InteriorDetails, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById]);
 
     // Handle Window Resize
     useEffect(() => {
@@ -1090,8 +1795,11 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
 
     // Clear selection when tool or mode changes
     useEffect(() => {
-        setSelectedNodeIds(new Set());
-        setSelectedWireIds(new Set());
+        const raf = requestAnimationFrame(() => {
+            setSelectedNodeIds(new Set());
+            setSelectedWireIds(new Set());
+        });
+        return () => cancelAnimationFrame(raf);
     }, [activeTool, selectMode]);
 
     // Key handlers
@@ -1109,6 +1817,94 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [onToolClear, onToolRotate, onToolToggleType]);
+
+    useEffect(() => {
+        const isEditableTarget = (target: EventTarget | null) => {
+            const el = target as HTMLElement | null;
+            if (!el) return false;
+            if (el.isContentEditable) return true;
+            const tag = el.tagName?.toLowerCase();
+            if (!tag) return false;
+            return tag === 'input' || tag === 'textarea' || tag === 'select';
+        };
+
+        const setKey = (key: string, pressed: boolean) => {
+            const state = wasdStateRef.current;
+            if (key === 'w') state.w = pressed;
+            else if (key === 'a') state.a = pressed;
+            else if (key === 's') state.s = pressed;
+            else if (key === 'd') state.d = pressed;
+            else if (key === 'shift') state.shift = pressed;
+        };
+
+        const hasMovement = () => {
+            const s = wasdStateRef.current;
+            return s.w || s.a || s.s || s.d;
+        };
+
+        const tick = (now: number) => {
+            if (!hasMovement()) {
+                wasdRafRef.current = null;
+                wasdLastFrameRef.current = 0;
+                return;
+            }
+
+            const last = wasdLastFrameRef.current || now;
+            wasdLastFrameRef.current = now;
+            const dt = Math.min(48, now - last);
+
+            const state = wasdStateRef.current;
+            const baseSpeed = 760;
+            const speed = state.shift ? baseSpeed * 2.2 : baseSpeed;
+            const step = (speed * dt) / 1000;
+
+            let dx = 0;
+            let dy = 0;
+            if (state.w) dy += step;
+            if (state.s) dy -= step;
+            if (state.a) dx += step;
+            if (state.d) dx -= step;
+
+            if (dx !== 0 || dy !== 0) {
+                setOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+            }
+
+            wasdRafRef.current = requestAnimationFrame(tick);
+        };
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (isEditableTarget(e.target)) return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+            const key = e.key.toLowerCase();
+            if (key !== 'w' && key !== 'a' && key !== 's' && key !== 'd' && key !== 'shift') return;
+
+            setKey(key, true);
+            if (wasdRafRef.current == null && hasMovement()) {
+                wasdLastFrameRef.current = 0;
+                wasdRafRef.current = requestAnimationFrame(tick);
+            }
+        };
+
+        const onKeyUp = (e: KeyboardEvent) => {
+            const key = e.key.toLowerCase();
+            if (key !== 'w' && key !== 'a' && key !== 's' && key !== 'd' && key !== 'shift') return;
+            setKey(key, false);
+        };
+
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+            if (wasdRafRef.current != null) {
+                cancelAnimationFrame(wasdRafRef.current);
+                wasdRafRef.current = null;
+            }
+            wasdLastFrameRef.current = 0;
+            wasdStateRef.current = { w: false, a: false, s: false, d: false, shift: false };
+        };
+    }, []);
 
     // Event Handlers
     const handleMouseDown = (e: React.MouseEvent) => {
@@ -1136,16 +1932,36 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                     y: gy,
                     w: activeTool.w,
                     h: activeTool.h,
-                    rotation: activeTool.rotation || 0
+                    rotation: activeTool.rotation || 0,
+                    customLabel: activeTool.customLabel,
+                    theoremId: activeTool.theoremId,
+                    sourceIslandId: activeTool.sourceIslandId,
+                    placementCost: activeTool.placementCost,
+                    theoremName: activeTool.theoremName,
+                    theoremVars: activeTool.theoremVars,
+                    theoremPremises: activeTool.theoremPremises,
+                    theoremConclusion: activeTool.theoremConclusion,
                 };
 
+                if (canPlaceNode && !canPlaceNode(newNode)) {
+                    return;
+                }
+
                 // Collision check
-                // 1. Check against Goal (8x8 at center: -4, -4 to 4, 4)
-                const goalRect = { x: -4, y: -4, w: 8, h: 8 };
-                const goalCollision = !(newNode.x >= goalRect.x + goalRect.w || 
-                                        newNode.x + newNode.w <= goalRect.x || 
-                                        newNode.y >= goalRect.y + goalRect.h || 
-                                        newNode.y + newNode.h <= goalRect.y);
+                const stage2GoalRects = stage2Config
+                    ? stage2Config.goalIslandIds
+                          .filter((id) => stage2UnlockedIslandIdSet.has(id))
+                          .map((id) => stage2Config.world.getIslandById(id))
+                          .filter((item): item is NonNullable<typeof item> => Boolean(item?.goalBounds))
+                          .map((island) => island.goalBounds!)
+                    : [];
+                const goalRects = stage2GoalRects.length > 0 ? stage2GoalRects : [{ x: -4, y: -4, w: 8, h: 8 }];
+                const goalCollision = goalRects.some((goalRect) => !(
+                    newNode.x >= goalRect.x + goalRect.w || 
+                    newNode.x + newNode.w <= goalRect.x || 
+                    newNode.y >= goalRect.y + goalRect.h || 
+                    newNode.y + newNode.h <= goalRect.y
+                ));
 
                 const overlappingNodes = nodes.filter(n => {
                     const isOverlapping = !(newNode.x >= n.x + n.w || 
@@ -1196,6 +2012,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                             ...prev.filter(n => !replacedWireIds.has(n.id)),
                             newNode
                         ]);
+                        onNodePlaced?.(newNode);
                         if (newNode.type === 'wire') {
                              dispatchAction('CONNECT_WIRE', { 
                                  x: newNode.x, 

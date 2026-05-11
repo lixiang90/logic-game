@@ -1,5 +1,6 @@
 
 import { NodeData, Wire } from '@/types/game';
+import { Stage2MetaProgress, createDefaultStage2MetaProgress } from '@/types/stage2';
 
 export interface LevelState {
     nodes: NodeData[];
@@ -10,12 +11,37 @@ export interface SaveData {
     timestamp: number;
     levelIndex: number;
     levelStates: Record<number, LevelState>; // Store state for each level index
+    metaProgress: Stage2MetaProgress;
 }
 
 const STORAGE_KEY_PREFIX = 'logic_game_save_';
 const AUTO_SAVE_KEY = 'logic_game_autosave';
 
 export const SaveSystem = {
+    createEmptySave: (): SaveData => ({
+        timestamp: Date.now(),
+        levelIndex: 0,
+        levelStates: {},
+        metaProgress: createDefaultStage2MetaProgress(),
+    }),
+
+    normalizeSaveData: (data: Partial<SaveData> | null): SaveData | null => {
+        if (!data) return null;
+        const baseSeed = data.timestamp ?? Date.now();
+        return {
+            timestamp: data.timestamp ?? Date.now(),
+            levelIndex: data.levelIndex ?? 0,
+            levelStates: data.levelStates ?? {},
+            metaProgress: data.metaProgress
+                ? {
+                      ...createDefaultStage2MetaProgress(baseSeed),
+                      ...data.metaProgress,
+                      mapSeed: data.metaProgress.mapSeed ?? baseSeed,
+                  }
+                : createDefaultStage2MetaProgress(baseSeed),
+        };
+    },
+
     save: (slot: number, data: SaveData) => {
         if (typeof window === 'undefined') return;
         try {
@@ -34,7 +60,7 @@ export const SaveSystem = {
         if (typeof window === 'undefined') return null;
         try {
             const item = localStorage.getItem(`${STORAGE_KEY_PREFIX}${slot}`);
-            return item ? JSON.parse(item) : null;
+            return item ? SaveSystem.normalizeSaveData(JSON.parse(item)) : null;
         } catch (e) {
             console.error("Load failed", e);
             return null;
