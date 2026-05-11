@@ -1147,15 +1147,24 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                                         newNode.y >= goalRect.y + goalRect.h || 
                                         newNode.y + newNode.h <= goalRect.y);
 
-                // 2. Check against existing nodes
-                // Separate "Hard" collision (blocking types) from "Duplicate" (same wire)
-                const hardCollision = nodes.some(n => {
+                const overlappingNodes = nodes.filter(n => {
                     const isOverlapping = !(newNode.x >= n.x + n.w || 
                         newNode.x + newNode.w <= n.x || 
                         newNode.y >= n.y + n.h || 
                         newNode.y + newNode.h <= n.y);
-                    
-                    if (!isOverlapping) return false;
+                    return isOverlapping;
+                });
+
+                // 2. Check against existing nodes
+                // Separate "Hard" collision (blocking types) from "Duplicate" (same wire)
+                const hardCollision = overlappingNodes.some(n => {
+                    if (newNode.type === 'bridge' && n.type === 'wire') {
+                        return false;
+                    }
+
+                    if (newNode.type === 'wire' && n.type === 'bridge') {
+                        return false;
+                    }
 
                     // Allow wire overlapping if rotations are different (crossing/junctions)
                     if (newNode.type === 'wire' && n.type === 'wire') {
@@ -1177,7 +1186,16 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({ 
                 if (!hardCollision && !goalCollision) {
                     // Only add if not duplicate
                     if (!isDuplicate) {
-                        setNodes(prev => [...prev, newNode]);
+                        const replacedWireIds = new Set(
+                            newNode.type === 'bridge'
+                                ? overlappingNodes.filter(n => n.type === 'wire').map(n => n.id)
+                                : []
+                        );
+
+                        setNodes(prev => [
+                            ...prev.filter(n => !replacedWireIds.has(n.id)),
+                            newNode
+                        ]);
                         if (newNode.type === 'wire') {
                              dispatchAction('CONNECT_WIRE', { 
                                  x: newNode.x, 
