@@ -174,7 +174,7 @@ export default function Stage2Map({ config, progress }: Stage2MapProps) {
                 <div className="absolute left-4 top-4 z-10">
                     <div className="text-[10px] uppercase tracking-[0.3em] text-cyan-300">{t('stage2Map')}</div>
                     <div className="mt-1 text-sm font-bold text-white">
-                        {t('mainObjective')}: <span className="text-cyan-300">{focusIsland.name}</span>
+                        {t('mainObjective')}: <span className="text-cyan-300">{focusIsland?.name ?? ''}</span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-2 text-[10px] uppercase tracking-widest text-slate-300">
                         {recommendedTheorems.map((theorem) => (
