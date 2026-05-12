@@ -120,9 +120,13 @@ export default function Home() {
   const [stage2Progress, setStage2Progress] = useState<Stage2MetaProgress>(createDefaultStage2MetaProgress());
   const [showStage2Intro, setShowStage2Intro] = useState(false);
   const [selectedStage2IslandId, setSelectedStage2IslandId] = useState<string | null>(null);
+  const stage2IntroShownKeyRef = useRef<string | null>(null);
 
   const currentLevel = levels[currentLevelIndex] as Level;
-  const stage2Config = getStage2LevelConfig(currentLevel.id, stage2Progress.mapSeed);
+  const stage2Config = useMemo(
+    () => getStage2LevelConfig(currentLevel.id, stage2Progress.mapSeed),
+    [currentLevel.id, stage2Progress.mapSeed]
+  );
   const stage2GoalIslands = useMemo(() => {
     if (!stage2Config) return [];
     return stage2Config.goalIslandIds
@@ -354,12 +358,26 @@ export default function Home() {
         if (prev.unlockedIslandIds.length > 0) return prev;
         return { ...prev, unlockedIslandIds: stage2Config.initialUnlockedIslandIds };
       });
-
-      const mainIslandCompleted = stage2Progress.completedIslandIds.includes(stage2Config.focusIslandId);
-      setShowStage2Intro(!mainIslandCompleted);
     });
     return () => cancelAnimationFrame(raf);
   }, [gameState, stage2Config, stage2Progress.completedIslandIds]);
+
+  useEffect(() => {
+    if (gameState !== 'playing' || !stage2Config) {
+      stage2IntroShownKeyRef.current = null;
+      return;
+    }
+
+    const key = `${stage2Config.levelId}:${stage2Progress.mapSeed}`;
+    const mainIslandCompleted = stage2Progress.completedIslandIds.includes(stage2Config.focusIslandId);
+    if (mainIslandCompleted) {
+      setShowStage2Intro(false);
+      return;
+    }
+    if (stage2IntroShownKeyRef.current === key) return;
+    stage2IntroShownKeyRef.current = key;
+    setShowStage2Intro(true);
+  }, [gameState, stage2Config, stage2Progress.completedIslandIds, stage2Progress.mapSeed]);
 
   useEffect(() => {
     if (!stage2Config) {
