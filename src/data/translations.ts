@@ -44,6 +44,13 @@ export type TranslationKey =
     | 'resetView'
     | 'resetLevel'
     | 'confirmReset'
+    | 'importExport'
+    | 'exportSave'
+    | 'importSave'
+    | 'importSuccess'
+    | 'importFailed'
+    | 'downloadSaveDesc'
+    | 'importSaveDesc'
     | 'tools'
     | 'atoms'
     | 'gates'
@@ -149,6 +156,13 @@ export const translations: Record<Language, Record<string, string>> = {
         resetView: 'Reset View',
         resetLevel: 'Reset Level',
         confirmReset: 'Are you sure you want to reset the current level? This will clear your built circuits and restore the level to its initial state.',
+        importExport: 'Data',
+        exportSave: 'Export Save',
+        importSave: 'Import Save',
+        importSuccess: 'Save imported successfully!',
+        importFailed: 'Failed to import save. The file might be corrupted.',
+        downloadSaveDesc: 'Download your current game progress to a local file.',
+        importSaveDesc: 'Restore your game progress from a local file.',
         tools: 'Tools',
         atoms: 'Atoms',
         gates: 'Gates',
@@ -321,6 +335,13 @@ export const translations: Record<Language, Record<string, string>> = {
         resetView: '复位视角',
         resetLevel: '复位',
         confirmReset: '确定要复位当前关卡吗？这会清空你已建造的电路并将关卡恢复到初始状态。',
+        importExport: '数据',
+        exportSave: '导出存档',
+        importSave: '导入存档',
+        importSuccess: '存档导入成功！',
+        importFailed: '存档导入失败，文件可能已损坏。',
+        downloadSaveDesc: '将当前游戏进度下载到本地文件。',
+        importSaveDesc: '从本地文件恢复游戏进度。',
         tools: '工具',
         atoms: '原子',
         gates: '逻辑门',

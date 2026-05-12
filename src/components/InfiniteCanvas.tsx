@@ -383,10 +383,12 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             if (!island) return;
             const islandCenterX = (island.mapBounds.x + island.mapBounds.w / 2) * GRID_SIZE;
             const islandCenterY = (island.mapBounds.y + island.mapBounds.h / 2) * GRID_SIZE;
+            const targetScale = 1;
             requestAnimationFrame(() => {
+                setScale(targetScale);
                 setOffset({
-                    x: window.innerWidth / 2 - islandCenterX * scale,
-                    y: window.innerHeight / 2 - islandCenterY * scale,
+                    x: window.innerWidth / 2 - islandCenterX * targetScale,
+                    y: window.innerHeight / 2 - islandCenterY * targetScale,
                 });
             });
         },
@@ -403,16 +405,19 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
         const focusIsland = stage2Config.world.getIslandById(stage2Config.focusIslandId);
         if (!focusIsland) return;
+        
+        const targetScale = 1; // Default scale where grid is clearly visible
         const islandCenterX = (focusIsland.mapBounds.x + focusIsland.mapBounds.w / 2) * GRID_SIZE;
         const islandCenterY = (focusIsland.mapBounds.y + focusIsland.mapBounds.h / 2) * GRID_SIZE;
         const raf = requestAnimationFrame(() => {
+            setScale(targetScale);
             setOffset({
-                x: window.innerWidth / 2 - islandCenterX * scale,
-                y: window.innerHeight / 2 - islandCenterY * scale,
+                x: window.innerWidth / 2 - islandCenterX * targetScale,
+                y: window.innerHeight / 2 - islandCenterY * targetScale,
             });
         });
         return () => cancelAnimationFrame(raf);
-    }, [GRID_SIZE, scale, stage2Config]);
+    }, [GRID_SIZE, stage2Config]);
 
     useEffect(() => {
         if (!stage2Config || !stage2Progress) return;

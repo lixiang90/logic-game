@@ -115,7 +115,7 @@ export default function Home() {
   const [pendingLoad, setPendingLoad] = useState<LevelState | null>(null);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [saveMenuTab, setSaveMenuTab] = useState<'save' | 'load'>('save');
+  const [saveMenuTab, setSaveMenuTab] = useState<'save' | 'load' | 'data'>('save');
   const [saveSuccessSlot, setSaveSuccessSlot] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [saveSlots, setSaveSlots] = useState<Record<number, { timestamp: number, levelIndex: number } | null>>({});
@@ -452,7 +452,7 @@ export default function Home() {
   useEffect(() => {
     if (showSaveMenu) {
         const slots: Record<number, { timestamp: number, levelIndex: number } | null> = {};
-        [1, 2, 3, 4].forEach(slot => {
+        [1, 2, 3, 4, 5, 6].forEach(slot => {
             slots[slot] = SaveSystem.getSlotInfo(slot);
         });
         const raf = requestAnimationFrame(() => {
@@ -674,7 +674,108 @@ export default function Home() {
     setShowResetConfirm(false);
     setIsLevelComplete(false);
     setActiveTool(null);
-    canvasRef.current?.resetView();
+    if (canvasRef.current) {
+        if (stage2Config) {
+            canvasRef.current.jumpToStage2Island(stage2Config.focusIslandId);
+        } else {
+            canvasRef.current.resetView();
+        }
+    }
+  };
+
+  const handleExportSave = () => {
+    const state = canvasRef.current?.getState() || { nodes: [], wires: [] };
+    const currentSession = SaveSystem.loadAutoSave() || SaveSystem.createEmptySave();
+    const saveData = buildSaveData(
+      currentLevelIndex,
+      {
+        ...currentSession.levelStates,
+        [currentLevelIndex]: state
+      },
+      stage2Progress,
+      currentSession.levelStartStates ?? {}
+    );
+
+    let theoremLibrary: SaveData['theoremLibrary'] | undefined = currentSession.theoremLibrary;
+    let theoremToolbarPins: SaveData['theoremToolbarPins'] | undefined = currentSession.theoremToolbarPins;
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('logic_game_theorem_library_tree_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw) as Partial<SaveData['theoremLibrary']>;
+          if (parsed && parsed.version === 1 && parsed.root && parsed.theoremFolderById) {
+            theoremLibrary = parsed as SaveData['theoremLibrary'];
+          }
+        }
+      } catch {}
+      try {
+        const rawPins = localStorage.getItem('logic_game_theorem_toolbar_pins_v1');
+        if (rawPins) {
+          const parsed = JSON.parse(rawPins) as unknown;
+          if (Array.isArray(parsed)) {
+            theoremToolbarPins = parsed.map((v) => (typeof v === 'string' ? v : null));
+          }
+        }
+      } catch {}
+    }
+
+    const fullSaveData: SaveData = {
+      ...saveData,
+      theoremLibrary,
+      theoremToolbarPins,
+    };
+
+    const json = JSON.stringify(fullSaveData);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    a.download = `logic-game-save-${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportSave = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = event.target?.result as string;
+        const parsed = JSON.parse(json);
+        const normalized = SaveSystem.normalizeSaveData(parsed);
+        if (!normalized) throw new Error("Invalid save data");
+
+        // Apply to game
+        applyTheoremLibraryFromSave(normalized);
+        SaveSystem.autoSave(normalized);
+        setCurrentLevelIndex(normalized.levelIndex);
+        setStage2Progress(normalized.metaProgress);
+        const levelState = normalized.levelStates[normalized.levelIndex];
+        if (levelState) {
+          setPendingLoad(levelState);
+        } else {
+          setPendingLoad({ nodes: [], wires: [] });
+        }
+
+        setIsLevelComplete(false);
+        setIsFreeBuild(false);
+        setActiveTool(null);
+        setShowStage2Intro(false);
+        setGameState('playing');
+        setShowSaveMenu(false);
+        alert(t('importSuccess' as TranslationKey));
+      } catch (err) {
+        alert(t('importFailed' as TranslationKey));
+      }
+    };
+    reader.readAsText(file);
+    
+    // Reset file input value so same file can be selected again
+    e.target.value = '';
   };
 
   // Use state for timestamp to avoid hydration mismatch
@@ -995,11 +1096,19 @@ export default function Home() {
                     >
                         {t('loadGame')}
                     </button>
+                    <button
+                        onClick={() => setSaveMenuTab('data')}
+                        className={`flex-1 rounded-md py-2 text-sm font-bold transition-colors ${
+                            saveMenuTab === 'data' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
+                        }`}
+                    >
+                        {t('importExport' as TranslationKey)}
+                    </button>
                 </div>
 
                 {saveMenuTab === 'save' ? (
-                    <div className="flex flex-col gap-3">
-                        {[1, 2, 3, 4].map((slot) => (
+                    <div className="flex flex-col gap-3 overflow-y-auto max-h-[60vh] pr-2">
+                        {[1, 2, 3, 4, 5, 6].map((slot) => (
                             <button
                                 key={slot}
                                 onClick={() => handleSaveGame(slot)}
@@ -1019,9 +1128,9 @@ export default function Home() {
                             </button>
                         ))}
                     </div>
-                ) : (
-                    <div className="flex flex-col gap-3">
-                        {[1, 2, 3, 4].map((slot) => {
+                ) : saveMenuTab === 'load' ? (
+                    <div className="flex flex-col gap-3 overflow-y-auto max-h-[60vh] pr-2">
+                        {[1, 2, 3, 4, 5, 6].map((slot) => {
                             const info = saveSlots[slot];
                             const canLoad = Boolean(info);
                             return (
@@ -1060,6 +1169,32 @@ export default function Home() {
                                 </button>
                             );
                         })}
+                    </div>
+                ) : (
+                    <div className="flex flex-col gap-4">
+                        <div className="bg-slate-800 p-4 rounded border border-slate-600">
+                            <h3 className="text-white font-bold mb-1">{t('exportSave' as TranslationKey)}</h3>
+                            <p className="text-xs text-slate-400 mb-3">{t('downloadSaveDesc' as TranslationKey)}</p>
+                            <button
+                                onClick={handleExportSave}
+                                className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded font-bold transition-colors"
+                            >
+                                {t('exportSave' as TranslationKey)}
+                            </button>
+                        </div>
+                        <div className="bg-slate-800 p-4 rounded border border-slate-600">
+                            <h3 className="text-white font-bold mb-1">{t('importSave' as TranslationKey)}</h3>
+                            <p className="text-xs text-slate-400 mb-3">{t('importSaveDesc' as TranslationKey)}</p>
+                            <label className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded font-bold transition-colors cursor-pointer flex items-center justify-center">
+                                {t('importSave' as TranslationKey)}
+                                <input
+                                    type="file"
+                                    accept=".json"
+                                    className="hidden"
+                                    onChange={handleImportSave}
+                                />
+                            </label>
+                        </div>
                     </div>
                 )}
                 <button 
