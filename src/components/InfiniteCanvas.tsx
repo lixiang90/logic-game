@@ -202,6 +202,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                             subType: fresh.subType,
                             customLabel: fresh.customLabel,
                             sourceIslandId: fresh.sourceIslandId,
+                            x: fresh.x,
+                            y: fresh.y,
                         };
                     });
 
@@ -286,6 +288,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                                 subType: fresh.subType,
                                 customLabel: fresh.customLabel,
                                 sourceIslandId: fresh.sourceIslandId,
+                                x: fresh.x,
+                                y: fresh.y,
                             };
                         });
 
@@ -2034,7 +2038,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     }
 
                     if (newNode.type === 'wire' && n.type === 'bridge') {
-                        return false;
+                        return true;
                     }
 
                     // Allow wire overlapping if rotations are different (crossing/junctions)
@@ -2210,7 +2214,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                         }
 
                         if (candidate.type === 'wire' && n.type === 'bridge') {
-                            continue;
+                            return { blocked: true, duplicate: false };
                         }
 
                         return { blocked: true, duplicate: false };

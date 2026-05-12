@@ -127,8 +127,8 @@ export default function Home() {
 
   const currentLevel = levels[currentLevelIndex] as Level;
   const stage2Config = useMemo(
-    () => getStage2LevelConfig(currentLevel.id, stage2Progress.mapSeed),
-    [currentLevel.id, stage2Progress.mapSeed]
+    () => getStage2LevelConfig(currentLevel.id, 42),
+    [currentLevel.id]
   );
   const stage2GoalIslands = useMemo(() => {
     if (!stage2Config) return [];
@@ -423,7 +423,7 @@ export default function Home() {
       return;
     }
 
-    const key = `${stage2Config.levelId}:${stage2Progress.mapSeed}`;
+    const key = `${stage2Config.levelId}:42`;
     const mainIslandCompleted = stage2Progress.completedIslandIds.includes(stage2Config.focusIslandId);
     if (mainIslandCompleted) return;
     if (stage2IntroShownKeyRef.current === key) return;
@@ -432,7 +432,7 @@ export default function Home() {
       setShowStage2Intro(true);
     });
     return () => cancelAnimationFrame(raf);
-  }, [gameState, stage2Config, stage2Progress.completedIslandIds, stage2Progress.mapSeed]);
+  }, [gameState, stage2Config, stage2Progress.completedIslandIds]);
 
   useEffect(() => {
     if (!stage2Config) {
@@ -543,15 +543,21 @@ export default function Home() {
 
   const handleNextLevel = () => {
     if (currentLevelIndex < levels.length - 1) {
+      const nextLevelIndex = currentLevelIndex + 1;
+      const nextLevel = levels[nextLevelIndex] as Level;
+      const nextStage2Config = getStage2LevelConfig(nextLevel.id, 42);
+
       // Save progress before moving
       if (canvasRef.current) {
           const state = canvasRef.current.getState();
           const currentSession = SaveSystem.loadAutoSave() || SaveSystem.createEmptySave();
           
-          const nextLevelIndex = currentLevelIndex + 1;
-          const nextLevel = levels[nextLevelIndex] as Level;
-          const nextStage2Config = getStage2LevelConfig(nextLevel.id, stage2Progress.mapSeed);
-          const nextLevelStartState: LevelState = nextStage2Config ? state : (nextLevel.initialState || { nodes: [], wires: [] });
+          // Clear previous canvas state when entering a new stage2 chapter from stage 1
+          // Keep state when moving within stage2 (e.g., level-11 to level-12)
+          const isEnteringStage2FirstTime = !stage2Config && nextStage2Config;
+          const targetStateToSave = isEnteringStage2FirstTime ? { nodes: [], wires: [] } : state;
+
+          const nextLevelStartState: LevelState = nextStage2Config ? targetStateToSave : (nextLevel.initialState || { nodes: [], wires: [] });
 
           const saveData = buildSaveData(
               nextLevelIndex,
@@ -566,12 +572,23 @@ export default function Home() {
               }
           );
           SaveSystem.autoSave(saveData);
+          
+          if (isEnteringStage2FirstTime) {
+            setPendingLoad({ nodes: [], wires: [] });
+          }
       }
 
-      setCurrentLevelIndex(prev => prev + 1);
+      setCurrentLevelIndex(nextLevelIndex);
       setIsLevelComplete(false);
       setActiveTool(null);
-      canvasRef.current?.resetView();
+      
+      if (nextStage2Config) {
+          setTimeout(() => {
+              canvasRef.current?.jumpToStage2Island(nextStage2Config.focusIslandId);
+          }, 0);
+      } else {
+          canvasRef.current?.resetView();
+      }
     } else {
       // Last level completed - enter Free Build mode
       setIsFreeBuild(true);
@@ -646,8 +663,22 @@ export default function Home() {
       if (startStateObj) {
         newMetaProgress = startStateObj.metaProgress;
         newLevelState = startStateObj.levelState;
+        
+        // Ensure reset state applies the latest fixed layout for premise nodes
+        const initialLockedPremises = stage2InitialState?.nodes.filter(
+            (node) => node.type === 'premise' && node.locked
+        ) ?? [];
+        if (initialLockedPremises.length > 0) {
+            const initialPremiseById = new Map(initialLockedPremises.map((node) => [node.id, node]));
+            newLevelState.nodes = newLevelState.nodes.map((node) => {
+                if (node.type !== 'premise' || !node.locked) return node;
+                const fresh = initialPremiseById.get(node.id);
+                if (!fresh) return node;
+                return { ...node, x: fresh.x, y: fresh.y };
+            });
+        }
       } else {
-        newMetaProgress = createDefaultStage2MetaProgress(stage2Progress.mapSeed);
+        newMetaProgress = createDefaultStage2MetaProgress(42);
         newLevelState = { nodes: [], wires: [] };
       }
       setStage2Progress(newMetaProgress);
@@ -946,7 +977,7 @@ export default function Home() {
   return (
     <main className="w-screen h-screen overflow-hidden relative">
       <InfiniteCanvas 
-        key={stage2Config ? `stage2-${stage2Progress.mapSeed}` : currentLevel.id}
+        key={stage2Config ? `stage2-42` : currentLevel.id}
         ref={canvasRef}
         activeTool={activeTool} 
         selectMode={selectMode}
@@ -1016,7 +1047,13 @@ export default function Home() {
           </button>
           <button 
               className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
-              onClick={() => canvasRef.current?.resetView()}
+              onClick={() => {
+                  if (stage2Config) {
+                      canvasRef.current?.jumpToStage2Island(stage2Config.focusIslandId);
+                  } else {
+                      canvasRef.current?.resetView();
+                  }
+              }}
               title={t('resetView')}
           >
               <span role="img" aria-label="Home">🏠</span>

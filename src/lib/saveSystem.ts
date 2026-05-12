@@ -42,7 +42,7 @@ export const SaveSystem = {
 
     normalizeSaveData: (data: Partial<SaveData> | null): SaveData | null => {
         if (!data) return null;
-        const baseSeed = data.timestamp ?? Date.now();
+        const baseSeed = 42; // Fixed map seed for everyone
         return {
             timestamp: data.timestamp ?? Date.now(),
             levelIndex: data.levelIndex ?? 0,
@@ -51,7 +51,7 @@ export const SaveSystem = {
                 ? {
                       ...createDefaultStage2MetaProgress(baseSeed),
                       ...data.metaProgress,
-                      mapSeed: data.metaProgress.mapSeed ?? baseSeed,
+                      mapSeed: baseSeed, // Always force fixed map seed
                   }
                 : createDefaultStage2MetaProgress(baseSeed),
             theoremLibrary: data.theoremLibrary,
