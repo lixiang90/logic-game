@@ -115,6 +115,7 @@ export default function Home() {
   const [pendingLoad, setPendingLoad] = useState<LevelState | null>(null);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
   const [saveMenuTab, setSaveMenuTab] = useState<'save' | 'load'>('save');
+  const [saveSuccessSlot, setSaveSuccessSlot] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [saveSlots, setSaveSlots] = useState<Record<number, { timestamp: number, levelIndex: number } | null>>({});
   const [bgmVolume, setBgmVolume] = useState(DEFAULT_BGM_VOLUME);
@@ -590,9 +591,15 @@ export default function Home() {
         SaveSystem.save(slot, saveData);
         SaveSystem.autoSave(saveData); // Update session too
         setShowSaveMenu(false);
-        alert(`Game saved to slot ${slot}`);
+        setSaveSuccessSlot(slot);
     }
   };
+
+  useEffect(() => {
+    if (saveSuccessSlot == null) return;
+    const timeout = setTimeout(() => setSaveSuccessSlot(null), 1400);
+    return () => clearTimeout(timeout);
+  }, [saveSuccessSlot]);
 
   const handleToolRotate = () => {
     if (!activeTool) return;
@@ -881,6 +888,36 @@ export default function Home() {
                     {t('cancel')}
                 </button>
             </div>
+        </div>
+      )}
+
+      {saveSuccessSlot != null && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-[26rem] max-w-[92vw] rounded-2xl border border-cyan-500/30 bg-slate-900/95 p-6 shadow-2xl">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">{t('saveGame')}</div>
+                <div className="text-xl font-bold text-white">{t('saveSuccess')}</div>
+              </div>
+              <button
+                onClick={() => setSaveSuccessSlot(null)}
+                className="rounded-lg border border-slate-700 px-3 py-1 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+              >
+                {t('cancel')}
+              </button>
+            </div>
+            <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-200">
+              {t('slot')} {saveSuccessSlot}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setSaveSuccessSlot(null)}
+                className="rounded-lg bg-cyan-600 px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-cyan-500"
+              >
+                {t('ok')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

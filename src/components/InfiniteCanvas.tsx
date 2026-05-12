@@ -2025,6 +2025,13 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                         setIsWirePainting(true);
                         setLastWireGridPos({ x: gx, y: gy });
                     }
+                } else if (activeTool.type === 'wire') {
+                    const hit = findPortAt(worldX / GRID_SIZE, worldY / GRID_SIZE);
+                    if (hit) {
+                        const absPos = getAbsolutePortPosition(hit.node, hit.port);
+                        setIsWirePainting(true);
+                        setLastWireGridPos({ x: Math.round(absPos.x), y: Math.round(absPos.y) });
+                    }
                 }
             } else {
                 // Check for interactions (Toggle Atom)
@@ -2110,8 +2117,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 const goalRects = stage2GoalRects.length > 0 ? stage2GoalRects : [{ x: -4, y: -4, w: 8, h: 8 }];
 
                 const nodesToAdd: NodeData[] = [];
-                const canAddWire = (candidate: NodeData) => {
-                    if (canPlaceNode && !canPlaceNode(candidate)) return false;
+                const canAddWire = (candidate: NodeData): { blocked: boolean; duplicate: boolean } => {
+                    if (canPlaceNode && !canPlaceNode(candidate)) return { blocked: true, duplicate: false };
 
                     const goalCollision = goalRects.some((goalRect) => !(
                         candidate.x >= goalRect.x + goalRect.w || 
@@ -2119,24 +2126,30 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                         candidate.y >= goalRect.y + goalRect.h || 
                         candidate.y + candidate.h <= goalRect.y
                     ));
-                    if (goalCollision) return false;
+                    if (goalCollision) return { blocked: true, duplicate: false };
 
-                    const collision = [...nodes, ...nodesToAdd].some((n) => {
+                    for (const n of [...nodes, ...nodesToAdd]) {
                         const isOverlapping = !(candidate.x >= n.x + n.w || 
                             candidate.x + candidate.w <= n.x || 
                             candidate.y >= n.y + n.h || 
                             candidate.y + candidate.h <= n.y);
-
-                        if (!isOverlapping) return false;
+                        if (!isOverlapping) continue;
 
                         if (candidate.type === 'wire' && n.type === 'wire') {
-                            return (n.rotation || 0) === (candidate.rotation || 0);
+                            const sameRotation = (n.rotation || 0) === (candidate.rotation || 0);
+                            if (!sameRotation) continue;
+                            const sameType = n.subType === candidate.subType;
+                            return { blocked: !sameType, duplicate: sameType };
                         }
 
-                        return true;
-                    });
+                        if (candidate.type === 'wire' && n.type === 'bridge') {
+                            continue;
+                        }
 
-                    return !collision;
+                        return { blocked: true, duplicate: false };
+                    }
+
+                    return { blocked: false, duplicate: false };
                 };
 
                 let cursorX = lastWireGridPos.x;
@@ -2169,18 +2182,18 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                             rotation: nextRotation,
                         };
 
-                        if (!canAddWire(newNode)) {
-                            break;
+                        const placement = canAddWire(newNode);
+                        if (placement.blocked) break;
+                        if (!placement.duplicate) {
+                            nodesToAdd.push(newNode);
+                            dispatchAction('CONNECT_WIRE', { 
+                                x: newNode.x, 
+                                y: newNode.y, 
+                                w: newNode.w, 
+                                h: newNode.h, 
+                                rotation: newNode.rotation,
+                            });
                         }
-
-                        nodesToAdd.push(newNode);
-                        dispatchAction('CONNECT_WIRE', { 
-                            x: newNode.x, 
-                            y: newNode.y, 
-                            w: newNode.w, 
-                            h: newNode.h, 
-                            rotation: newNode.rotation,
-                        });
 
                         cursorX = nextX;
                         cursorY = nextY;
@@ -2189,6 +2202,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
                 if (nodesToAdd.length > 0) {
                     setNodes((prev) => [...prev, ...nodesToAdd]);
+                }
+                if (cursorX !== lastWireGridPos.x || cursorY !== lastWireGridPos.y) {
                     setLastWireGridPos({ x: cursorX, y: cursorY });
                 }
             }

@@ -83,6 +83,7 @@ export type TranslationKey =
     | 'selectTheoremChip'
     | 'newFolder' | 'rootFolder' | 'moveToFolder'
     | 'folderName' | 'folderNamePlaceholder' | 'create'
+    | 'saveSuccess' | 'ok'
     // Level Titles and Descriptions
     | 'level-1-title' | 'level-1-desc'
     | 'level-2-title' | 'level-2-desc'
@@ -232,6 +233,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'folderName': 'Folder Name',
         'folderNamePlaceholder': 'Enter a folder name',
         'create': 'Create',
+        'saveSuccess': 'Saved',
+        'ok': 'OK',
 
         'level-1-title': 'Level 1: Negation',
         'level-1-desc': 'Construct the formula ¬P using the Atom P and the Not gate.',
@@ -390,6 +393,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'folderName': '文件夹名称',
         'folderNamePlaceholder': '输入文件夹名称',
         'create': '创建',
+        'saveSuccess': '存档成功',
+        'ok': '确定',
 
         'level-1-title': '第 1 关: 否定',
         'level-1-desc': '使用原子 P 和非门构造公式 ¬P。',
