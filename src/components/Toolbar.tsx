@@ -33,6 +33,14 @@ export default function Toolbar({
     const [showTheoremLibrary, setShowTheoremLibrary] = React.useState(false);
     const [theoremLibrarySelectedId, setTheoremLibrarySelectedId] = React.useState<string | null>(null);
     const THEOREM_LIBRARY_STORAGE_KEY = 'logic_game_theorem_library_tree_v1';
+    const THEOREM_TOOLBAR_PINS_KEY = 'logic_game_theorem_toolbar_pins_v1';
+    const THEOREM_TOOLBAR_PIN_COUNT = 8;
+    const [showTheoremMenu, setShowTheoremMenu] = React.useState(false);
+    const [pinnedTheoremIds, setPinnedTheoremIds] = React.useState<Array<string | null>>([]);
+    const [theoremMenuDragOverIndex, setTheoremMenuDragOverIndex] = React.useState<number | null>(null);
+    const [isDraggingTheoremToToolbar, setIsDraggingTheoremToToolbar] = React.useState(false);
+    const theoremMenuRef = React.useRef<HTMLDivElement | null>(null);
+    const theoremMenuButtonRef = React.useRef<HTMLButtonElement | null>(null);
 
     type TheoremFolderNode = {
         id: string;
@@ -53,8 +61,13 @@ export default function Toolbar({
     });
 
     const [theoremLibraryState, setTheoremLibraryState] = React.useState<TheoremLibraryState>(createEmptyLibraryState);
+    const [isLibraryLoaded, setIsLibraryLoaded] = React.useState(false);
     const [theoremLibrarySelectedFolderId, setTheoremLibrarySelectedFolderId] = React.useState<string>('root');
     const [theoremLibraryExpandedFolderIds, setTheoremLibraryExpandedFolderIds] = React.useState<string[]>(['root']);
+    const [theoremLibraryMode, setTheoremLibraryMode] = React.useState<'browse' | 'manage'>('browse');
+    const [theoremLibraryManagePath, setTheoremLibraryManagePath] = React.useState<string[]>(['root']);
+    const [manageFolderDragOverId, setManageFolderDragOverId] = React.useState<string | null>(null);
+    const [deleteFolderCandidateId, setDeleteFolderCandidateId] = React.useState<string | null>(null);
     const [isCreateFolderOpen, setIsCreateFolderOpen] = React.useState(false);
     const [createFolderParentId, setCreateFolderParentId] = React.useState<string>('root');
     const [createFolderName, setCreateFolderName] = React.useState('');
@@ -85,6 +98,40 @@ export default function Toolbar({
         return null;
     }, []);
 
+    const getFolderDisplayName = React.useCallback((folder: TheoremFolderNode) => {
+        if (folder.id === 'root') return t('rootFolder');
+        if (folder.id === 'trash') return t('trash');
+        return folder.name;
+    }, [t]);
+
+    const findPathToFolder = React.useCallback(
+        function findPath(node: TheoremFolderNode, targetId: string, path: string[]): string[] | null {
+            if (node.id === targetId) return path;
+            for (const child of node.children) {
+                const found = findPath(child, targetId, [...path, child.id]);
+                if (found) return found;
+            }
+            return null;
+        },
+        []
+    );
+
+    const collectSubtreeFolderIds = React.useCallback(function collectIds(node: TheoremFolderNode, out: Set<string>) {
+        out.add(node.id);
+        node.children.forEach((child) => collectIds(child, out));
+    }, []);
+
+    const isDescendantFolder = React.useCallback(
+        (root: TheoremFolderNode, ancestorId: string, possibleDescendantId: string) => {
+            const ancestor = findFolderById(root, ancestorId);
+            if (!ancestor) return false;
+            const ids = new Set<string>();
+            collectSubtreeFolderIds(ancestor, ids);
+            return ids.has(possibleDescendantId);
+        },
+        [collectSubtreeFolderIds, findFolderById]
+    );
+
     const listFolders = React.useCallback(function listFoldersInner(
         node: TheoremFolderNode,
         depth: number,
@@ -95,29 +142,47 @@ export default function Toolbar({
     }, []);
 
     React.useEffect(() => {
-        if (!showTheoremLibrary) return;
-        if (typeof window === 'undefined') return;
-        try {
-            const raw = localStorage.getItem(THEOREM_LIBRARY_STORAGE_KEY);
-            if (!raw) return;
-            const parsed = JSON.parse(raw) as Partial<TheoremLibraryState>;
-            if (parsed.version !== 1 || !parsed.root || !parsed.theoremFolderById) return;
-            setTheoremLibraryState({
-                version: 1,
-                root: parsed.root as TheoremFolderNode,
-                theoremFolderById: parsed.theoremFolderById as Record<string, string | undefined>,
-            });
-        } catch {
-        }
-    }, [THEOREM_LIBRARY_STORAGE_KEY, showTheoremLibrary]);
+        const loadLibrary = () => {
+            if (typeof window === 'undefined') return;
+            try {
+                const raw = localStorage.getItem(THEOREM_LIBRARY_STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw) as Partial<TheoremLibraryState>;
+                    if (parsed.version === 1 && parsed.root && parsed.theoremFolderById) {
+                        setTheoremLibraryState({
+                            version: 1,
+                            root: parsed.root as TheoremFolderNode,
+                            theoremFolderById: parsed.theoremFolderById as Record<string, string | undefined>,
+                        });
+                    }
+                }
+            } catch {}
+            setIsLibraryLoaded(true);
+        };
+        
+        loadLibrary();
+        window.addEventListener('logic_game_save_loaded', loadLibrary);
+        return () => window.removeEventListener('logic_game_save_loaded', loadLibrary);
+    }, [THEOREM_LIBRARY_STORAGE_KEY]);
 
     React.useEffect(() => {
+        if (!showTheoremLibrary) return;
+        setTheoremLibraryState((prev) => {
+            const hasTrash = Boolean(findFolderById(prev.root, 'trash'));
+            if (hasTrash) return prev;
+            const trashFolder: TheoremFolderNode = { id: 'trash', name: 'trash', children: [] };
+            return { ...prev, root: { ...prev.root, children: [...prev.root.children, trashFolder] } };
+        });
+    }, [findFolderById, showTheoremLibrary]);
+
+    React.useEffect(() => {
+        if (!isLibraryLoaded) return;
         if (typeof window === 'undefined') return;
         try {
             localStorage.setItem(THEOREM_LIBRARY_STORAGE_KEY, JSON.stringify(theoremLibraryState));
         } catch {
         }
-    }, [THEOREM_LIBRARY_STORAGE_KEY, theoremLibraryState]);
+    }, [THEOREM_LIBRARY_STORAGE_KEY, theoremLibraryState, isLibraryLoaded]);
 
     React.useEffect(() => {
         if (!showTheoremLibrary) return;
@@ -142,8 +207,111 @@ export default function Toolbar({
         return ordered;
     }, [recommendedTheoremIds, theoremInventory]);
 
-    const pinnedTheorems = theoremInventoryOrdered.slice(0, 2);
-    const overflowTheorems = theoremInventoryOrdered.slice(2);
+    const availableTheoremIdSet = React.useMemo(() => new Set(theoremInventoryOrdered.map((t) => t.theoremId)), [theoremInventoryOrdered]);
+
+    const normalizedPinnedTheoremIds = React.useMemo(() => {
+        const normalized: Array<string | null> = Array.isArray(pinnedTheoremIds) ? pinnedTheoremIds.slice(0, THEOREM_TOOLBAR_PIN_COUNT) : [];
+        while (normalized.length < THEOREM_TOOLBAR_PIN_COUNT) normalized.push(null);
+
+        const seen = new Set<string>();
+        for (let i = 0; i < normalized.length; i += 1) {
+            const id = normalized[i];
+            if (!id) continue;
+            if (!availableTheoremIdSet.has(id) || seen.has(id)) {
+                normalized[i] = null;
+                continue;
+            }
+            seen.add(id);
+        }
+
+        const fillCandidates: string[] = [];
+        recommendedTheoremIds.forEach((id) => {
+            if (availableTheoremIdSet.has(id) && !seen.has(id) && !fillCandidates.includes(id)) fillCandidates.push(id);
+        });
+        theoremInventoryOrdered.forEach((entry) => {
+            if (!seen.has(entry.theoremId) && !fillCandidates.includes(entry.theoremId)) fillCandidates.push(entry.theoremId);
+        });
+
+        for (let i = 0; i < normalized.length; i += 1) {
+            if (normalized[i]) continue;
+            const next = fillCandidates.shift();
+            if (!next) break;
+            normalized[i] = next;
+            seen.add(next);
+        }
+
+        return normalized;
+    }, [
+        availableTheoremIdSet,
+        pinnedTheoremIds,
+        recommendedTheoremIds,
+        theoremInventoryOrdered,
+        THEOREM_TOOLBAR_PIN_COUNT,
+    ]);
+
+    const [isPinsLoaded, setIsPinsLoaded] = React.useState(false);
+
+    React.useEffect(() => {
+        const loadPins = () => {
+            if (typeof window === 'undefined') return;
+            try {
+                const raw = localStorage.getItem(THEOREM_TOOLBAR_PINS_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw) as unknown;
+                    if (Array.isArray(parsed)) {
+                        const next = parsed.slice(0, THEOREM_TOOLBAR_PIN_COUNT).map((v) => (typeof v === 'string' ? v : null));
+                        setPinnedTheoremIds(next);
+                    }
+                }
+            } catch {}
+            setIsPinsLoaded(true);
+        };
+
+        loadPins();
+        window.addEventListener('logic_game_save_loaded', loadPins);
+        return () => window.removeEventListener('logic_game_save_loaded', loadPins);
+    }, [THEOREM_TOOLBAR_PIN_COUNT, THEOREM_TOOLBAR_PINS_KEY]);
+
+    React.useEffect(() => {
+        if (!isPinsLoaded) return;
+        if (typeof window === 'undefined') return;
+        try {
+            localStorage.setItem(THEOREM_TOOLBAR_PINS_KEY, JSON.stringify(normalizedPinnedTheoremIds));
+        } catch {
+        }
+    }, [THEOREM_TOOLBAR_PINS_KEY, normalizedPinnedTheoremIds, isPinsLoaded]);
+
+    React.useEffect(() => {
+        if (pinnedTheoremIds.length !== normalizedPinnedTheoremIds.length) {
+            setPinnedTheoremIds(normalizedPinnedTheoremIds);
+            return;
+        }
+        for (let i = 0; i < pinnedTheoremIds.length; i += 1) {
+            if (pinnedTheoremIds[i] !== normalizedPinnedTheoremIds[i]) {
+                setPinnedTheoremIds(normalizedPinnedTheoremIds);
+                break;
+            }
+        }
+    }, [normalizedPinnedTheoremIds, pinnedTheoremIds]);
+
+    React.useEffect(() => {
+        if (!showTheoremLibrary) return;
+        setShowTheoremMenu(true);
+    }, [showTheoremLibrary]);
+
+    React.useEffect(() => {
+        if (!showTheoremMenu) return;
+        const onPointerDown = (e: MouseEvent) => {
+            if (isDraggingTheoremToToolbar) return;
+            const target = e.target as Node | null;
+            if (!target) return;
+            if (theoremMenuRef.current && theoremMenuRef.current.contains(target)) return;
+            if (theoremMenuButtonRef.current && theoremMenuButtonRef.current.contains(target)) return;
+            setShowTheoremMenu(false);
+        };
+        window.addEventListener('pointerdown', onPointerDown);
+        return () => window.removeEventListener('pointerdown', onPointerDown);
+    }, [isDraggingTheoremToToolbar, showTheoremMenu]);
 
     const canAffordTheorem = (theorem: TheoremChipInventoryEntry) =>
         theorem.freeUsesRemaining > 0 || coins >= theorem.cost;
@@ -189,32 +357,23 @@ export default function Toolbar({
     const isPointerActive = activeTool === null && selectMode === 'pointer';
     const isBoxSelectActive = activeTool === null && selectMode === 'box';
     const activeClass = "ring-2 ring-white ring-offset-2 ring-offset-slate-900";
-    const theoremButtonBaseClass = "h-12 min-w-[4.5rem] px-3 flex flex-col justify-center cursor-pointer transition-all duration-200 select-none relative border rounded-lg";
 
-    const renderTheoremButton = (theorem: TheoremChipInventoryEntry) => {
-        const isFree = theorem.freeUsesRemaining > 0;
-        const affordable = canAffordTheorem(theorem);
-        const disabled = !affordable;
-        const statusLabel = isFree ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}`;
-
-        return (
-            <button
-                key={theorem.theoremId}
-                type="button"
-                onClick={() => handleTheoremSelect(theorem)}
-                disabled={disabled}
-                className={`${theoremButtonBaseClass}
-                    ${disabled
-                        ? 'cursor-not-allowed border-slate-700 bg-slate-900/70 text-slate-500 opacity-60'
-                        : 'border-cyan-500/60 bg-slate-800 text-cyan-100 hover:-translate-y-1 hover:bg-slate-700 hover:shadow-[0_0_15px_rgba(34,211,238,0.2)] hover:scale-105 active:scale-95'}
-                    ${isTheoremActive(theorem.theoremId) ? activeClass : ''}`}
-                title={`${theorem.name} ${theorem.formula}`}
-            >
-                <span className="text-sm font-bold uppercase tracking-wide">{theorem.name}</span>
-                <span className="mt-1 text-[10px] text-slate-300">{statusLabel}</span>
-            </button>
-        );
-    };
+    const handleReplacePinnedTheorem = React.useCallback((targetIndex: number, theoremId: string) => {
+        setPinnedTheoremIds((prev) => {
+            const next = Array.isArray(prev) ? prev.slice(0, THEOREM_TOOLBAR_PIN_COUNT) : [];
+            while (next.length < THEOREM_TOOLBAR_PIN_COUNT) next.push(null);
+            const existingIndex = next.findIndex((id) => id === theoremId);
+            if (existingIndex === targetIndex) return next;
+            if (existingIndex >= 0) {
+                const tmp = next[targetIndex];
+                next[targetIndex] = theoremId;
+                next[existingIndex] = tmp ?? null;
+                return next;
+            }
+            next[targetIndex] = theoremId;
+            return next;
+        });
+    }, [THEOREM_TOOLBAR_PIN_COUNT]);
 
     React.useEffect(() => {
         if (!showTheoremLibrary) return;
@@ -300,6 +459,48 @@ export default function Toolbar({
         setTheoremLibraryExpandedFolderIds((prev) => (prev.includes(parentId) ? prev : [...prev, parentId]));
     }, []);
 
+    const moveFolder = React.useCallback(
+        (folderId: string, targetFolderId: string) => {
+            if (folderId === 'root' || folderId === 'trash') return;
+            if (targetFolderId === folderId) return;
+            setTheoremLibraryState((prev) => {
+                if (isDescendantFolder(prev.root, folderId, targetFolderId)) return prev;
+                let extracted: TheoremFolderNode | null = null;
+                const remove = (node: TheoremFolderNode): TheoremFolderNode => {
+                    return {
+                        ...node,
+                        children: node.children
+                            .filter((child) => {
+                                if (child.id === folderId) {
+                                    extracted = child;
+                                    return false;
+                                }
+                                return true;
+                            })
+                            .map(remove),
+                    };
+                };
+
+                const rootAfterRemove = remove(prev.root);
+                if (!extracted) return prev;
+
+                const targetExists = Boolean(findFolderById(rootAfterRemove, targetFolderId));
+                const finalTargetId = targetExists ? targetFolderId : 'root';
+
+                const insert = (node: TheoremFolderNode): TheoremFolderNode => {
+                    if (node.id === finalTargetId) {
+                        return { ...node, children: [...node.children, extracted!] };
+                    }
+                    return { ...node, children: node.children.map(insert) };
+                };
+
+                const rootNext = insert(rootAfterRemove);
+                return { ...prev, root: rootNext };
+            });
+        },
+        [findFolderById, isDescendantFolder]
+    );
+
     const handleCreateFolder = React.useCallback((parentId: string) => {
         const parent = findFolderById(theoremLibraryState.root, parentId);
         if (!parent) return;
@@ -327,6 +528,44 @@ export default function Toolbar({
         }));
     }, [folderIdSet]);
 
+    const deleteFolder = React.useCallback(
+        (folderId: string) => {
+            if (folderId === 'root' || folderId === 'trash') return;
+            const subtreeIds = new Set<string>();
+            const node = findFolderById(theoremLibraryState.root, folderId);
+            if (!node) return;
+            collectSubtreeFolderIds(node, subtreeIds);
+
+            setTheoremLibraryState((prev) => {
+                const nextMapping: Record<string, string | undefined> = { ...prev.theoremFolderById };
+                Object.keys(nextMapping).forEach((theoremId) => {
+                    const fId = nextMapping[theoremId];
+                    if (fId && subtreeIds.has(fId)) nextMapping[theoremId] = 'trash';
+                });
+
+                const remove = (n: TheoremFolderNode): TheoremFolderNode => {
+                    return {
+                        ...n,
+                        children: n.children.filter((c) => c.id !== folderId).map(remove),
+                    };
+                };
+
+                const rootNext = remove(prev.root);
+                const hasTrash = Boolean(findFolderById(rootNext, 'trash'));
+                const rootWithTrash = hasTrash
+                    ? rootNext
+                    : { ...rootNext, children: [...rootNext.children, { id: 'trash', name: 'trash', children: [] }] };
+
+                return { ...prev, root: rootWithTrash, theoremFolderById: nextMapping };
+            });
+
+            setTheoremLibrarySelectedFolderId('trash');
+            setTheoremLibraryManagePath(['root', 'trash']);
+            setTheoremLibraryExpandedFolderIds((prev) => prev.filter((id) => !subtreeIds.has(id)));
+        },
+        [collectSubtreeFolderIds, findFolderById, theoremLibraryState.root]
+    );
+
     const theoremsByFolderId = React.useMemo(() => {
         const map = new Map<string, TheoremChipInventoryEntry[]>();
         theoremInventoryOrdered.forEach((theorem) => {
@@ -337,6 +576,57 @@ export default function Toolbar({
         });
         return map;
     }, [theoremInventoryOrdered, theoremLibraryState.theoremFolderById]);
+
+    const managePathNormalized = React.useMemo(() => {
+        const raw = Array.isArray(theoremLibraryManagePath) ? theoremLibraryManagePath : ['root'];
+        const base = raw.length > 0 && raw[0] === 'root' ? raw : ['root', ...raw.filter((id) => id !== 'root')];
+        const next: string[] = ['root'];
+        for (let i = 1; i < base.length; i += 1) {
+            const id = base[i];
+            const exists = Boolean(findFolderById(theoremLibraryState.root, id));
+            if (!exists) break;
+            next.push(id);
+        }
+        return next;
+    }, [findFolderById, theoremLibraryManagePath, theoremLibraryState.root]);
+
+    const manageCurrentFolderId = managePathNormalized[managePathNormalized.length - 1] ?? 'root';
+
+    React.useEffect(() => {
+        if (!showTheoremLibrary) return;
+        const currentFolderId = theoremLibrarySelectedFolderId;
+        const path = findPathToFolder(theoremLibraryState.root, currentFolderId, ['root']);
+        if (path) setTheoremLibraryManagePath(path);
+        else setTheoremLibraryManagePath(['root']);
+    }, [findPathToFolder, showTheoremLibrary, theoremLibrarySelectedFolderId, theoremLibraryState.root]);
+
+    React.useEffect(() => {
+        if (!showTheoremLibrary) return;
+        if (theoremLibraryMode !== 'manage') return;
+        if (theoremLibrarySelectedFolderId !== manageCurrentFolderId) {
+            setTheoremLibrarySelectedFolderId(manageCurrentFolderId);
+        }
+    }, [manageCurrentFolderId, showTheoremLibrary, theoremLibraryMode, theoremLibrarySelectedFolderId]);
+
+    const manageFolderColumns = React.useMemo(() => {
+        const columns: Array<{ folderId: string; folder: TheoremFolderNode; children: TheoremFolderNode[] }> = [];
+        managePathNormalized.forEach((folderId) => {
+            const folder = findFolderById(theoremLibraryState.root, folderId);
+            if (!folder) return;
+            const children = [...folder.children].sort((a, b) => getFolderDisplayName(a).localeCompare(getFolderDisplayName(b)));
+            columns.push({ folderId, folder, children });
+        });
+        return columns;
+    }, [findFolderById, getFolderDisplayName, managePathNormalized, theoremLibraryState.root]);
+
+    const managePanelWidthCss = React.useMemo(() => {
+        const columnWidthRem = 16;
+        const columnGapRem = 0.75;
+        const paddingRem = 1.5;
+        const count = Math.max(1, manageFolderColumns.length);
+        const contentWidth = `calc(${count} * ${columnWidthRem}rem + ${Math.max(0, count - 1)} * ${columnGapRem}rem + ${paddingRem}rem)`;
+        return `clamp(20rem, ${contentWidth}, 50vw)`;
+    }, [manageFolderColumns.length]);
 
     const toggleFolderExpanded = React.useCallback((folderId: string) => {
         setTheoremLibraryExpandedFolderIds((prev) =>
@@ -373,9 +663,9 @@ export default function Toolbar({
                             type="button"
                             onClick={() => setTheoremLibrarySelectedFolderId(folder.id)}
                             className="min-w-0 flex-1 truncate text-left text-sm font-bold text-slate-100"
-                            title={folder.name}
+                            title={getFolderDisplayName(folder)}
                         >
-                            {folder.id === 'root' ? t('rootFolder') : folder.name}
+                            {getFolderDisplayName(folder)}
                         </button>
                         <button
                             type="button"
@@ -398,7 +688,19 @@ export default function Toolbar({
                                         key={theorem.theoremId}
                                         type="button"
                                         onClick={() => setTheoremLibrarySelectedId(theorem.theoremId)}
-                                        className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                                        draggable
+                                        onDragStart={(e) => {
+                                            setIsDraggingTheoremToToolbar(true);
+                                            setShowTheoremMenu(true);
+                                            e.dataTransfer.setData('application/x-logicgame-theorem-id', theorem.theoremId);
+                                            e.dataTransfer.setData('text/plain', theorem.theoremId);
+                                            e.dataTransfer.effectAllowed = 'copyMove';
+                                        }}
+                                        onDragEnd={() => {
+                                            setIsDraggingTheoremToToolbar(false);
+                                            setTheoremMenuDragOverIndex(null);
+                                        }}
+                                        className={`w-full cursor-grab active:cursor-grabbing rounded-xl border p-3 text-left transition-colors ${
                                             isSelected
                                                 ? 'border-cyan-400/70 bg-cyan-500/10'
                                                 : 'border-slate-700 bg-slate-900/50 hover:border-slate-500 hover:bg-slate-800/60'
@@ -419,6 +721,7 @@ export default function Toolbar({
             );
         },
         [
+            getFolderDisplayName,
             handleCreateFolder,
             theoremLibraryExpandedFolderIds,
             theoremLibrarySelectedFolderId,
@@ -431,7 +734,7 @@ export default function Toolbar({
 
     return (
         <>
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur-xl border border-slate-500/50 px-6 py-4 rounded-2xl flex items-end gap-2 shadow-[0_0_40px_-10px_rgba(0,0,0,0.8)] z-50 pointer-events-auto ring-1 ring-white/10">
+        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur-xl border border-slate-500/50 px-6 py-4 rounded-2xl flex items-end gap-2 shadow-[0_0_40px_-10px_rgba(0,0,0,0.8)] ${showTheoremLibrary ? 'z-[120]' : 'z-50'} pointer-events-auto ring-1 ring-white/10`}>
             
             {/* Tools Group (Pointer & Box Select & Wire) */}
             <div className="flex flex-col items-center gap-2">
@@ -524,22 +827,95 @@ export default function Toolbar({
 
                     <div className="flex flex-col items-center gap-2">
                         <div className="h-[15px] flex items-center">
-                            <span className="text-[10px] text-cyan-300 tracking-widest uppercase font-bold">{t('theoremBar')}</span>
+                            <span className="text-[10px] text-transparent select-none font-bold uppercase tracking-widest">{t('theoremBar')}</span>
                         </div>
-                        <div className="h-12 flex items-center gap-3">
-                            {pinnedTheorems.map(renderTheoremButton)}
-                            {overflowTheorems.length > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={() => setShowTheoremLibrary(true)}
-                                    className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
-                                            text-slate-200 bg-slate-800 border border-slate-600
-                                            hover:-translate-y-1 hover:bg-slate-700 hover:scale-110 active:scale-95 rounded-md
-                                            ${showTheoremLibrary ? activeClass : ''}`}
-                                    title={t('theoremLibrary')}
+                        <div className="h-12 flex items-center gap-3 relative">
+                            <button
+                                ref={theoremMenuButtonRef}
+                                type="button"
+                                onClick={() => setShowTheoremMenu((v) => !v)}
+                                className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
+                                        text-cyan-100 bg-slate-800 border border-cyan-500/40
+                                        hover:-translate-y-1 hover:bg-slate-700 hover:scale-110 active:scale-95 rounded-md
+                                        ${showTheoremMenu ? activeClass : ''}`}
+                                title={t('theoremBar')}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 12h7"></path>
+                                    <path d="M10 6l6 6-6 6"></path>
+                                    <path d="M16 6h5v12h-5"></path>
+                                </svg>
+                            </button>
+
+                            {showTheoremMenu && (
+                                <div
+                                    ref={theoremMenuRef}
+                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-[22rem] max-w-[92vw] rounded-2xl border border-slate-600 bg-slate-900/95 p-3 shadow-2xl ring-1 ring-white/10"
                                 >
-                                    <span className="text-xl font-bold">+</span>
-                                </button>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {normalizedPinnedTheoremIds.map((theoremId, idx) => {
+                                            const theorem = theoremId
+                                                ? theoremInventoryOrdered.find((item) => item.theoremId === theoremId) ?? null
+                                                : null;
+                                            const affordable = theorem ? canAffordTheorem(theorem) : false;
+                                            const disabled = !theorem || !affordable;
+                                            const isDragOver = theoremMenuDragOverIndex === idx;
+                                            return (
+                                                <button
+                                                    key={`${idx}-${theoremId ?? 'empty'}`}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (!theorem) return;
+                                                        handleTheoremSelect(theorem);
+                                                        setShowTheoremMenu(false);
+                                                    }}
+                                                    disabled={disabled}
+                                                    onDragEnter={() => setTheoremMenuDragOverIndex(idx)}
+                                                    onDragLeave={() => setTheoremMenuDragOverIndex((prev) => (prev === idx ? null : prev))}
+                                                    onDragOver={(e) => {
+                                                        e.preventDefault();
+                                                        e.dataTransfer.dropEffect = 'copy';
+                                                    }}
+                                                    onDrop={(e) => {
+                                                        e.preventDefault();
+                                                        const dropped =
+                                                            e.dataTransfer.getData('application/x-logicgame-theorem-id') ||
+                                                            e.dataTransfer.getData('text/plain');
+                                                        if (dropped && availableTheoremIdSet.has(dropped)) {
+                                                            handleReplacePinnedTheorem(idx, dropped);
+                                                        }
+                                                setIsDraggingTheoremToToolbar(false);
+                                                        setTheoremMenuDragOverIndex(null);
+                                                    }}
+                                                    className={`h-12 rounded-xl border px-2 text-left transition-colors ${
+                                                        isDragOver
+                                                            ? 'border-cyan-400/80 bg-cyan-500/10'
+                                                            : theorem
+                                                                ? 'border-slate-700 bg-slate-950/30 hover:border-slate-500 hover:bg-slate-800/60'
+                                                                : 'border-slate-800 bg-slate-950/20 text-slate-600'
+                                                    } ${theoremId && isTheoremActive(theoremId) ? activeClass : ''} ${disabled && theorem ? 'opacity-60' : ''}`}
+                                                    title={theorem ? `${theorem.name} ${theorem.formula}` : ''}
+                                                >
+                                                    <div className="truncate text-xs font-bold text-slate-100">{theorem ? theorem.name : '-'}</div>
+                                                    {theorem && (
+                                                        <div className="mt-0.5 truncate text-[10px] text-slate-400">
+                                                            {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}`}
+                                                        </div>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="mt-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowTheoremLibrary(true)}
+                                            className="w-full rounded-xl border border-slate-700 bg-slate-950/30 px-4 py-2 text-sm font-bold text-slate-200 transition-colors hover:border-slate-500 hover:bg-slate-800/60"
+                                        >
+                                            {t('theoremLibrary')}
+                                        </button>
+                                    </div>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -785,6 +1161,21 @@ export default function Toolbar({
                 <div className="absolute top-4 right-4 flex items-center gap-2">
                     <button
                         type="button"
+                        onClick={() => {
+                            setTheoremLibraryMode((prev) => (prev === 'browse' ? 'manage' : 'browse'));
+                            if (theoremLibraryMode === 'browse') {
+                                const path = findPathToFolder(theoremLibraryState.root, theoremLibrarySelectedFolderId, ['root']);
+                                setTheoremLibraryManagePath(path ?? ['root']);
+                            } else {
+                                setTheoremLibrarySelectedFolderId(manageCurrentFolderId);
+                            }
+                        }}
+                        className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
+                    >
+                        {theoremLibraryMode === 'browse' ? t('manageMode') : t('browseMode')}
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => setShowTheoremLibrary(false)}
                         className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
                     >
@@ -794,25 +1185,233 @@ export default function Toolbar({
 
                 <div className="h-full w-full px-6 pb-6 pt-20">
                     <div className="flex h-full gap-4">
-                        <div className="w-72 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/60">
-                            <div className="flex items-center justify-between gap-3 border-b border-slate-700 p-3">
-                                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                                    {t('theoremLibrary')}
+                        {theoremLibraryMode === 'browse' ? (
+                            <div className="w-72 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/60">
+                                <div className="flex items-center justify-between gap-3 border-b border-slate-700 p-3">
+                                    <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                                        {t('theoremLibrary')}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCreateFolder(theoremLibrarySelectedFolderId)}
+                                        className="rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-1 text-xs font-bold text-slate-200 hover:border-slate-500"
+                                    >
+                                        {t('newFolder')}
+                                    </button>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => handleCreateFolder(theoremLibrarySelectedFolderId)}
-                                    className="rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-1 text-xs font-bold text-slate-200 hover:border-slate-500"
-                                >
-                                    {t('newFolder')}
-                                </button>
-                            </div>
-                            <div className="max-h-full overflow-y-auto p-3">
-                                <div className="flex flex-col gap-2">
-                                    {renderFolderTree(theoremLibraryState.root, 0)}
+                                <div className="max-h-full overflow-y-auto p-3">
+                                    <div className="flex flex-col gap-2">
+                                        {renderFolderTree(theoremLibraryState.root, 0)}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        ) : (
+                            <div
+                                className="shrink-0 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/60"
+                                style={{ width: managePanelWidthCss }}
+                            >
+                                <div className="flex h-full flex-col">
+                                    <div className="flex items-center justify-between gap-3 border-b border-slate-700 p-3">
+                                        <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                                            {t('manageMode')}
+                                        </div>
+                                        <div className="text-xs text-slate-500">{t('dragHint')}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
+                                        {managePathNormalized.map((folderId, idx) => {
+                                            const folder = findFolderById(theoremLibraryState.root, folderId) ?? theoremLibraryState.root;
+                                            return (
+                                                <React.Fragment key={`${folderId}-${idx}`}>
+                                                    {idx > 0 && <span className="text-xs text-slate-600">›</span>}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTheoremLibraryManagePath(managePathNormalized.slice(0, idx + 1))}
+                                                        className={`rounded-lg border px-2 py-1 text-xs font-bold transition-colors ${
+                                                            idx === managePathNormalized.length - 1
+                                                                ? 'border-cyan-400/60 bg-cyan-500/10 text-cyan-100'
+                                                                : 'border-slate-700 bg-slate-900/40 text-slate-200 hover:border-slate-500 hover:text-white'
+                                                        }`}
+                                                    >
+                                                        {getFolderDisplayName(folder)}
+                                                    </button>
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="min-h-0 flex-1 overflow-x-auto">
+                                        <div className="flex h-full gap-3 p-3">
+                                            {manageFolderColumns.map((col, colIdx) => (
+                                                <div
+                                                    key={col.folderId}
+                                                    className="w-64 shrink-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/30"
+                                                    onDragEnter={() => setManageFolderDragOverId(col.folderId)}
+                                                    onDragLeave={() => setManageFolderDragOverId((prev) => (prev === col.folderId ? null : prev))}
+                                                    onDragOver={(e) => {
+                                                        e.preventDefault();
+                                                        e.dataTransfer.dropEffect = 'move';
+                                                    }}
+                                                    onDrop={(e) => {
+                                                        e.preventDefault();
+                                                        const theoremId =
+                                                            e.dataTransfer.getData('application/x-logicgame-theorem-id') ||
+                                                            e.dataTransfer.getData('text/plain');
+                                                        const folderId = e.dataTransfer.getData('application/x-logicgame-folder-id');
+                                                        if (theoremId && availableTheoremIdSet.has(theoremId)) {
+                                                            setTheoremFolder(theoremId, col.folderId);
+                                                        } else if (folderId) {
+                                                            moveFolder(folderId, col.folderId);
+                                                        }
+                                                        setManageFolderDragOverId(null);
+                                                    }}
+                                                >
+                                                    <div className="flex items-center justify-between gap-2 border-b border-slate-800 p-3">
+                                                        <div className="min-w-0 truncate text-sm font-bold text-slate-100" title={getFolderDisplayName(col.folder)}>
+                                                            {getFolderDisplayName(col.folder)}
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleCreateFolder(col.folderId)}
+                                                                className="rounded-md border border-slate-700 bg-slate-900/50 px-2 py-1 text-xs font-bold text-slate-200 hover:border-slate-500"
+                                                            >
+                                                                {t('newFolder')}
+                                                            </button>
+                                                            {col.folderId !== 'root' && col.folderId !== 'trash' && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setDeleteFolderCandidateId(col.folderId)}
+                                                                    className="rounded-md border border-slate-700 bg-slate-900/50 px-2 py-1 text-xs font-bold text-rose-200 hover:border-rose-400/50"
+                                                                >
+                                                                    {t('delete')}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="max-h-full overflow-y-auto p-2">
+                                                        <div className="flex flex-col gap-2">
+                                                            {col.children.map((child) => {
+                                                                const selected = managePathNormalized[colIdx + 1] === child.id;
+                                                                const dragOver = manageFolderDragOverId === child.id;
+                                                                const canDelete = child.id !== 'trash';
+                                                                return (
+                                                                    <div key={child.id} className="flex items-center gap-2">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setTheoremLibraryManagePath([...managePathNormalized.slice(0, colIdx + 1), child.id]);
+                                                                            }}
+                                                                            draggable={child.id !== 'trash'}
+                                                                            onDragStart={(e) => {
+                                                                                if (child.id === 'trash') return;
+                                                                                e.dataTransfer.setData('application/x-logicgame-folder-id', child.id);
+                                                                                e.dataTransfer.effectAllowed = 'move';
+                                                                            }}
+                                                                            onDragEnter={() => setManageFolderDragOverId(child.id)}
+                                                                            onDragLeave={() => setManageFolderDragOverId((prev) => (prev === child.id ? null : prev))}
+                                                                            onDragOver={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.dataTransfer.dropEffect = 'move';
+                                                                            }}
+                                                                            onDrop={(e) => {
+                                                                                e.preventDefault();
+                                                                                const theoremId =
+                                                                                    e.dataTransfer.getData('application/x-logicgame-theorem-id') ||
+                                                                                    e.dataTransfer.getData('text/plain');
+                                                                                const folderId = e.dataTransfer.getData('application/x-logicgame-folder-id');
+                                                                                if (theoremId && availableTheoremIdSet.has(theoremId)) {
+                                                                                    setTheoremFolder(theoremId, child.id);
+                                                                                } else if (folderId) {
+                                                                                    moveFolder(folderId, child.id);
+                                                                                }
+                                                                                setManageFolderDragOverId(null);
+                                                                            }}
+                                                                            className={`min-w-0 flex-1 truncate rounded-xl border px-3 py-2 text-left text-sm font-bold transition-colors ${
+                                                                                dragOver
+                                                                                    ? 'border-cyan-400/80 bg-cyan-500/10'
+                                                                                    : selected
+                                                                                        ? 'border-cyan-400/60 bg-cyan-500/10'
+                                                                                        : 'border-slate-800 bg-slate-950/20 hover:border-slate-600 hover:bg-slate-900/60'
+                                                                            }`}
+                                                                            title={getFolderDisplayName(child)}
+                                                                        >
+                                                                            {getFolderDisplayName(child)}
+                                                                        </button>
+                                                                        {canDelete && child.id !== 'root' && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setDeleteFolderCandidateId(child.id)}
+                                                                                className="shrink-0 rounded-lg border border-slate-800 bg-slate-950/20 px-2 py-2 text-xs font-bold text-rose-200 hover:border-rose-400/50"
+                                                                            >
+                                                                                ×
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            {(theoremsByFolderId.get(col.folderId) ?? [])
+                                                                .slice()
+                                                                .sort((a, b) => a.name.localeCompare(b.name))
+                                                                .map((theorem) => {
+                                                                    const isSelected = theorem.theoremId === theoremLibrarySelectedId;
+                                                                    const isFree = theorem.freeUsesRemaining > 0;
+                                                                    const statusLabel = isFree ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}`;
+                                                                    return (
+                                                                        <button
+                                                                            key={`${col.folderId}-${theorem.theoremId}`}
+                                                                            type="button"
+                                                                            onClick={() => setTheoremLibrarySelectedId(theorem.theoremId)}
+                                                                            draggable
+                                                                            onDragStart={(e) => {
+                                                                                setIsDraggingTheoremToToolbar(true);
+                                                                                setShowTheoremMenu(true);
+                                                                                e.dataTransfer.setData('application/x-logicgame-theorem-id', theorem.theoremId);
+                                                                                e.dataTransfer.setData('text/plain', theorem.theoremId);
+                                                                                e.dataTransfer.effectAllowed = 'copyMove';
+                                                                            }}
+                                                                            onDragEnd={() => {
+                                                                                setIsDraggingTheoremToToolbar(false);
+                                                                                setTheoremMenuDragOverIndex(null);
+                                                                            }}
+                                                                            onDragOver={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.dataTransfer.dropEffect = 'move';
+                                                                            }}
+                                                                            onDrop={(e) => {
+                                                                                e.preventDefault();
+                                                                                const theoremId =
+                                                                                    e.dataTransfer.getData('application/x-logicgame-theorem-id') ||
+                                                                                    e.dataTransfer.getData('text/plain');
+                                                                                const folderId = e.dataTransfer.getData('application/x-logicgame-folder-id');
+                                                                                if (theoremId && availableTheoremIdSet.has(theoremId)) {
+                                                                                    setTheoremFolder(theoremId, col.folderId);
+                                                                                } else if (folderId) {
+                                                                                    moveFolder(folderId, col.folderId);
+                                                                                }
+                                                                                setManageFolderDragOverId(null);
+                                                                            }}
+                                                                            className={`w-full cursor-grab active:cursor-grabbing rounded-xl border p-3 text-left transition-colors ${
+                                                                                isSelected
+                                                                                    ? 'border-cyan-400/70 bg-cyan-500/10'
+                                                                                    : 'border-slate-700 bg-slate-900/50 hover:border-slate-500 hover:bg-slate-800/60'
+                                                                            }`}
+                                                                        >
+                                                                            <div className="flex items-center justify-between gap-2">
+                                                                                <div className="font-bold text-slate-100">{theorem.name}</div>
+                                                                                <div className="text-[10px] text-slate-400">{statusLabel}</div>
+                                                                            </div>
+                                                                            <div className="mt-1 text-xs text-slate-400">{theorem.formula}</div>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/60">
                             {selectedTheorem && selectedTheoremDetails ? (
@@ -821,22 +1420,24 @@ export default function Toolbar({
                                         <div className="min-w-0">
                                             <div className="text-xl font-bold text-white">{selectedTheorem.name}</div>
                                             <div className="mt-1 break-words text-sm text-slate-300">{selectedTheorem.formula}</div>
-                                            <div className="mt-3 flex items-center gap-3">
-                                                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                                                    {t('moveToFolder')}
+                                            {theoremLibraryMode === 'browse' && (
+                                                <div className="mt-3 flex items-center gap-3">
+                                                    <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                                                        {t('moveToFolder')}
+                                                    </div>
+                                                    <select
+                                                        value={selectedTheoremFolderId}
+                                                        onChange={(e) => setTheoremFolder(selectedTheorem.theoremId, e.target.value)}
+                                                        className="min-w-0 max-w-[18rem] flex-1 rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400/60"
+                                                    >
+                                                        {folderOptions.map((folder) => (
+                                                            <option key={folder.id} value={folder.id}>
+                                                                {`${'  '.repeat(folder.depth)}${folder.id === 'root' ? t('rootFolder') : folder.id === 'trash' ? t('trash') : folder.name}`}
+                                                            </option>
+                                                        ))}
+                                                    </select>
                                                 </div>
-                                                <select
-                                                    value={selectedTheoremFolderId}
-                                                    onChange={(e) => setTheoremFolder(selectedTheorem.theoremId, e.target.value)}
-                                                    className="min-w-0 max-w-[18rem] flex-1 rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400/60"
-                                                >
-                                                    {folderOptions.map((folder) => (
-                                                        <option key={folder.id} value={folder.id}>
-                                                            {`${'  '.repeat(folder.depth)}${folder.id === 'root' ? t('rootFolder') : folder.name}`}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                            )}
                                             <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
                                                 <span>
                                                     {t('freeUsesRemaining')}: {selectedTheorem.freeUsesRemaining}
@@ -977,6 +1578,52 @@ export default function Toolbar({
                                     className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-cyan-500"
                                 >
                                     {t('create')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {deleteFolderCandidateId != null && (
+                    <div className="fixed inset-0 z-[105] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                        <div className="w-[32rem] max-w-[92vw] rounded-2xl border border-rose-500/30 bg-slate-900/95 p-6 shadow-2xl">
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <div className="text-[10px] uppercase tracking-[0.25em] text-rose-300">{t('manageMode')}</div>
+                                    <div className="text-xl font-bold text-white">{t('deleteFolder')}</div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setDeleteFolderCandidateId(null)}
+                                    className="rounded-lg border border-slate-700 px-3 py-1 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+                                >
+                                    {t('cancel')}
+                                </button>
+                            </div>
+
+                            <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-200">
+                                {t('deleteFolderConfirm')}
+                            </div>
+                            <div className="mt-2 text-xs text-slate-500">
+                                {t('deleteFolderMoveToTrash')}
+                            </div>
+
+                            <div className="mt-6 flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setDeleteFolderCandidateId(null)}
+                                    className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
+                                >
+                                    {t('cancel')}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        deleteFolder(deleteFolderCandidateId);
+                                        setDeleteFolderCandidateId(null);
+                                    }}
+                                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-rose-500"
+                                >
+                                    {t('delete')}
                                 </button>
                             </div>
                         </div>

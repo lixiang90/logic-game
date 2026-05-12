@@ -83,6 +83,9 @@ export type TranslationKey =
     | 'selectTheoremChip'
     | 'newFolder' | 'rootFolder' | 'moveToFolder'
     | 'folderName' | 'folderNamePlaceholder' | 'create'
+    | 'browseMode' | 'manageMode' | 'dragHint'
+    | 'theorems' | 'trash'
+    | 'delete' | 'deleteFolder' | 'deleteFolderConfirm' | 'deleteFolderMoveToTrash'
     | 'saveSuccess' | 'ok'
     // Level Titles and Descriptions
     | 'level-1-title' | 'level-1-desc'
@@ -233,6 +236,15 @@ export const translations: Record<Language, Record<string, string>> = {
         'folderName': 'Folder Name',
         'folderNamePlaceholder': 'Enter a folder name',
         'create': 'Create',
+        'browseMode': 'Browse',
+        'manageMode': 'Manage',
+        'dragHint': 'Drag theorems/folders to organize, drag theorems to the toolbar to pin',
+        'theorems': 'Theorems',
+        'trash': 'Trash',
+        'delete': 'Delete',
+        'deleteFolder': 'Delete Folder',
+        'deleteFolderConfirm': 'Delete this folder?',
+        'deleteFolderMoveToTrash': 'Theorems inside this folder (and subfolders) will be moved to Trash.',
         'saveSuccess': 'Saved',
         'ok': 'OK',
 
@@ -393,6 +405,15 @@ export const translations: Record<Language, Record<string, string>> = {
         'folderName': '文件夹名称',
         'folderNamePlaceholder': '输入文件夹名称',
         'create': '创建',
+        'browseMode': '浏览模式',
+        'manageMode': '管理模式',
+        'dragHint': '拖动定理/文件夹进行整理；也可以拖动定理到工具栏槽位固定快捷键',
+        'theorems': '定理',
+        'trash': '回收站',
+        'delete': '删除',
+        'deleteFolder': '删除文件夹',
+        'deleteFolderConfirm': '确定删除该文件夹？',
+        'deleteFolderMoveToTrash': '该文件夹及其子文件夹内的定理将自动移动到回收站。',
         'saveSuccess': '存档成功',
         'ok': '确定',
 

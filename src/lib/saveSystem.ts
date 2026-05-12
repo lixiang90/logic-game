@@ -7,11 +7,25 @@ export interface LevelState {
     wires: Wire[];
 }
 
+export type TheoremFolderNode = {
+    id: string;
+    name: string;
+    children: TheoremFolderNode[];
+};
+
+export type TheoremLibrarySaveState = {
+    version: 1;
+    root: TheoremFolderNode;
+    theoremFolderById: Record<string, string | undefined>;
+};
+
 export interface SaveData {
     timestamp: number;
     levelIndex: number;
     levelStates: Record<number, LevelState>; // Store state for each level index
     metaProgress: Stage2MetaProgress;
+    theoremLibrary?: TheoremLibrarySaveState;
+    theoremToolbarPins?: Array<string | null>;
 }
 
 const STORAGE_KEY_PREFIX = 'logic_game_save_';
@@ -39,6 +53,8 @@ export const SaveSystem = {
                       mapSeed: data.metaProgress.mapSeed ?? baseSeed,
                   }
                 : createDefaultStage2MetaProgress(baseSeed),
+            theoremLibrary: data.theoremLibrary,
+            theoremToolbarPins: data.theoremToolbarPins,
         };
     },
 

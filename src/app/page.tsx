@@ -220,6 +220,21 @@ export default function Home() {
     metaProgress,
   });
 
+  const applyTheoremLibraryFromSave = (saved: SaveData) => {
+    if (typeof window === 'undefined') return;
+    if (!saved.theoremLibrary && !saved.theoremToolbarPins) return;
+    try {
+      if (saved.theoremLibrary) {
+        localStorage.setItem('logic_game_theorem_library_tree_v1', JSON.stringify(saved.theoremLibrary));
+      }
+      if (saved.theoremToolbarPins) {
+        localStorage.setItem('logic_game_theorem_toolbar_pins_v1', JSON.stringify(saved.theoremToolbarPins));
+      }
+      window.dispatchEvent(new Event('logic_game_save_loaded'));
+    } catch {
+    }
+  };
+
   const consumeTheoremPlacement = (baseProgress: Stage2MetaProgress, theoremId: string) => {
     const theorem = baseProgress.collectedTheorems[theoremId];
     if (!theorem) return baseProgress;
@@ -532,6 +547,7 @@ export default function Home() {
   const handleContinue = () => {
     const saved = SaveSystem.loadAutoSave();
     if (saved) {
+        applyTheoremLibraryFromSave(saved);
         setCurrentLevelIndex(saved.levelIndex);
         setStage2Progress(saved.metaProgress);
         const levelState = saved.levelStates[saved.levelIndex];
@@ -549,6 +565,7 @@ export default function Home() {
   const handleLoadGame = (slot: number) => {
     const saved = SaveSystem.load(slot);
     if (saved) {
+        applyTheoremLibraryFromSave(saved);
         SaveSystem.autoSave(saved); // Set as current session
         setCurrentLevelIndex(saved.levelIndex);
         setStage2Progress(saved.metaProgress);
@@ -580,7 +597,7 @@ export default function Home() {
         // Use current session data (autoSave) as base to preserve history
         const currentSession = SaveSystem.loadAutoSave() || SaveSystem.createEmptySave();
         
-        const saveData = buildSaveData(
+        const saveDataBase = buildSaveData(
             currentLevelIndex,
             {
                 ...currentSession.levelStates,
@@ -588,6 +605,37 @@ export default function Home() {
             },
             stage2Progress
         );
+
+        let theoremLibrary: SaveData['theoremLibrary'] | undefined = currentSession.theoremLibrary;
+        let theoremToolbarPins: SaveData['theoremToolbarPins'] | undefined = currentSession.theoremToolbarPins;
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem('logic_game_theorem_library_tree_v1');
+            if (raw) {
+              const parsed = JSON.parse(raw) as Partial<SaveData['theoremLibrary']>;
+              if (parsed && parsed.version === 1 && parsed.root && parsed.theoremFolderById) {
+                theoremLibrary = parsed as SaveData['theoremLibrary'];
+              }
+            }
+          } catch {
+          }
+          try {
+            const rawPins = localStorage.getItem('logic_game_theorem_toolbar_pins_v1');
+            if (rawPins) {
+              const parsed = JSON.parse(rawPins) as unknown;
+              if (Array.isArray(parsed)) {
+                theoremToolbarPins = parsed.map((v) => (typeof v === 'string' ? v : null));
+              }
+            }
+          } catch {
+          }
+        }
+
+        const saveData: SaveData = {
+          ...saveDataBase,
+          theoremLibrary,
+          theoremToolbarPins,
+        };
         SaveSystem.save(slot, saveData);
         SaveSystem.autoSave(saveData); // Update session too
         setShowSaveMenu(false);
