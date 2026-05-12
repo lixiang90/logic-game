@@ -102,7 +102,7 @@ const placePremiseNodes = (islandBounds: Stage2MapBounds, formulas: string[], ba
     const nodes: Stage2IslandPremiseDefinition[] = [];
     const startX = islandBounds.x + 8;
     const startY = islandBounds.y + 8;
-    const gapY = 12;
+    const gapY = 14;
     for (let i = 0; i < formulas.length; i += 1) {
         const w = estimatePremiseWidth(formulas[i]);
         nodes.push({
