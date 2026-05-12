@@ -55,6 +55,10 @@ export default function Toolbar({
     const [theoremLibraryState, setTheoremLibraryState] = React.useState<TheoremLibraryState>(createEmptyLibraryState);
     const [theoremLibrarySelectedFolderId, setTheoremLibrarySelectedFolderId] = React.useState<string>('root');
     const [theoremLibraryExpandedFolderIds, setTheoremLibraryExpandedFolderIds] = React.useState<string[]>(['root']);
+    const [isCreateFolderOpen, setIsCreateFolderOpen] = React.useState(false);
+    const [createFolderParentId, setCreateFolderParentId] = React.useState<string>('root');
+    const [createFolderName, setCreateFolderName] = React.useState('');
+    const createFolderInputRef = React.useRef<HTMLInputElement | null>(null);
 
     const handleSelect = (type: NodeType, subType: string, w: number, h: number) => {
         onSelectTool({ type, subType, w, h, rotation: 0 });
@@ -297,14 +301,20 @@ export default function Toolbar({
     }, []);
 
     const handleCreateFolder = React.useCallback((parentId: string) => {
-        if (typeof window === 'undefined') return;
         const parent = findFolderById(theoremLibraryState.root, parentId);
         if (!parent) return;
-        const defaultName = t('newFolder');
-        const name = window.prompt(defaultName, '');
-        if (!name) return;
-        addFolder(parentId, name);
-    }, [addFolder, findFolderById, t, theoremLibraryState.root]);
+        setCreateFolderParentId(parentId);
+        setCreateFolderName('');
+        setIsCreateFolderOpen(true);
+    }, [findFolderById, theoremLibraryState.root]);
+
+    React.useEffect(() => {
+        if (!isCreateFolderOpen) return;
+        const raf = requestAnimationFrame(() => {
+            createFolderInputRef.current?.focus();
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [isCreateFolderOpen]);
 
     const setTheoremFolder = React.useCallback((theoremId: string, folderId: string) => {
         const targetId = folderIdSet.has(folderId) ? folderId : 'root';
@@ -914,6 +924,64 @@ export default function Toolbar({
                         </div>
                     </div>
                 </div>
+                {isCreateFolderOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                        <div className="w-[28rem] max-w-[92vw] rounded-2xl border border-cyan-500/30 bg-slate-900/95 p-6 shadow-2xl">
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">{t('theoremLibrary')}</div>
+                                    <div className="text-xl font-bold text-white">{t('newFolder')}</div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsCreateFolderOpen(false)}
+                                    className="rounded-lg border border-slate-700 px-3 py-1 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+                                >
+                                    {t('cancel')}
+                                </button>
+                            </div>
+
+                            <div className="mt-5">
+                                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('folderName')}</div>
+                                <input
+                                    ref={createFolderInputRef}
+                                    value={createFolderName}
+                                    onChange={(e) => setCreateFolderName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            addFolder(createFolderParentId, createFolderName);
+                                            setIsCreateFolderOpen(false);
+                                        } else if (e.key === 'Escape') {
+                                            setIsCreateFolderOpen(false);
+                                        }
+                                    }}
+                                    placeholder={t('folderNamePlaceholder')}
+                                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950/40 px-4 py-3 text-white outline-none transition-colors placeholder:text-slate-500 focus:border-cyan-400/60"
+                                />
+                            </div>
+
+                            <div className="mt-6 flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsCreateFolderOpen(false)}
+                                    className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
+                                >
+                                    {t('cancel')}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        addFolder(createFolderParentId, createFolderName);
+                                        setIsCreateFolderOpen(false);
+                                    }}
+                                    className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-cyan-500"
+                                >
+                                    {t('create')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         )}
         </>
