@@ -17,7 +17,8 @@ export const THEME = {
         'P': { color: '#3b82f6', shape: 'circle' as const },
         'Q': { color: '#a855f7', shape: 'square' as const },
         'R': { color: '#ffaa00', shape: 'triangle' as const },
-        'S': { color: '#f97316', shape: 'diamond' as const }
+        'S': { color: '#f97316', shape: 'diamond' as const },
+        'T': { color: '#22c55e', shape: 'circle' as const }
     } as Record<string, AtomConfig>
 };
 

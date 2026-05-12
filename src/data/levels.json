@@ -166,5 +166,18 @@
       "nodes": [],
       "wires": []
     }
+  },
+  {
+    "id": "level-12",
+    "title": "Level 12: Stage 2 - Composition",
+    "description": "Prove ⊢ (Q -> (P -> R)) from the premise ⊢ (P -> (Q -> R)). New atoms S and T are available.",
+    "goal": {
+      "formula": "|-(Q->(P->R))"
+    },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "atom:S", "atom:T", "gate:implies", "gate:not", "axiom:1", "axiom:2", "axiom:3", "mp", "display:small", "display:large", "bridge"],
+    "initialState": {
+      "nodes": [],
+      "wires": []
+    }
   }
 ]

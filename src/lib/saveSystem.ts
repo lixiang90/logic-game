@@ -26,6 +26,7 @@ export interface SaveData {
     metaProgress: Stage2MetaProgress;
     theoremLibrary?: TheoremLibrarySaveState;
     theoremToolbarPins?: Array<string | null>;
+    levelStartStates?: Record<number, { levelState: LevelState, metaProgress: Stage2MetaProgress }>;
 }
 
 const STORAGE_KEY_PREFIX = 'logic_game_save_';
@@ -55,6 +56,7 @@ export const SaveSystem = {
                 : createDefaultStage2MetaProgress(baseSeed),
             theoremLibrary: data.theoremLibrary,
             theoremToolbarPins: data.theoremToolbarPins,
+            levelStartStates: data.levelStartStates ?? {},
         };
     },
 

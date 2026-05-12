@@ -37,7 +37,13 @@ export default function Stage2Panel({
         }));
     }, [goalIslands]);
 
-    const theoremCount = Object.keys(progress.collectedTheorems).length;
+    const collectedTheoremsForLevel = useMemo(() => {
+        return Object.values(progress.collectedTheorems).filter((theorem) => {
+            const collectedIn = theorem.collectedInLevelId ?? 'level-11';
+            return collectedIn === config.levelId;
+        });
+    }, [config.levelId, progress.collectedTheorems]);
+    const theoremCount = collectedTheoremsForLevel.length;
     const focusIslandName = config.world.getIslandById(config.focusIslandId)?.name ?? '';
     const unlockedGoalCount = goalIslands.filter((island) => island.unlocked).length;
     const introText = config.introTextKey ? t(config.introTextKey as TranslationKey) : config.introText;
@@ -171,7 +177,7 @@ export default function Stage2Panel({
                 ) : (
                     <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                         <div className="flex flex-col gap-2">
-                        {Object.values(progress.collectedTheorems).map((theorem) => (
+                        {collectedTheoremsForLevel.map((theorem) => (
                             <div
                                 key={theorem.theoremId}
                                 className={`rounded-xl border bg-slate-800/70 p-3 ${

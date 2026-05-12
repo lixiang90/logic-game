@@ -168,6 +168,65 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         stage2IslandRenderCacheRef.current.clear();
     }, [stage2Config?.levelId, stage2Progress?.mapSeed]);
 
+    useEffect(() => {
+        if (!initialState || initialState.nodes.length === 0) return;
+        const raf = requestAnimationFrame(() => {
+            setNodes((prevNodes) => {
+                let nextNodes = prevNodes;
+
+                const initialLockedPremises = initialState.nodes.filter((node) => node.type === 'premise' && node.locked);
+                if (initialLockedPremises.length > 0) {
+                    const initialPremiseById = new Map(initialLockedPremises.map((node) => [node.id, node]));
+                    let changed = false;
+
+                    const filtered = nextNodes.filter((node) => {
+                        if (node.type !== 'premise' || !node.locked) return true;
+                        return initialPremiseById.has(node.id);
+                    });
+                    if (filtered.length !== nextNodes.length) changed = true;
+
+                    const mapped = filtered.map((node) => {
+                        if (node.type !== 'premise' || !node.locked) return node;
+                        const fresh = initialPremiseById.get(node.id);
+                        if (!fresh) return node;
+                        if (
+                            node.subType === fresh.subType &&
+                            node.customLabel === fresh.customLabel &&
+                            node.sourceIslandId === fresh.sourceIslandId
+                        ) {
+                            return node;
+                        }
+                        changed = true;
+                        return {
+                            ...node,
+                            subType: fresh.subType,
+                            customLabel: fresh.customLabel,
+                            sourceIslandId: fresh.sourceIslandId,
+                        };
+                    });
+
+                    nextNodes = mapped;
+
+                    const loadedIds = new Set(nextNodes.map((node) => node.id));
+                    const missingNodes = initialState.nodes.filter((node) => !loadedIds.has(node.id));
+                    if (missingNodes.length > 0) {
+                        nextNodes = [...nextNodes, ...missingNodes];
+                        changed = true;
+                    }
+
+                    return changed ? nextNodes : prevNodes;
+                }
+
+                const loadedIds = new Set(nextNodes.map((node) => node.id));
+                const missingNodes = initialState.nodes.filter((node) => !loadedIds.has(node.id));
+                if (missingNodes.length === 0) return prevNodes;
+                return [...nextNodes, ...missingNodes];
+            });
+        });
+
+        return () => cancelAnimationFrame(raf);
+    }, [initialState]);
+
     // Animation Loop for Flashing and Flow
     useEffect(() => {
         let animationFrameId: number;
@@ -495,6 +554,9 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             if (node.subType === 'P') { bgColor = '#0a1a2a'; borderColor = '#00d0ff'; textColor = '#00d0ff'; }
             else if (node.subType === 'Q') { bgColor = '#1a0a2a'; borderColor = '#d000ff'; textColor = '#d000ff'; }
             else if (node.subType === 'R') { bgColor = '#2a1a0a'; borderColor = '#ffaa00'; textColor = '#ffaa00'; }
+            else if (node.subType === 'S') { bgColor = '#2a150a'; borderColor = '#f97316'; textColor = '#f97316'; }
+            else if (node.subType === 'T') { bgColor = '#0a2a1c'; borderColor = '#22c55e'; textColor = '#22c55e'; }
+            else { bgColor = '#0f172a'; borderColor = '#94a3b8'; textColor = '#e2e8f0'; }
             
             drawRoundedRect(ctx, dx + 2, dy + 2, drawW - 4, drawH - 4, 10);
             ctx.fillStyle = bgColor;

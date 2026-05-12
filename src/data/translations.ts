@@ -42,6 +42,8 @@ export type TranslationKey =
     | 'saveGame'
     | 'mainMenu'
     | 'resetView'
+    | 'resetLevel'
+    | 'confirmReset'
     | 'tools'
     | 'atoms'
     | 'gates'
@@ -87,6 +89,7 @@ export type TranslationKey =
     | 'theorems' | 'trash'
     | 'delete' | 'deleteFolder' | 'deleteFolderConfirm' | 'deleteFolderMoveToTrash'
     | 'saveSuccess' | 'ok'
+    | 'more'
     // Level Titles and Descriptions
     | 'level-1-title' | 'level-1-desc'
     | 'level-2-title' | 'level-2-desc'
@@ -144,6 +147,8 @@ export const translations: Record<Language, Record<string, string>> = {
         saveGame: 'Save Game',
         mainMenu: 'Main Menu',
         resetView: 'Reset View',
+        resetLevel: 'Reset Level',
+        confirmReset: 'Are you sure you want to reset the current level? This will clear your built circuits and restore the level to its initial state.',
         tools: 'Tools',
         atoms: 'Atoms',
         gates: 'Gates',
@@ -247,6 +252,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'deleteFolderMoveToTrash': 'Theorems inside this folder (and subfolders) will be moved to Trash.',
         'saveSuccess': 'Saved',
         'ok': 'OK',
+        'more': 'More',
 
         'level-1-title': 'Level 1: Negation',
         'level-1-desc': 'Construct the formula ¬P using the Atom P and the Not gate.',
@@ -310,9 +316,11 @@ export const translations: Record<Language, Record<string, string>> = {
         goal: '目标',
         freeBuild: '自由模式',
         back: '返回',
-        saveGame: '保存游戏',
+        saveGame: '存档',
         mainMenu: '主菜单',
-        resetView: '重置视角',
+        resetView: '复位视角',
+        resetLevel: '复位',
+        confirmReset: '确定要复位当前关卡吗？这会清空你已建造的电路并将关卡恢复到初始状态。',
         tools: '工具',
         atoms: '原子',
         gates: '逻辑门',
@@ -416,6 +424,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'deleteFolderMoveToTrash': '该文件夹及其子文件夹内的定理将自动移动到回收站。',
         'saveSuccess': '存档成功',
         'ok': '确定',
+        'more': '更多',
 
         'level-1-title': '第 1 关: 否定',
         'level-1-desc': '使用原子 P 和非门构造公式 ¬P。',

@@ -41,6 +41,9 @@ export default function Toolbar({
     const [isDraggingTheoremToToolbar, setIsDraggingTheoremToToolbar] = React.useState(false);
     const theoremMenuRef = React.useRef<HTMLDivElement | null>(null);
     const theoremMenuButtonRef = React.useRef<HTMLButtonElement | null>(null);
+    const [showMoreAtomsMenu, setShowMoreAtomsMenu] = React.useState(false);
+    const moreAtomsMenuRef = React.useRef<HTMLDivElement | null>(null);
+    const moreAtomsButtonRef = React.useRef<HTMLButtonElement | null>(null);
 
     type TheoremFolderNode = {
         id: string;
@@ -312,6 +315,19 @@ export default function Toolbar({
         window.addEventListener('pointerdown', onPointerDown);
         return () => window.removeEventListener('pointerdown', onPointerDown);
     }, [isDraggingTheoremToToolbar, showTheoremMenu]);
+
+    React.useEffect(() => {
+        if (!showMoreAtomsMenu) return;
+        const onPointerDown = (e: MouseEvent) => {
+            const target = e.target as Node | null;
+            if (!target) return;
+            if (moreAtomsMenuRef.current && moreAtomsMenuRef.current.contains(target)) return;
+            if (moreAtomsButtonRef.current && moreAtomsButtonRef.current.contains(target)) return;
+            setShowMoreAtomsMenu(false);
+        };
+        window.addEventListener('pointerdown', onPointerDown);
+        return () => window.removeEventListener('pointerdown', onPointerDown);
+    }, [showMoreAtomsMenu]);
 
     const canAffordTheorem = (theorem: TheoremChipInventoryEntry) =>
         theorem.freeUsesRemaining > 0 || coins >= theorem.cost;
@@ -929,7 +945,7 @@ export default function Toolbar({
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('atoms')}</span>
                 </div>
-                <div className="h-12 flex items-center gap-3">
+                <div className="h-12 flex items-center gap-3 relative">
                     {/* Atom P */}
                     {isUnlocked('atom', 'P') && (
                     <div 
@@ -972,6 +988,62 @@ export default function Toolbar({
                     >
                         R
                     </div>
+                    )}
+
+                    {(isUnlocked('atom', 'S') || isUnlocked('atom', 'T')) && (
+                        <>
+                            <button
+                                ref={moreAtomsButtonRef}
+                                type="button"
+                                onClick={() => setShowMoreAtomsMenu((v) => !v)}
+                                className={`h-12 rounded-md border border-slate-600 bg-slate-800 px-3 text-xs font-bold text-slate-200 transition-all duration-200 hover:-translate-y-1 hover:bg-slate-700 hover:scale-110 active:scale-95 ${
+                                    showMoreAtomsMenu ? activeClass : ''
+                                }`}
+                                title={t('more')}
+                            >
+                                {t('more')}
+                            </button>
+
+                            {showMoreAtomsMenu && (
+                                <div
+                                    ref={moreAtomsMenuRef}
+                                    className="absolute bottom-full mb-3 right-0 w-44 rounded-2xl border border-slate-600 bg-slate-900/95 p-3 shadow-2xl ring-1 ring-white/10"
+                                >
+                                    <div className="flex flex-col gap-2">
+                                        {isUnlocked('atom', 'S') && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    handleSelect('atom', 'S', 4, 4);
+                                                    setShowMoreAtomsMenu(false);
+                                                }}
+                                                className={`h-12 rounded-xl border border-slate-700 bg-slate-950/30 px-3 text-left font-bold text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-800/60 ${
+                                                    isActive('S') ? activeClass : ''
+                                                }`}
+                                                title="Atom S"
+                                            >
+                                                <span className="text-[#f97316]">S</span>
+                                            </button>
+                                        )}
+                                        {isUnlocked('atom', 'T') && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    handleSelect('atom', 'T', 4, 4);
+                                                    setShowMoreAtomsMenu(false);
+                                                }}
+                                                className={`h-12 rounded-xl border border-slate-700 bg-slate-950/30 px-3 text-left font-bold text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-800/60 ${
+                                                    isActive('T') ? activeClass : ''
+                                                }`}
+                                                title="Atom T"
+                                            >
+                                                <span className="text-[#22c55e]">T</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             </div>

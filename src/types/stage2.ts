@@ -32,6 +32,7 @@ export interface TheoremChipDefinition {
 
 export interface TheoremChipInventoryEntry extends TheoremChipDefinition {
     sourceIslandId: string;
+    collectedInLevelId?: string;
     freeUsesRemaining: number;
     useCount: number;
 }

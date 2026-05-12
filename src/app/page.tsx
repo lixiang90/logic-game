@@ -114,6 +114,7 @@ export default function Home() {
   const [gameState, setGameState] = useState<'menu' | 'playing'>('menu');
   const [pendingLoad, setPendingLoad] = useState<LevelState | null>(null);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [saveMenuTab, setSaveMenuTab] = useState<'save' | 'load'>('save');
   const [saveSuccessSlot, setSaveSuccessSlot] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -213,11 +214,45 @@ export default function Home() {
     return tileSet;
   }, [effectiveUnlockedIslandIds, stage2Config]);
 
-  const buildSaveData = (levelIndex: number, levelStates: Record<number, LevelState>, metaProgress: Stage2MetaProgress): SaveData => ({
+  const readTheoremUiStateFromStorage = (): Pick<SaveData, 'theoremLibrary' | 'theoremToolbarPins'> => {
+    if (typeof window === 'undefined') return {};
+    let theoremLibrary: SaveData['theoremLibrary'] | undefined;
+    let theoremToolbarPins: SaveData['theoremToolbarPins'] | undefined;
+    try {
+      const raw = localStorage.getItem('logic_game_theorem_library_tree_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<SaveData['theoremLibrary']>;
+        if (parsed && parsed.version === 1 && parsed.root && parsed.theoremFolderById) {
+          theoremLibrary = parsed as SaveData['theoremLibrary'];
+        }
+      }
+    } catch {
+    }
+    try {
+      const rawPins = localStorage.getItem('logic_game_theorem_toolbar_pins_v1');
+      if (rawPins) {
+        const parsed = JSON.parse(rawPins) as unknown;
+        if (Array.isArray(parsed)) {
+          theoremToolbarPins = parsed.map((v) => (typeof v === 'string' ? v : null));
+        }
+      }
+    } catch {
+    }
+    return { theoremLibrary, theoremToolbarPins };
+  };
+
+  const buildSaveData = (
+    levelIndex: number,
+    levelStates: Record<number, LevelState>,
+    metaProgress: Stage2MetaProgress,
+    levelStartStates: Record<number, { levelState: LevelState; metaProgress: Stage2MetaProgress }>
+  ): SaveData => ({
     timestamp: Date.now(),
     levelIndex,
     levelStates,
     metaProgress,
+    ...readTheoremUiStateFromStorage(),
+    levelStartStates,
   });
 
   const applyTheoremLibraryFromSave = (saved: SaveData) => {
@@ -287,6 +322,7 @@ export default function Home() {
         ...completedIsland.rewardTheorem,
         premises: (completedIsland.premiseNodes ?? []).map((premise) => premise.formula),
         sourceIslandId: completedIsland.id,
+        collectedInLevelId: stage2Config.levelId,
         freeUsesRemaining: 1,
         useCount: 0,
       };
@@ -372,8 +408,10 @@ export default function Home() {
     if (gameState !== 'playing' || !stage2Config) return;
     const raf = requestAnimationFrame(() => {
       setStage2Progress((prev) => {
-        if (prev.unlockedIslandIds.length > 0) return prev;
-        return { ...prev, unlockedIslandIds: stage2Config.initialUnlockedIslandIds };
+        const next = new Set(prev.unlockedIslandIds.length > 0 ? prev.unlockedIslandIds : stage2Config.initialUnlockedIslandIds);
+        stage2Config.initialUnlockedIslandIds.forEach((id) => next.add(id));
+        if (next.size === prev.unlockedIslandIds.length && prev.unlockedIslandIds.length > 0) return prev;
+        return { ...prev, unlockedIslandIds: Array.from(next) };
       });
     });
     return () => cancelAnimationFrame(raf);
@@ -440,7 +478,8 @@ export default function Home() {
                     ...existing.levelStates,
                     [currentLevelIndex]: state
                 },
-                stage2Progress
+                stage2Progress,
+                existing.levelStartStates ?? {}
             );
             SaveSystem.autoSave(saveData);
             // console.log("Auto-saved");
@@ -488,7 +527,8 @@ export default function Home() {
               ...currentSession.levelStates,
               [currentLevelIndex]: state
             },
-            nextStage2Progress
+            nextStage2Progress,
+            currentSession.levelStartStates ?? {}
           )
         );
       }
@@ -507,13 +547,23 @@ export default function Home() {
       if (canvasRef.current) {
           const state = canvasRef.current.getState();
           const currentSession = SaveSystem.loadAutoSave() || SaveSystem.createEmptySave();
+          
+          const nextLevelIndex = currentLevelIndex + 1;
+          const nextLevel = levels[nextLevelIndex] as Level;
+          const nextStage2Config = getStage2LevelConfig(nextLevel.id, stage2Progress.mapSeed);
+          const nextLevelStartState: LevelState = nextStage2Config ? state : (nextLevel.initialState || { nodes: [], wires: [] });
+
           const saveData = buildSaveData(
-              currentLevelIndex + 1,
+              nextLevelIndex,
               {
                   ...currentSession.levelStates,
                   [currentLevelIndex]: state // Save completed level state
               },
-              stage2Progress
+              stage2Progress,
+              {
+                  ...(currentSession.levelStartStates ?? {}),
+                  [nextLevelIndex]: { levelState: nextLevelStartState, metaProgress: stage2Progress }
+              }
           );
           SaveSystem.autoSave(saveData);
       }
@@ -532,6 +582,10 @@ export default function Home() {
 
   const handleNewGame = () => {
     const emptySave = SaveSystem.createEmptySave();
+    const firstLevel = levels[0] as Level;
+    emptySave.levelStartStates = {
+        0: { levelState: firstLevel.initialState || { nodes: [], wires: [] }, metaProgress: emptySave.metaProgress }
+    };
     SaveSystem.autoSave(emptySave); // Reset auto-save
     resetTutorials(); // Reset tutorial progress
     setStage2Progress(emptySave.metaProgress);
@@ -581,6 +635,48 @@ export default function Home() {
     }
   };
 
+  const handleResetLevel = () => {
+    const currentSession = SaveSystem.loadAutoSave() || SaveSystem.createEmptySave();
+    const startStateObj = currentSession.levelStartStates?.[currentLevelIndex];
+    
+    let newMetaProgress = stage2Progress;
+    let newLevelState: LevelState;
+
+    if (stage2Config) {
+      if (startStateObj) {
+        newMetaProgress = startStateObj.metaProgress;
+        newLevelState = startStateObj.levelState;
+      } else {
+        newMetaProgress = createDefaultStage2MetaProgress(stage2Progress.mapSeed);
+        newLevelState = { nodes: [], wires: [] };
+      }
+      setStage2Progress(newMetaProgress);
+      setPendingLoad(newLevelState);
+    } else {
+      newLevelState = currentLevel.initialState || { nodes: [], wires: [] };
+      setPendingLoad(newLevelState);
+      forceStartTutorial(currentLevelIndex);
+    }
+    
+    // Immediately auto-save the reset state
+    SaveSystem.autoSave(
+      buildSaveData(
+        currentLevelIndex,
+        {
+          ...currentSession.levelStates,
+          [currentLevelIndex]: newLevelState
+        },
+        newMetaProgress,
+        currentSession.levelStartStates ?? {}
+      )
+    );
+    
+    setShowResetConfirm(false);
+    setIsLevelComplete(false);
+    setActiveTool(null);
+    canvasRef.current?.resetView();
+  };
+
   // Use state for timestamp to avoid hydration mismatch
   const [timestamp, setTimestamp] = useState<number>(0);
 
@@ -603,7 +699,8 @@ export default function Home() {
                 ...currentSession.levelStates,
                 [currentLevelIndex]: state
             },
-            stage2Progress
+            stage2Progress,
+            currentSession.levelStartStates ?? {}
         );
 
         let theoremLibrary: SaveData['theoremLibrary'] | undefined = currentSession.theoremLibrary;
@@ -748,7 +845,7 @@ export default function Home() {
   return (
     <main className="w-screen h-screen overflow-hidden relative">
       <InfiniteCanvas 
-        key={currentLevel.id} // Reset canvas on level change
+        key={stage2Config ? `stage2-${stage2Progress.mapSeed}` : currentLevel.id}
         ref={canvasRef}
         activeTool={activeTool} 
         selectMode={selectMode}
@@ -825,12 +922,48 @@ export default function Home() {
           </button>
           <button 
               className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              onClick={() => setShowResetConfirm(true)}
+              title={t('resetLevel')}
+          >
+              <span role="img" aria-label="Reset">🔄</span>
+          </button>
+          <button 
+              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => setShowSettings(true)}
               title={t('settings')}
           >
               <span role="img" aria-label="Settings">⚙️</span>
           </button>
       </div>
+
+      {/* Reset Confirm Modal */}
+      {showResetConfirm && (
+        <div className="absolute inset-0 bg-black/60 z-[120] flex items-center justify-center backdrop-blur-sm">
+            <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 shadow-2xl w-96">
+                <div className="mb-4 flex items-center gap-3">
+                    <span className="text-3xl" role="img" aria-label="Warning">⚠️</span>
+                    <h2 className="text-xl font-bold text-white">{t('resetLevel')}</h2>
+                </div>
+                <p className="text-slate-300 mb-8 leading-relaxed">
+                    {t('confirmReset')}
+                </p>
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setShowResetConfirm(false)}
+                        className="flex-1 py-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors font-bold border border-slate-700"
+                    >
+                        {t('cancel')}
+                    </button>
+                    <button 
+                        onClick={handleResetLevel}
+                        className="flex-1 py-2 text-white bg-red-600 hover:bg-red-500 rounded transition-colors font-bold border border-red-500"
+                    >
+                        {t('resetLevel')}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Settings Modal */}
       {showSettings && (
@@ -969,6 +1102,21 @@ export default function Home() {
         </div>
       )}
 
+      {stage2Config && stage2Progress.completedIslandIds.includes(stage2Config.focusIslandId) && (
+        <DraggableModal title={t('levelComplete')}>
+          <div className="flex flex-col items-center gap-4">
+            <h2 className="text-4xl font-bold text-green-300">{t('levelComplete')}</h2>
+            <p className="text-slate-300">{t('greatJob') || 'Great job! You proved the theorem.'}</p>
+            <button
+              onClick={handleNextLevel}
+              className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105 shadow-lg"
+            >
+              {currentLevelIndex < levels.length - 1 ? t('nextLevel') : t('freeBuild')}
+            </button>
+          </div>
+        </DraggableModal>
+      )}
+
       {showStage2Intro &&
         stage2Config &&
         !stage2Progress.completedIslandIds.includes(stage2Config.focusIslandId) && (
@@ -1032,7 +1180,21 @@ export default function Home() {
         onSelectModeChange={setSelectMode}
         unlockedTools={
           isFreeBuild || stage2Config
-            ? ['atom:P', 'atom:Q', 'atom:R', 'gate:implies', 'gate:not', 'axiom:1', 'axiom:2', 'axiom:3', 'mp', 'bridge', 'display:small', 'display:large']
+            ? [
+                'atom:P',
+                'atom:Q',
+                'atom:R',
+                ...(stage2Config?.levelId !== 'level-11' ? ['atom:S', 'atom:T'] : []),
+                'gate:implies',
+                'gate:not',
+                'axiom:1',
+                'axiom:2',
+                'axiom:3',
+                'mp',
+                'bridge',
+                'display:small',
+                'display:large',
+              ]
             : currentLevel.unlockedTools
         }
         theoremInventory={stage2Config ? resolvedTheoremInventory : []}
