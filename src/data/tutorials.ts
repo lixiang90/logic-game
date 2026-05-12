@@ -312,5 +312,57 @@ export const tutorials: Record<number, LevelTutorial> = {
                 position: 'center'
             }
         ]
+    },
+    10: {
+        levelIndex: 10,
+        steps: [
+            {
+                id: 'l11-start',
+                textKey: 'tut-l11-start',
+                trigger: 'CUSTOM',
+                highlightElementId: 'stage2-hud',
+                position: 'center'
+            },
+            {
+                id: 'l11-navigation',
+                textKey: 'tut-l11-navigation',
+                trigger: 'CUSTOM',
+                position: 'center'
+            },
+            {
+                id: 'l11-objective',
+                textKey: 'tut-l11-objective',
+                trigger: 'CUSTOM',
+                highlightElementId: 'stage2-intro',
+                position: 'center'
+            },
+            {
+                id: 'l11-islands',
+                textKey: 'tut-l11-islands',
+                trigger: 'CUSTOM',
+                highlightElementId: 'stage2-island-list',
+                position: 'center'
+            },
+            {
+                id: 'l11-theorems',
+                textKey: 'tut-l11-theorems',
+                trigger: 'CUSTOM',
+                highlightElementId: 'stage2-theorem-list',
+                position: 'center'
+            },
+            {
+                id: 'l11-wires',
+                textKey: 'tut-l11-wires',
+                trigger: 'CUSTOM',
+                highlightElementId: 'tool-wire',
+                position: 'center'
+            },
+            {
+                id: 'l11-finish',
+                textKey: 'tut-l11-finish',
+                trigger: 'CUSTOM',
+                position: 'center'
+            }
+        ]
     }
 };

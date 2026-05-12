@@ -1691,20 +1691,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         // --- Nodes ---
         nodes.forEach(node => {
             if (stage2Config) {
-                if (!showStage2InteriorDetails) {
-                    if (
-                        node.type !== 'premise' ||
-                        !node.locked ||
-                        !node.sourceIslandId ||
-                        !stage2UnlockedIslandIdSet.has(node.sourceIslandId) ||
-                        !showStage2IslandOverlayDetails
-                    ) {
-                        return;
-                    }
-                } else if (node.type === 'premise' && node.locked && node.sourceIslandId) {
-                    if (!stage2UnlockedIslandIdSet.has(node.sourceIslandId)) {
-                        return;
-                    }
+                if (node.type === 'premise' && node.locked && node.sourceIslandId) {
+                    if (!stage2UnlockedIslandIdSet.has(node.sourceIslandId)) return;
                 }
             }
 
@@ -2111,94 +2099,98 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             if (effectiveGx !== lastWireGridPos.x || effectiveGy !== lastWireGridPos.y) {
                 const dx = effectiveGx - lastWireGridPos.x;
                 const dy = effectiveGy - lastWireGridPos.y;
-                
-                let newRotation = activeTool.rotation || 0;
-                let targetX = lastWireGridPos.x;
-                let targetY = lastWireGridPos.y;
 
-                // Determine rotation and target position based on direction
-                // We always try to connect from the previous position to the current one
-                
-                // Horizontal move
-                if (Math.abs(dx) > Math.abs(dy)) {
-                    newRotation = 0; // Top Edge (Horizontal)
-                    if (dx > 0) {
-                        // Moving Right: Place at Prev (connects Prev -> Curr)
-                        targetX = lastWireGridPos.x;
-                    } else {
-                        // Moving Left: Place at Curr (connects Curr -> Prev)
-                        targetX = effectiveGx;
-                    }
-                    targetY = lastWireGridPos.y; // Keep Y stable
-                } 
-                // Vertical move
-                else {
-                    newRotation = 1; // Left Edge (Vertical)
-                    if (dy > 0) {
-                        // Moving Down: Place at Prev (connects Prev -> Curr)
-                        targetY = lastWireGridPos.y;
-                    } else {
-                        // Moving Up: Place at Curr (connects Curr -> Prev)
-                        targetY = effectiveGy;
-                    }
-                    targetX = lastWireGridPos.x; // Keep X stable
-                }
+                const stage2GoalRects = stage2Config
+                    ? stage2Config.goalIslandIds
+                          .filter((id) => stage2UnlockedIslandIdSet.has(id))
+                          .map((id) => stage2Config.world.getIslandById(id))
+                          .filter((item): item is NonNullable<typeof item> => Boolean(item?.goalBounds))
+                          .map((island) => island.goalBounds!)
+                    : [];
+                const goalRects = stage2GoalRects.length > 0 ? stage2GoalRects : [{ x: -4, y: -4, w: 8, h: 8 }];
 
-                // If rotation changed, update tool state for ghost/next segment
-                if (newRotation !== activeTool.rotation) {
-                    onToolSetRotation?.(newRotation);
-                }
-                
-                // Place wire
-                const newNode: NodeData = {
-                    id: crypto.randomUUID(),
-                    type: activeTool.type,
-                    subType: activeTool.subType,
-                    x: targetX,
-                    y: targetY,
-                    w: activeTool.w,
-                    h: activeTool.h,
-                    rotation: newRotation
+                const nodesToAdd: NodeData[] = [];
+                const canAddWire = (candidate: NodeData) => {
+                    if (canPlaceNode && !canPlaceNode(candidate)) return false;
+
+                    const goalCollision = goalRects.some((goalRect) => !(
+                        candidate.x >= goalRect.x + goalRect.w || 
+                        candidate.x + candidate.w <= goalRect.x || 
+                        candidate.y >= goalRect.y + goalRect.h || 
+                        candidate.y + candidate.h <= goalRect.y
+                    ));
+                    if (goalCollision) return false;
+
+                    const collision = [...nodes, ...nodesToAdd].some((n) => {
+                        const isOverlapping = !(candidate.x >= n.x + n.w || 
+                            candidate.x + candidate.w <= n.x || 
+                            candidate.y >= n.y + n.h || 
+                            candidate.y + candidate.h <= n.y);
+
+                        if (!isOverlapping) return false;
+
+                        if (candidate.type === 'wire' && n.type === 'wire') {
+                            return (n.rotation || 0) === (candidate.rotation || 0);
+                        }
+
+                        return true;
+                    });
+
+                    return !collision;
                 };
 
-                // Collision check
-                const collision = nodes.some(n => {
-                    const isOverlapping = !(newNode.x >= n.x + n.w || 
-                        newNode.x + newNode.w <= n.x || 
-                        newNode.y >= n.y + n.h || 
-                        newNode.y + newNode.h <= n.y);
-                    
-                    if (!isOverlapping) return false;
+                let cursorX = lastWireGridPos.x;
+                let cursorY = lastWireGridPos.y;
 
-                    // Allow wire overlapping if rotations are different (crossing/junctions)
-                    if (newNode.type === 'wire' && n.type === 'wire') {
-                        return n.rotation === newNode.rotation; // Block only if same rotation (duplicate)
-                    }
+                const horizontal = Math.abs(dx) > Math.abs(dy);
+                const nextRotation = horizontal ? 0 : 1;
+                if (nextRotation !== activeTool.rotation) {
+                    onToolSetRotation?.(nextRotation);
+                }
 
-                    return true; // Block overlap for other types
-                });
+                const stepCount = horizontal ? Math.abs(dx) : Math.abs(dy);
+                const stepSign = horizontal ? Math.sign(dx) : Math.sign(dy);
+                if (stepCount > 0 && stepSign !== 0) {
+                    for (let step = 0; step < stepCount; step += 1) {
+                        const nextX = horizontal ? cursorX + stepSign : cursorX;
+                        const nextY = horizontal ? cursorY : cursorY + stepSign;
 
-                const goalRect = { x: -4, y: -4, w: 8, h: 8 };
-                const goalCollision = !(newNode.x >= goalRect.x + goalRect.w || 
-                                        newNode.x + newNode.w <= goalRect.x || 
-                                        newNode.y >= goalRect.y + goalRect.h || 
-                                        newNode.y + newNode.h <= goalRect.y);
+                        const targetX = horizontal ? (stepSign > 0 ? cursorX : nextX) : cursorX;
+                        const targetY = horizontal ? cursorY : (stepSign > 0 ? cursorY : nextY);
 
-                if (!collision && !goalCollision) {
-                    setNodes(prev => [...prev, newNode]);
-                    if (newNode.type === 'wire') {
-                         dispatchAction('CONNECT_WIRE', { 
-                             x: newNode.x, 
-                             y: newNode.y, 
-                             w: newNode.w, 
-                             h: newNode.h, 
-                             rotation: newNode.rotation 
-                         });
+                        const newNode: NodeData = {
+                            id: crypto.randomUUID(),
+                            type: activeTool.type,
+                            subType: activeTool.subType,
+                            x: targetX,
+                            y: targetY,
+                            w: activeTool.w,
+                            h: activeTool.h,
+                            rotation: nextRotation,
+                        };
+
+                        if (!canAddWire(newNode)) {
+                            break;
+                        }
+
+                        nodesToAdd.push(newNode);
+                        dispatchAction('CONNECT_WIRE', { 
+                            x: newNode.x, 
+                            y: newNode.y, 
+                            w: newNode.w, 
+                            h: newNode.h, 
+                            rotation: newNode.rotation,
+                        });
+
+                        cursorX = nextX;
+                        cursorY = nextY;
                     }
                 }
-                
-                // Update last pos to CURRENT effective mouse pos, ready for next step
-                setLastWireGridPos({ x: effectiveGx, y: effectiveGy });
+
+                if (nodesToAdd.length > 0) {
+                    setNodes((prev) => [...prev, ...nodesToAdd]);
+                    setLastWireGridPos({ x: cursorX, y: cursorY });
+                }
             }
         } else {
              // Tooltip Check

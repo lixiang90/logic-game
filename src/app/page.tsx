@@ -114,6 +114,7 @@ export default function Home() {
   const [gameState, setGameState] = useState<'menu' | 'playing'>('menu');
   const [pendingLoad, setPendingLoad] = useState<LevelState | null>(null);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [saveMenuTab, setSaveMenuTab] = useState<'save' | 'load'>('save');
   const [showSettings, setShowSettings] = useState(false);
   const [saveSlots, setSaveSlots] = useState<Record<number, { timestamp: number, levelIndex: number } | null>>({});
   const [bgmVolume, setBgmVolume] = useState(DEFAULT_BGM_VOLUME);
@@ -370,13 +371,13 @@ export default function Home() {
 
     const key = `${stage2Config.levelId}:${stage2Progress.mapSeed}`;
     const mainIslandCompleted = stage2Progress.completedIslandIds.includes(stage2Config.focusIslandId);
-    if (mainIslandCompleted) {
-      setShowStage2Intro(false);
-      return;
-    }
+    if (mainIslandCompleted) return;
     if (stage2IntroShownKeyRef.current === key) return;
     stage2IntroShownKeyRef.current = key;
-    setShowStage2Intro(true);
+    const raf = requestAnimationFrame(() => {
+      setShowStage2Intro(true);
+    });
+    return () => cancelAnimationFrame(raf);
   }, [gameState, stage2Config, stage2Progress.completedIslandIds, stage2Progress.mapSeed]);
 
   useEffect(() => {
@@ -752,7 +753,10 @@ export default function Home() {
 
           <button 
               className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
-              onClick={() => setShowSaveMenu(true)}
+              onClick={() => {
+                setSaveMenuTab('save');
+                setShowSaveMenu(true);
+              }}
               title={t('saveGame')}
           >
               <span role="img" aria-label="Save Game">💾</span>
@@ -786,21 +790,90 @@ export default function Home() {
       {showSaveMenu && (
         <div className="absolute inset-0 bg-black/60 z-100 flex items-center justify-center backdrop-blur-sm">
             <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 shadow-2xl w-96">
-                <h2 className="text-2xl font-bold text-white mb-6 text-center">{t('saveGame')}</h2>
-                <div className="flex flex-col gap-3">
-                    {[1,2,3,4].map(slot => (
-                        <button 
-                            key={slot}
-                            onClick={() => handleSaveGame(slot)}
-                            className="bg-slate-800 p-4 rounded text-white hover:bg-blue-600 border border-slate-600 transition-colors text-left flex justify-between items-center group"
-                        >
-                            <span>{t('slot')} {slot}</span>
-                            <span className="text-xs text-slate-500 group-hover:text-slate-200">
-                                {saveSlots[slot] ? new Date(saveSlots[slot]!.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : t('emptySlot')}
-                            </span>
-                        </button>
-                    ))}
+                <div className="mb-6 flex rounded-lg bg-slate-800 p-1">
+                    <button
+                        onClick={() => setSaveMenuTab('save')}
+                        className={`flex-1 rounded-md py-2 text-sm font-bold transition-colors ${
+                            saveMenuTab === 'save' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
+                        }`}
+                    >
+                        {t('saveGame')}
+                    </button>
+                    <button
+                        onClick={() => setSaveMenuTab('load')}
+                        className={`flex-1 rounded-md py-2 text-sm font-bold transition-colors ${
+                            saveMenuTab === 'load' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
+                        }`}
+                    >
+                        {t('loadGame')}
+                    </button>
                 </div>
+
+                {saveMenuTab === 'save' ? (
+                    <div className="flex flex-col gap-3">
+                        {[1, 2, 3, 4].map((slot) => (
+                            <button
+                                key={slot}
+                                onClick={() => handleSaveGame(slot)}
+                                className="bg-slate-800 p-4 rounded text-white hover:bg-blue-600 border border-slate-600 transition-colors text-left flex justify-between items-center group"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <span>
+                                        {t('slot')} {slot}
+                                    </span>
+                                    {slot === 1 && <span className="text-xs text-yellow-400">({t('autoSave')})</span>}
+                                </span>
+                                <span className="text-xs text-slate-500 group-hover:text-slate-200">
+                                    {saveSlots[slot]
+                                        ? new Date(saveSlots[slot]!.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')
+                                        : t('emptySlot')}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="flex flex-col gap-3">
+                        {[1, 2, 3, 4].map((slot) => {
+                            const info = saveSlots[slot];
+                            const canLoad = Boolean(info);
+                            return (
+                                <button
+                                    key={slot}
+                                    disabled={!canLoad}
+                                    onClick={() => {
+                                        if (!canLoad) return;
+                                        setShowSaveMenu(false);
+                                        handleLoadGame(slot);
+                                    }}
+                                    className={`p-4 rounded border transition-colors text-left flex flex-col gap-1 ${
+                                        canLoad
+                                            ? 'bg-slate-800 text-white hover:bg-green-700/60 border-slate-600'
+                                            : 'bg-slate-900 text-slate-500 border-slate-800 cursor-not-allowed'
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2 font-bold">
+                                            <span>
+                                                {t('slot')} {slot}
+                                            </span>
+                                            {slot === 1 && <span className="text-xs text-yellow-400">({t('autoSave')})</span>}
+                                        </div>
+                                        <div className="text-xs text-slate-400">
+                                            {info
+                                                ? new Date(info.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')
+                                                : t('emptySlot')}
+                                        </div>
+                                    </div>
+                                    {info && (
+                                        <div className="text-sm text-slate-300">
+                                            {t('level')} {info.levelIndex + 1}
+                                        </div>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
                 <button 
                     onClick={() => setShowSaveMenu(false)}
                     className="mt-6 w-full py-2 text-slate-400 hover:text-white border border-transparent hover:border-slate-600 rounded transition-colors"
@@ -811,14 +884,18 @@ export default function Home() {
         </div>
       )}
 
-      {showStage2Intro && stage2Config && (
+      {showStage2Intro &&
+        stage2Config &&
+        !stage2Progress.completedIslandIds.includes(stage2Config.focusIslandId) && (
         <DraggableModal title={`${t('stage')} ${stage2Config.stageNumber}`}>
           <div className="flex max-w-xl flex-col gap-4 text-slate-200">
             <h2 className="text-3xl font-bold text-cyan-300">
               {t('stage')} {stage2Config.stageNumber} / {t('chapter')} {stage2Config.chapterLevel}
             </h2>
             <p className="text-sm leading-relaxed text-slate-300">
-              {stage2Config.introText}
+              {stage2Config.introTextKey
+                ? t(stage2Config.introTextKey as TranslationKey)
+                : stage2Config.introText}
             </p>
             <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
               <div className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('mainIsland')}</div>

@@ -74,6 +74,14 @@ export type TranslationKey =
     | 'tut-l6-combined' | 'tut-l7-combined'
     | 'tut-l8-combined' | 'tut-l9-combined'
     | 'tut-l10-combined'
+    | 'tut-l11-start' | 'tut-l11-navigation' | 'tut-l11-objective'
+    | 'tut-l11-islands' | 'tut-l11-theorems' | 'tut-l11-wires' | 'tut-l11-finish'
+    | 'stage2-intro-text'
+    | 'stage2-island-desc-main' | 'stage2-island-desc-support'
+    | 'returnToGame'
+    | 'theoremInputs' | 'theoremOutputs' | 'theoremVariables' | 'theoremPremises'
+    | 'selectTheoremChip'
+    | 'newFolder' | 'rootFolder' | 'moveToFolder'
     // Level Titles and Descriptions
     | 'level-1-title' | 'level-1-desc'
     | 'level-2-title' | 'level-2-desc'
@@ -197,6 +205,29 @@ export const translations: Record<Language, Record<string, string>> = {
 
         // Level 10
         'tut-l10-combined': 'Level 10: Boss Level - Identity Theorem\n\nGoal: Prove |- (P -> P)\n\nThis is a Boss Level! You need to combine Axiom I, II, and MP yourself to complete the proof.\n\nHint:\nYou need to construct an intermediate step using Axiom I and II to derive:\n|- (P -> ((P -> P) -> P)) -> ((P -> (P -> P)) -> (P -> P))\nThen use MP and Axiom I to eliminate the antecedent.',
+
+        // Level 11 (Stage 2)
+        'tut-l11-start': 'Stage 2: Floating Islands\n\nWelcome to the overworld. You will explore islands, collect theorem chips, and use them to prove the main theorem.',
+        'tut-l11-navigation': 'Navigation:\n• Drag with mouse to pan the map\n• Mouse wheel to zoom\n• WASD to move (hold Shift to move faster)\n\nTip: You can build while moving.',
+        'tut-l11-objective': 'Main objective:\nOn the Main Island, you have premise chips (yellow outputs). Prove the goal theorem from these premises.\n\nSupport islands provide optional theorem chips. Some may help, some may not—and you can still choose not to use them even if they help.',
+        'tut-l11-islands': 'Islands & fog:\nThe right panel lists the islands in this stage.\n• Revealed: shows name and goal\n• Hidden by fog: locked for now\n\nSupport/optional islands are optional. You can decide whether to unlock and complete them.\nClick any revealed island to jump to it. Completing islands reveals more.',
+        'tut-l11-theorems': 'Theorem chips & coins:\nCompleting an island lets you collect its theorem chip.\nPlacing a theorem chip is free for the first use; afterwards it costs coins.\n\nYou don\'t have to use every theorem chip you unlock.\nOptional islands are good for earning extra coins.',
+        'tut-l11-wires': 'Wire colors matter:\n• Blue = Formula (data)\n• Yellow = Provable (⊢)\n\nPress T to toggle wire type. Wrong connections will flash.',
+        'tut-l11-finish': 'You are ready.\nExplore support islands, collect useful theorems, then return to the Main Island and prove the goal!',
+
+        'stage2-intro-text': 'The world extends infinitely. Unlock islands, prove goals, and collect theorem chips.',
+        'stage2-island-desc-main': 'Main objective island.',
+        'stage2-island-desc-support': 'Support theorem island.',
+
+        'returnToGame': 'Return to Game',
+        'theoremInputs': 'Inputs',
+        'theoremOutputs': 'Outputs',
+        'theoremVariables': 'Variables (Formula)',
+        'theoremPremises': 'Premises (Provable)',
+        'selectTheoremChip': 'Select Theorem Chip',
+        'newFolder': 'New Folder',
+        'rootFolder': 'Root',
+        'moveToFolder': 'Move To',
 
         'level-1-title': 'Level 1: Negation',
         'level-1-desc': 'Construct the formula ¬P using the Atom P and the Not gate.',
@@ -329,6 +360,29 @@ export const translations: Record<Language, Record<string, string>> = {
 
         // Level 10
         'tut-l10-combined': '第 10 关：Boss 关卡 - 同一律\n\n目标：证明 |- (P -> P)\n\n这是一个 Boss 关卡，你需要自己通过组合公理 I, II 和 MP 来完成证明。\n\n提示：\n你需要构造一个中间步骤，利用公理 I 和 II 推出：\n|- (P -> ((P -> P) -> P)) -> ((P -> (P -> P)) -> (P -> P))\n然后再通过 MP 和公理 I 消除前面的部分。',
+
+        // Level 11（第二大关）
+        'tut-l11-start': '第二大关：悬浮岛地图\n\n欢迎来到大地图模式。你需要探索岛屿、收集定理芯片，并用它们来证明主目标定理。',
+        'tut-l11-navigation': '视角操作：\n• 鼠标拖拽：平移地图\n• 鼠标滚轮：缩放\n• WASD：移动视角（按住 Shift 更快）\n\n提示：你可以边建造边移动视角。',
+        'tut-l11-objective': '主目标：\n在主目标岛上，你会看到若干前提芯片（黄色输出）。你的任务是从这些前提出发，证明目标定理。\n\n辅助岛提供“可选”的定理芯片：有的可能有帮助，有的可能对主目标没用；即使有帮助，你也完全可以选择不使用它们。',
+        'tut-l11-islands': '岛屿与迷雾：\n右侧面板列出了本大关的岛屿。\n• 已显露：会显示名称与目标\n• 仍被迷雾遮蔽：暂未解锁\n\n辅助岛/可选岛都是可选内容，你可以自行决定是否解锁与完成。\n点击任意已显露岛屿即可跳转。完成岛屿会解锁更多内容。',
+        'tut-l11-theorems': '定理芯片与金币：\n完成某个岛屿后，你可以收集对应的定理芯片。\n放置定理芯片首次免费，之后每次放置会消耗金币。\n\n你不需要使用所有已解锁的定理芯片。\n可选岛适合用来刷金币。',
+        'tut-l11-wires': '导线颜色很重要：\n• 蓝色：普通公式（数据）\n• 黄色：可证命题（⊢）\n\n按 T 键切换导线颜色。连接错误时导线/端口会闪烁提示。',
+        'tut-l11-finish': '准备就绪。\n先探索辅助岛收集有用的定理，再回到主目标岛完成最终证明！',
+
+        'stage2-intro-text': '世界会无限延伸。解锁岛屿、证明目标，并收集定理芯片。',
+        'stage2-island-desc-main': '主目标岛。',
+        'stage2-island-desc-support': '辅助定理岛。',
+
+        'returnToGame': '返回游戏',
+        'theoremInputs': '输入',
+        'theoremOutputs': '输出',
+        'theoremVariables': '变量（蓝线）',
+        'theoremPremises': '前提（黄线）',
+        'selectTheoremChip': '选择定理芯片',
+        'newFolder': '新建文件夹',
+        'rootFolder': '根目录',
+        'moveToFolder': '移动到',
 
         'level-1-title': '第 1 关: 否定',
         'level-1-desc': '使用原子 P 和非门构造公式 ¬P。',

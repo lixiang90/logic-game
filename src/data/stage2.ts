@@ -121,6 +121,7 @@ type IslandMeta = {
     name?: string;
     category?: Stage2IslandCategory;
     description?: string;
+    descriptionKey?: string;
     goalFormula?: string;
     premiseFormulas?: string[];
     rewardCoins?: number;
@@ -210,6 +211,7 @@ const createStage2World = (mapSeed: number, metaById: Map<string, IslandMeta>): 
                 name: meta.name,
                 category: meta.category,
                 description: meta.description,
+                descriptionKey: meta.descriptionKey,
                 goalFormula: meta.goalFormula,
                 goalBounds: meta.goalFormula ? makeGoalBounds(bounds) : undefined,
                 premiseNodes: premiseFormulas.length > 0 ? placePremiseNodes(bounds, premiseFormulas, `premise-${id}`) : [],
@@ -282,7 +284,7 @@ const createLevel11 = (mapSeed: number): Stage2LevelConfig => {
     metaById.set(sylId, {
         name: 'syl',
         category: 'main',
-        description: 'Main objective island.',
+        descriptionKey: 'stage2-island-desc-main',
         goalFormula: '|-(P->R)',
         premiseFormulas: ['P->Q', 'Q->R'],
         rewardCoins: 60,
@@ -292,7 +294,7 @@ const createLevel11 = (mapSeed: number): Stage2LevelConfig => {
     metaById.set(a1iId, {
         name: 'a1i',
         category: 'support',
-        description: 'Support theorem island.',
+        descriptionKey: 'stage2-island-desc-support',
         goalFormula: '|-(Q->P)',
         premiseFormulas: ['P'],
         rewardCoins: 20,
@@ -302,7 +304,7 @@ const createLevel11 = (mapSeed: number): Stage2LevelConfig => {
     metaById.set(a2iId, {
         name: 'a2i',
         category: 'support',
-        description: 'Support theorem island.',
+        descriptionKey: 'stage2-island-desc-support',
         goalFormula: '|-((P->Q)->(P->R))',
         premiseFormulas: ['P->(Q->R)'],
         rewardCoins: 25,
@@ -312,7 +314,7 @@ const createLevel11 = (mapSeed: number): Stage2LevelConfig => {
     metaById.set(mpdId, {
         name: 'mpd',
         category: 'support',
-        description: 'Support theorem island.',
+        descriptionKey: 'stage2-island-desc-support',
         goalFormula: '|-(P->R)',
         premiseFormulas: ['P->Q', 'P->(Q->R)'],
         rewardCoins: 30,
@@ -336,13 +338,17 @@ const createLevel11 = (mapSeed: number): Stage2LevelConfig => {
         const id = makeIslandId(item.cx, item.cy);
         const data = getStage1LevelData(item.levelId);
         if (!data?.goalFormula) continue;
+        const theoremFormula = data.goalFormula.trim().startsWith('|-') || data.goalFormula.trim().startsWith('⊢')
+            ? data.goalFormula
+            : `|-${data.goalFormula}`;
         metaById.set(id, {
             name: item.name,
             category: 'optional',
-            description: data.description ?? '',
+            descriptionKey: `${item.levelId}-desc`,
             goalFormula: data.goalFormula,
             premiseFormulas: data.premiseFormulas,
             rewardCoins: 14,
+            rewardTheorem: { theoremId: item.name, name: item.name, formula: theoremFormula, cost: 12 },
         });
     }
 
@@ -358,6 +364,7 @@ const createLevel11 = (mapSeed: number): Stage2LevelConfig => {
         focusIslandId: sylId,
         introTitle: 'Stage 2',
         introText: 'The world extends infinitely. Unlock islands, prove goals, and collect theorem chips.',
+        introTextKey: 'stage2-intro-text',
         world,
         initialUnlockedIslandIds,
         recommendedTheoremIds: ['a1i', 'a2i', 'mpd'],

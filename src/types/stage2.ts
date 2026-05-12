@@ -44,6 +44,7 @@ export interface Stage2IslandDefinition {
     name?: string;
     category?: Stage2IslandCategory;
     description?: string;
+    descriptionKey?: string;
     goalFormula?: string;
     goalBounds?: Stage2MapBounds;
     premiseNodes?: Stage2IslandPremiseDefinition[];
@@ -65,6 +66,8 @@ export interface Stage2LevelConfig {
     focusIslandId: string;
     introTitle: string;
     introText: string;
+    introTitleKey?: string;
+    introTextKey?: string;
     world: Stage2WorldConfig;
     initialUnlockedIslandIds: string[];
     recommendedTheoremIds: string[];

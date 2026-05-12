@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { parseGoal } from '@/lib/logic-engine';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { TranslationKey } from '@/data/translations';
 import { Stage2IslandCategory, Stage2LevelConfig, Stage2MetaProgress } from '@/types/stage2';
 
 interface Stage2PanelProps {
@@ -39,10 +40,14 @@ export default function Stage2Panel({
     const theoremCount = Object.keys(progress.collectedTheorems).length;
     const focusIslandName = config.world.getIslandById(config.focusIslandId)?.name ?? '';
     const unlockedGoalCount = goalIslands.filter((island) => island.unlocked).length;
+    const introText = config.introTextKey ? t(config.introTextKey as TranslationKey) : config.introText;
 
     return (
         <>
-            <div className="absolute top-4 left-4 z-40 w-72 rounded-2xl border border-cyan-500/30 bg-slate-900/85 p-4 text-white shadow-2xl backdrop-blur-md">
+            <div
+                id="stage2-hud"
+                className="absolute top-4 left-4 z-40 w-72 rounded-2xl border border-cyan-500/30 bg-slate-900/85 p-4 text-white shadow-2xl backdrop-blur-md"
+            >
                 <div className="flex items-center justify-between">
                     <div>
                         <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">{t('stage')} 2</div>
@@ -53,10 +58,13 @@ export default function Stage2Panel({
                     </div>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-slate-700 bg-slate-800/90 p-3">
+                <div
+                    id="stage2-intro"
+                    className="mt-4 rounded-xl border border-slate-700 bg-slate-800/90 p-3"
+                >
                     <div className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('mainIsland')}</div>
                     <div className="mt-1 text-base font-bold text-cyan-200">{focusIslandName}</div>
-                    <div className="mt-1 text-xs leading-relaxed text-slate-300">{config.introText}</div>
+                    <div className="mt-1 text-xs leading-relaxed text-slate-300">{introText}</div>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -71,7 +79,10 @@ export default function Stage2Panel({
                 </div>
             </div>
 
-            <div className="absolute right-4 top-[19rem] z-40 flex max-h-[calc(100vh-21rem)] w-80 flex-col rounded-2xl border border-slate-600/70 bg-slate-900/85 p-4 text-white shadow-2xl backdrop-blur-md">
+            <div
+                id="stage2-island-list"
+                className="absolute right-4 top-[19rem] z-40 flex max-h-[calc(100vh-21rem)] w-80 flex-col rounded-2xl border border-slate-600/70 bg-slate-900/85 p-4 text-white shadow-2xl backdrop-blur-md"
+            >
                 <div className="flex items-center justify-between">
                     <div>
                         <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{t('revealedIslands')}</div>
@@ -95,6 +106,9 @@ export default function Stage2Panel({
                                     const completed = completedIslandIds.has(island.id);
                                     const unlocked = unlockedIslandIds.has(island.id);
                                     const parsedGoal = island.goalFormula ? parseGoal(island.goalFormula) : null;
+                                    const islandDescription = island.descriptionKey
+                                        ? t(island.descriptionKey as TranslationKey)
+                                        : island.description;
                                     return (
                                         <div
                                             key={island.id}
@@ -120,8 +134,8 @@ export default function Stage2Panel({
                                                             {parsedGoal ? parsedGoal.toString() : island.goalFormula}
                                                         </div>
                                                     )}
-                                                    {island.description && (
-                                                        <div className="mt-1 text-xs leading-relaxed text-slate-400">{island.description}</div>
+                                                    {islandDescription && (
+                                                        <div className="mt-1 text-xs leading-relaxed text-slate-400">{islandDescription}</div>
                                                     )}
                                                 </>
                                             ) : (
@@ -138,7 +152,10 @@ export default function Stage2Panel({
                 </div>
             </div>
 
-            <div className="absolute bottom-28 left-4 z-40 w-80 rounded-2xl border border-slate-600/70 bg-slate-900/85 p-4 text-white shadow-2xl backdrop-blur-md">
+            <div
+                id="stage2-theorem-list"
+                className="absolute left-4 top-[22rem] bottom-4 z-40 flex w-80 flex-col overflow-hidden rounded-2xl border border-slate-600/70 bg-slate-900/85 p-4 text-white shadow-2xl backdrop-blur-md"
+            >
                 <div className="flex items-center justify-between">
                     <div>
                         <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{t('theoremChips')}</div>
@@ -152,7 +169,8 @@ export default function Stage2Panel({
                         {t('noTheoremsCollected')}
                     </div>
                 ) : (
-                    <div className="mt-3 flex flex-col gap-2">
+                    <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+                        <div className="flex flex-col gap-2">
                         {Object.values(progress.collectedTheorems).map((theorem) => (
                             <div
                                 key={theorem.theoremId}
@@ -177,6 +195,7 @@ export default function Stage2Panel({
                                 </div>
                             </div>
                         ))}
+                        </div>
                     </div>
                 )}
             </div>

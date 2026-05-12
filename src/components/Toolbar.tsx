@@ -31,6 +31,30 @@ export default function Toolbar({
 }: ToolbarProps) {
     const { t } = useLanguage();
     const [showTheoremLibrary, setShowTheoremLibrary] = React.useState(false);
+    const [theoremLibrarySelectedId, setTheoremLibrarySelectedId] = React.useState<string | null>(null);
+    const THEOREM_LIBRARY_STORAGE_KEY = 'logic_game_theorem_library_tree_v1';
+
+    type TheoremFolderNode = {
+        id: string;
+        name: string;
+        children: TheoremFolderNode[];
+    };
+
+    type TheoremLibraryState = {
+        version: 1;
+        root: TheoremFolderNode;
+        theoremFolderById: Record<string, string | undefined>;
+    };
+
+    const createEmptyLibraryState = (): TheoremLibraryState => ({
+        version: 1,
+        root: { id: 'root', name: 'root', children: [] },
+        theoremFolderById: {},
+    });
+
+    const [theoremLibraryState, setTheoremLibraryState] = React.useState<TheoremLibraryState>(createEmptyLibraryState);
+    const [theoremLibrarySelectedFolderId, setTheoremLibrarySelectedFolderId] = React.useState<string>('root');
+    const [theoremLibraryExpandedFolderIds, setTheoremLibraryExpandedFolderIds] = React.useState<string[]>(['root']);
 
     const handleSelect = (type: NodeType, subType: string, w: number, h: number) => {
         onSelectTool({ type, subType, w, h, rotation: 0 });
@@ -47,6 +71,54 @@ export default function Toolbar({
         });
         return Array.from(vars);
     };
+
+    const findFolderById = React.useCallback(function findFolder(node: TheoremFolderNode, id: string): TheoremFolderNode | null {
+        if (node.id === id) return node;
+        for (const child of node.children) {
+            const found = findFolder(child, id);
+            if (found) return found;
+        }
+        return null;
+    }, []);
+
+    const listFolders = React.useCallback(function listFoldersInner(
+        node: TheoremFolderNode,
+        depth: number,
+        out: Array<{ id: string; name: string; depth: number }>
+    ) {
+        out.push({ id: node.id, name: node.name, depth });
+        node.children.forEach((child) => listFoldersInner(child, depth + 1, out));
+    }, []);
+
+    React.useEffect(() => {
+        if (!showTheoremLibrary) return;
+        if (typeof window === 'undefined') return;
+        try {
+            const raw = localStorage.getItem(THEOREM_LIBRARY_STORAGE_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw) as Partial<TheoremLibraryState>;
+            if (parsed.version !== 1 || !parsed.root || !parsed.theoremFolderById) return;
+            setTheoremLibraryState({
+                version: 1,
+                root: parsed.root as TheoremFolderNode,
+                theoremFolderById: parsed.theoremFolderById as Record<string, string | undefined>,
+            });
+        } catch {
+        }
+    }, [THEOREM_LIBRARY_STORAGE_KEY, showTheoremLibrary]);
+
+    React.useEffect(() => {
+        if (typeof window === 'undefined') return;
+        try {
+            localStorage.setItem(THEOREM_LIBRARY_STORAGE_KEY, JSON.stringify(theoremLibraryState));
+        } catch {
+        }
+    }, [THEOREM_LIBRARY_STORAGE_KEY, theoremLibraryState]);
+
+    React.useEffect(() => {
+        if (!showTheoremLibrary) return;
+        setTheoremLibraryExpandedFolderIds((prev) => (prev.includes('root') ? prev : ['root', ...prev]));
+    }, [showTheoremLibrary]);
 
     const theoremInventoryOrdered = React.useMemo(() => {
         const theoremById = new Map(theoremInventory.map((entry) => [entry.theoremId, entry]));
@@ -139,6 +211,213 @@ export default function Toolbar({
             </button>
         );
     };
+
+    React.useEffect(() => {
+        if (!showTheoremLibrary) return;
+        if (theoremInventoryOrdered.length === 0) return;
+        if (theoremLibrarySelectedId && theoremInventoryOrdered.some((t) => t.theoremId === theoremLibrarySelectedId)) {
+            return;
+        }
+        setTheoremLibrarySelectedId(theoremInventoryOrdered[0].theoremId);
+    }, [showTheoremLibrary, theoremInventoryOrdered, theoremLibrarySelectedId]);
+
+    const selectedTheorem = React.useMemo(() => {
+        if (!theoremLibrarySelectedId) return null;
+        return theoremInventoryOrdered.find((item) => item.theoremId === theoremLibrarySelectedId) ?? null;
+    }, [theoremInventoryOrdered, theoremLibrarySelectedId]);
+
+    const selectedTheoremDetails = React.useMemo(() => {
+        if (!selectedTheorem) return null;
+        const premises = selectedTheorem.premises ?? [];
+        const conclusion = normalizeTheoremFormula(selectedTheorem.formula);
+        const vars = extractVariables([...premises, conclusion]);
+        return { premises, conclusion, vars };
+    }, [selectedTheorem]);
+
+    const folderOptions = React.useMemo(() => {
+        const out: Array<{ id: string; name: string; depth: number }> = [];
+        listFolders(theoremLibraryState.root, 0, out);
+        return out;
+    }, [listFolders, theoremLibraryState.root]);
+
+    const folderIdSet = React.useMemo(() => new Set(folderOptions.map((f) => f.id)), [folderOptions]);
+
+    const selectedTheoremFolderId = React.useMemo(() => {
+        if (!selectedTheorem) return 'root';
+        return theoremLibraryState.theoremFolderById[selectedTheorem.theoremId] ?? 'root';
+    }, [selectedTheorem, theoremLibraryState.theoremFolderById]);
+
+    React.useEffect(() => {
+        if (!folderIdSet.has(theoremLibrarySelectedFolderId)) {
+            setTheoremLibrarySelectedFolderId('root');
+        }
+        if (!theoremLibraryExpandedFolderIds.includes('root')) {
+            setTheoremLibraryExpandedFolderIds((prev) => ['root', ...prev]);
+        }
+    }, [folderIdSet, theoremLibraryExpandedFolderIds, theoremLibrarySelectedFolderId]);
+
+    React.useEffect(() => {
+        if (!showTheoremLibrary) return;
+        setTheoremLibraryState((prev) => {
+            const nextMapping: Record<string, string | undefined> = { ...prev.theoremFolderById };
+            let changed = false;
+            theoremInventoryOrdered.forEach((theorem) => {
+                const current = nextMapping[theorem.theoremId];
+                if (!current) {
+                    nextMapping[theorem.theoremId] = 'root';
+                    changed = true;
+                    return;
+                }
+                if (!folderIdSet.has(current)) {
+                    nextMapping[theorem.theoremId] = 'root';
+                    changed = true;
+                }
+            });
+            if (!changed) return prev;
+            return { ...prev, theoremFolderById: nextMapping };
+        });
+    }, [folderIdSet, showTheoremLibrary, theoremInventoryOrdered]);
+
+    const addFolder = React.useCallback((parentId: string, folderName: string) => {
+        const name = folderName.trim();
+        if (!name) return;
+        const newId = `folder_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        const newFolder: TheoremFolderNode = { id: newId, name, children: [] };
+
+        setTheoremLibraryState((prev) => {
+            const insert = (node: TheoremFolderNode): TheoremFolderNode => {
+                if (node.id === parentId) {
+                    return { ...node, children: [...node.children, newFolder] };
+                }
+                return { ...node, children: node.children.map(insert) };
+            };
+            return { ...prev, root: insert(prev.root) };
+        });
+        setTheoremLibraryExpandedFolderIds((prev) => (prev.includes(parentId) ? prev : [...prev, parentId]));
+    }, []);
+
+    const handleCreateFolder = React.useCallback((parentId: string) => {
+        if (typeof window === 'undefined') return;
+        const parent = findFolderById(theoremLibraryState.root, parentId);
+        if (!parent) return;
+        const defaultName = t('newFolder');
+        const name = window.prompt(defaultName, '');
+        if (!name) return;
+        addFolder(parentId, name);
+    }, [addFolder, findFolderById, t, theoremLibraryState.root]);
+
+    const setTheoremFolder = React.useCallback((theoremId: string, folderId: string) => {
+        const targetId = folderIdSet.has(folderId) ? folderId : 'root';
+        setTheoremLibraryState((prev) => ({
+            ...prev,
+            theoremFolderById: {
+                ...prev.theoremFolderById,
+                [theoremId]: targetId,
+            },
+        }));
+    }, [folderIdSet]);
+
+    const theoremsByFolderId = React.useMemo(() => {
+        const map = new Map<string, TheoremChipInventoryEntry[]>();
+        theoremInventoryOrdered.forEach((theorem) => {
+            const folderId = theoremLibraryState.theoremFolderById[theorem.theoremId] ?? 'root';
+            const list = map.get(folderId);
+            if (list) list.push(theorem);
+            else map.set(folderId, [theorem]);
+        });
+        return map;
+    }, [theoremInventoryOrdered, theoremLibraryState.theoremFolderById]);
+
+    const toggleFolderExpanded = React.useCallback((folderId: string) => {
+        setTheoremLibraryExpandedFolderIds((prev) =>
+            prev.includes(folderId) ? prev.filter((id) => id !== folderId) : [...prev, folderId]
+        );
+    }, []);
+
+    const renderFolderTree = React.useCallback(
+        function renderFolderTreeInner(folder: TheoremFolderNode, depth: number): React.ReactNode {
+            const expanded = theoremLibraryExpandedFolderIds.includes(folder.id);
+            const selected = theoremLibrarySelectedFolderId === folder.id;
+            const folderChildren = [...folder.children].sort((a, b) => a.name.localeCompare(b.name));
+            const theorems = theoremsByFolderId.get(folder.id) ?? [];
+
+            return (
+                <div key={folder.id}>
+                    <div
+                        className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-2 transition-colors ${
+                            selected
+                                ? 'border-cyan-400/60 bg-cyan-500/10'
+                                : 'border-slate-800 bg-slate-950/30 hover:border-slate-600 hover:bg-slate-900/60'
+                        }`}
+                        style={{ marginLeft: depth * 10 }}
+                    >
+                        <button
+                            type="button"
+                            onClick={() => toggleFolderExpanded(folder.id)}
+                            className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 bg-slate-900/50 text-slate-200 hover:border-slate-500"
+                            aria-label="Toggle folder"
+                        >
+                            {expanded ? '−' : '+'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setTheoremLibrarySelectedFolderId(folder.id)}
+                            className="min-w-0 flex-1 truncate text-left text-sm font-bold text-slate-100"
+                            title={folder.name}
+                        >
+                            {folder.id === 'root' ? t('rootFolder') : folder.name}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleCreateFolder(folder.id)}
+                            className="rounded-md border border-slate-700 bg-slate-900/50 px-2 py-1 text-xs font-bold text-slate-200 hover:border-slate-500"
+                        >
+                            {t('newFolder')}
+                        </button>
+                    </div>
+
+                    {expanded && (
+                        <div className="mt-2 flex flex-col gap-2">
+                            {folderChildren.map((child) => renderFolderTreeInner(child, depth + 1))}
+                            {theorems.map((theorem) => {
+                                const isSelected = theorem.theoremId === theoremLibrarySelectedId;
+                                const isFree = theorem.freeUsesRemaining > 0;
+                                const statusLabel = isFree ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}`;
+                                return (
+                                    <button
+                                        key={theorem.theoremId}
+                                        type="button"
+                                        onClick={() => setTheoremLibrarySelectedId(theorem.theoremId)}
+                                        className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                                            isSelected
+                                                ? 'border-cyan-400/70 bg-cyan-500/10'
+                                                : 'border-slate-700 bg-slate-900/50 hover:border-slate-500 hover:bg-slate-800/60'
+                                        }`}
+                                        style={{ marginLeft: (depth + 1) * 10 }}
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="font-bold text-slate-100">{theorem.name}</div>
+                                            <div className="text-[10px] text-slate-400">{statusLabel}</div>
+                                        </div>
+                                        <div className="mt-1 text-xs text-slate-400">{theorem.formula}</div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            );
+        },
+        [
+            handleCreateFolder,
+            theoremLibraryExpandedFolderIds,
+            theoremLibrarySelectedFolderId,
+            theoremLibrarySelectedId,
+            theoremsByFolderId,
+            t,
+            toggleFolderExpanded,
+        ]
+    );
 
     return (
         <>
@@ -488,24 +767,151 @@ export default function Toolbar({
             </div>
         </div>
         {showTheoremLibrary && theoremInventoryOrdered.length > 0 && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                <div className="w-[32rem] max-w-[90vw] rounded-2xl border border-cyan-500/30 bg-slate-900/95 p-5 shadow-2xl">
-                    <div className="flex items-center justify-between gap-4">
-                        <div>
-                            <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">{t('theoremBar')}</div>
-                            <div className="text-xl font-bold text-white">{t('theoremLibrary')}</div>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setShowTheoremLibrary(false)}
-                            className="rounded-lg border border-slate-700 px-3 py-1 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
-                        >
-                            {t('cancel')}
-                        </button>
-                    </div>
+            <div className="fixed inset-0 z-[90] bg-slate-950/95 text-white backdrop-blur-sm">
+                <div className="absolute top-4 left-4">
+                    <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">{t('theoremBar')}</div>
+                    <div className="text-2xl font-bold">{t('theoremLibrary')}</div>
+                </div>
+                <div className="absolute top-4 right-4 flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setShowTheoremLibrary(false)}
+                        className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
+                    >
+                        {t('returnToGame')}
+                    </button>
+                </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                        {theoremInventoryOrdered.map(renderTheoremButton)}
+                <div className="h-full w-full px-6 pb-6 pt-20">
+                    <div className="flex h-full gap-4">
+                        <div className="w-72 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/60">
+                            <div className="flex items-center justify-between gap-3 border-b border-slate-700 p-3">
+                                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                                    {t('theoremLibrary')}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => handleCreateFolder(theoremLibrarySelectedFolderId)}
+                                    className="rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-1 text-xs font-bold text-slate-200 hover:border-slate-500"
+                                >
+                                    {t('newFolder')}
+                                </button>
+                            </div>
+                            <div className="max-h-full overflow-y-auto p-3">
+                                <div className="flex flex-col gap-2">
+                                    {renderFolderTree(theoremLibraryState.root, 0)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/60">
+                            {selectedTheorem && selectedTheoremDetails ? (
+                                <div className="flex h-full flex-col">
+                                    <div className="flex items-start justify-between gap-4 border-b border-slate-700 p-4">
+                                        <div className="min-w-0">
+                                            <div className="text-xl font-bold text-white">{selectedTheorem.name}</div>
+                                            <div className="mt-1 break-words text-sm text-slate-300">{selectedTheorem.formula}</div>
+                                            <div className="mt-3 flex items-center gap-3">
+                                                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                                                    {t('moveToFolder')}
+                                                </div>
+                                                <select
+                                                    value={selectedTheoremFolderId}
+                                                    onChange={(e) => setTheoremFolder(selectedTheorem.theoremId, e.target.value)}
+                                                    className="min-w-0 max-w-[18rem] flex-1 rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400/60"
+                                                >
+                                                    {folderOptions.map((folder) => (
+                                                        <option key={folder.id} value={folder.id}>
+                                                            {`${'  '.repeat(folder.depth)}${folder.id === 'root' ? t('rootFolder') : folder.name}`}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
+                                                <span>
+                                                    {t('freeUsesRemaining')}: {selectedTheorem.freeUsesRemaining}
+                                                </span>
+                                                <span>
+                                                    {t('theoremCost')}: {selectedTheorem.cost}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleTheoremSelect(selectedTheorem)}
+                                            disabled={!canAffordTheorem(selectedTheorem)}
+                                            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
+                                                canAffordTheorem(selectedTheorem)
+                                                    ? 'bg-cyan-600 text-white hover:bg-cyan-500'
+                                                    : 'cursor-not-allowed bg-slate-800 text-slate-500'
+                                            }`}
+                                        >
+                                            {t('selectTheoremChip')}
+                                        </button>
+                                    </div>
+
+                                    <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                                            <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+                                                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('theoremInputs')}</div>
+                                                <div className="mt-3">
+                                                    <div className="text-xs font-bold text-slate-300">{t('theoremVariables')}</div>
+                                                    {selectedTheoremDetails.vars.length === 0 ? (
+                                                        <div className="mt-2 text-sm text-slate-500">-</div>
+                                                    ) : (
+                                                        <div className="mt-2 flex flex-col gap-2">
+                                                            {selectedTheoremDetails.vars.map((v) => (
+                                                                <div key={v} className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-200">
+                                                                    <span className="text-slate-400">var_{v}</span> <span className="text-slate-500">→</span> <span className="text-sky-300">{v}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="mt-4">
+                                                    <div className="text-xs font-bold text-slate-300">{t('theoremPremises')}</div>
+                                                    {selectedTheoremDetails.premises.length === 0 ? (
+                                                        <div className="mt-2 text-sm text-slate-500">-</div>
+                                                    ) : (
+                                                        <div className="mt-2 flex flex-col gap-2">
+                                                            {selectedTheoremDetails.premises.map((p, idx) => (
+                                                                <div key={`${idx}-${p}`} className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-200">
+                                                                    <span className="text-slate-400">prem_{idx}</span>{' '}
+                                                                    <span className="text-slate-500">→</span>{' '}
+                                                                    <span className="text-amber-300">⊢ {normalizeTheoremFormula(p)}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+                                                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('theoremOutputs')}</div>
+                                                <div className="mt-3 flex flex-col gap-3">
+                                                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-3 text-sm text-slate-200">
+                                                        <div className="text-xs text-slate-400">out</div>
+                                                        <div className="mt-1 font-bold text-emerald-300">⊢ {selectedTheoremDetails.conclusion}</div>
+                                                    </div>
+                                                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-3 text-sm text-slate-400">
+                                                        <div className="text-xs font-bold uppercase tracking-widest">{t('theoremPremises')}</div>
+                                                        <div className="mt-2 text-sm text-slate-300">
+                                                            {selectedTheoremDetails.premises.length > 0
+                                                                ? selectedTheoremDetails.premises.map((p) => `⊢ ${normalizeTheoremFormula(p)}`).join(', ')
+                                                                : '-'}
+                                                        </div>
+                                                        <div className="mt-2 text-xs text-slate-500">{t('theoremVariables')}: {selectedTheoremDetails.vars.length > 0 ? selectedTheoremDetails.vars.join(', ') : '-'}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex h-full items-center justify-center text-slate-400">{t('noTheoremsCollected')}</div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
