@@ -185,11 +185,13 @@ export default function Home() {
             const y = placement?.y ?? premise.y;
             markRectOccupied(occupied, x, y, premise.w, premise.h);
 
+            const subType = premise.formula;
+
             return {
               id: premise.id,
               type: 'premise' as const,
-              subType: premise.formula,
-              customLabel: premise.formula,
+              subType,
+              customLabel: subType,
               x,
               y,
               w: premise.w,
@@ -674,7 +676,7 @@ export default function Home() {
                 if (node.type !== 'premise' || !node.locked) return node;
                 const fresh = initialPremiseById.get(node.id);
                 if (!fresh) return node;
-                return { ...node, x: fresh.x, y: fresh.y };
+                return { ...node, x: fresh.x, y: fresh.y, subType: fresh.subType, customLabel: fresh.customLabel, theoremIsFormulaOnly: fresh.theoremIsFormulaOnly };
             });
         }
       } else {

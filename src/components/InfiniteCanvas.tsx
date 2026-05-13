@@ -192,7 +192,10 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                         if (
                             node.subType === fresh.subType &&
                             node.customLabel === fresh.customLabel &&
-                            node.sourceIslandId === fresh.sourceIslandId
+                            node.sourceIslandId === fresh.sourceIslandId &&
+                            node.x === fresh.x &&
+                            node.y === fresh.y &&
+                            node.theoremIsFormulaOnly === fresh.theoremIsFormulaOnly
                         ) {
                             return node;
                         }
@@ -204,6 +207,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                             sourceIslandId: fresh.sourceIslandId,
                             x: fresh.x,
                             y: fresh.y,
+                            theoremIsFormulaOnly: fresh.theoremIsFormulaOnly,
                         };
                     });
 
@@ -290,6 +294,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                                 sourceIslandId: fresh.sourceIslandId,
                                 x: fresh.x,
                                 y: fresh.y,
+                                theoremIsFormulaOnly: fresh.theoremIsFormulaOnly,
                             };
                         });
 
@@ -924,10 +929,19 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 }
             }
         } else if (node.type === 'premise') {
-            // Dark Teal / Cyan Theme (Chip Style)
-            bgColor = '#0a2a2a'; 
-            borderColor = '#00ffcc'; 
-            textColor = '#00ffcc';
+            const label = ('customLabel' in node ? node.customLabel : undefined) || node.subType || '?';
+            const isFormulaOnly = !label.trim().startsWith('|-') && !label.trim().startsWith('⊢');
+
+            // Determine colors based on port type (Provable = Yellow/Brown, Formula = Blue/Cyan)
+            if (isFormulaOnly) {
+                bgColor = '#0a1f2a';
+                borderColor = '#00d0ff';
+                textColor = '#00d0ff';
+            } else {
+                bgColor = '#2a1a0a';
+                borderColor = '#ffaa00';
+                textColor = '#ffaa00';
+            }
             
             const inset = 4; // Inset for the body to allow pins to stick out
             const pinWidth = 8; // Width of the visual pin
@@ -988,7 +1002,6 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             drawRoundedRect(ctx, dx + (drawW - innerW)/2, dy + (drawH - innerH)/2, innerW, innerH, 4);
             ctx.stroke();
 
-            const label = ('customLabel' in node ? node.customLabel : undefined) || node.subType || '?';
             const formulaStr = label
                 .replace(/->/g, '→')
                 .replace(/-\./g, '¬')

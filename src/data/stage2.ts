@@ -319,7 +319,7 @@ const addLevel11Islands = (
         category: categories.syl,
         descriptionKey: 'stage2-island-desc-main',
         goalFormula: '|-(P->R)',
-        premiseFormulas: ['P->Q', 'Q->R'],
+        premiseFormulas: ['|-(P->Q)', '|-(Q->R)'],
         rewardCoins: 60,
         rewardTheorem: { theoremId: 'syl', name: 'syl', formula: '|-(P->R)', cost: 45 },
     });
@@ -329,7 +329,7 @@ const addLevel11Islands = (
         category: categories.a1i,
         descriptionKey: 'stage2-island-desc-support',
         goalFormula: '|-(Q->P)',
-        premiseFormulas: ['P'],
+        premiseFormulas: ['|-P'],
         rewardCoins: 20,
         rewardTheorem: { theoremId: 'a1i', name: 'a1i', formula: '|-(Q->P)', cost: 15 },
     });
@@ -339,7 +339,7 @@ const addLevel11Islands = (
         category: categories.a2i,
         descriptionKey: 'stage2-island-desc-support',
         goalFormula: '|-((P->Q)->(P->R))',
-        premiseFormulas: ['P->(Q->R)'],
+        premiseFormulas: ['|-(P->(Q->R))'],
         rewardCoins: 25,
         rewardTheorem: { theoremId: 'a2i', name: 'a2i', formula: '|-((P->Q)->(P->R))', cost: 25 },
     });
@@ -349,7 +349,7 @@ const addLevel11Islands = (
         category: categories.mpd,
         descriptionKey: 'stage2-island-desc-support',
         goalFormula: '|-(P->R)',
-        premiseFormulas: ['P->Q', 'P->(Q->R)'],
+        premiseFormulas: ['|-(P->Q)', '|-(P->(Q->R))'],
         rewardCoins: 30,
         rewardTheorem: { theoremId: 'mpd', name: 'mpd', formula: '|-(P->R)', cost: 30 },
     });
@@ -409,7 +409,7 @@ const createLevel12 = (mapSeed: number): Stage2LevelConfig => {
         category: 'main',
         descriptionKey: 'stage2-island-desc-main',
         goalFormula: '|-(Q->(P->R))',
-        premiseFormulas: ['P->(Q->R)'],
+        premiseFormulas: ['|-(P->(Q->R))'],
         rewardCoins: 80,
         rewardTheorem: { theoremId: 'com12', name: 'com12', formula: '|-(Q->(P->R))', cost: 55 },
     });
@@ -419,7 +419,7 @@ const createLevel12 = (mapSeed: number): Stage2LevelConfig => {
         category: 'support',
         descriptionKey: 'stage2-island-desc-support',
         goalFormula: '|-(P->(R->Q))',
-        premiseFormulas: ['P->Q'],
+        premiseFormulas: ['|-(P->Q)'],
         rewardCoins: 26,
         rewardTheorem: { theoremId: 'a1d', name: 'a1d', formula: '|-(P->(R->Q))', cost: 22 },
     });
@@ -429,9 +429,9 @@ const createLevel12 = (mapSeed: number): Stage2LevelConfig => {
         category: 'support',
         descriptionKey: 'stage2-island-desc-support',
         goalFormula: '|-(P->(Q->S))',
-        premiseFormulas: ['P->(Q->R)', 'Q->(R->S)'],
+        premiseFormulas: ['|-(P->(Q->R))', '|-(Q->(R->S))'],
         rewardCoins: 32,
-        rewardTheorem: { theoremId: 'sylcom', name: 'sylcom', formula: '|-(P->(Q->S))', cost: 26 },
+        rewardTheorem: { theoremId: 'sylcom', name: 'sylcom', formula: '|-(P->(Q->S))', cost: 28 },
     });
 
     metaById.set(syl5comId, {
@@ -439,22 +439,22 @@ const createLevel12 = (mapSeed: number): Stage2LevelConfig => {
         category: 'support',
         descriptionKey: 'stage2-island-desc-support',
         goalFormula: '|-(P->(R->S))',
-        premiseFormulas: ['P->Q', 'R->(Q->S)'],
-        rewardCoins: 34,
+        premiseFormulas: ['|-(P->Q)', '|-(R->(Q->S))'],
+        rewardCoins: 32,
         rewardTheorem: { theoremId: 'syl5com', name: 'syl5com', formula: '|-(P->(R->S))', cost: 28 },
     });
 
     const optionalIslands: Array<{ cx: number; cy: number; theoremId: string; goal: string; premises: string[]; cost: number; rewardCoins: number }> = [
-        { cx: -1, cy: -1, theoremId: 'mp2b', goal: '|-(P->R)', premises: ['P', 'P->Q', 'Q->R'], cost: 20, rewardCoins: 22 },
-        { cx: 0, cy: -1, theoremId: '2a1i', goal: '|-(Q->(R->P))', premises: ['P'], cost: 18, rewardCoins: 18 },
-        { cx: 1, cy: -1, theoremId: 'mp1i', goal: '|-(R->Q)', premises: ['P', 'P->Q'], cost: 20, rewardCoins: 20 },
-        { cx: -2, cy: -1, theoremId: 'imim2i', goal: '|-((R->P)->(R->Q))', premises: ['P->Q'], cost: 22, rewardCoins: 22 },
-        { cx: -1, cy: -2, theoremId: '3syl', goal: '|-(P->S)', premises: ['P->Q', 'Q->R', 'R->S'], cost: 28, rewardCoins: 26 },
-        { cx: 0, cy: -2, theoremId: '4syl', goal: '|-(P->T)', premises: ['P->Q', 'Q->R', 'R->S', 'S->T'], cost: 32, rewardCoins: 30 },
-        { cx: 1, cy: -2, theoremId: 'mpi', goal: '|-(P->R)', premises: ['Q', 'P->(Q->R)'], cost: 22, rewardCoins: 22 },
-        { cx: -2, cy: -2, theoremId: 'mpisyl', goal: '|-(P->S)', premises: ['P->Q', 'R', 'Q->(R->S)'], cost: 30, rewardCoins: 28 },
+        { cx: -1, cy: -1, theoremId: 'mp2b', goal: '|-(P->R)', premises: ['|-P', '|-(P->Q)', '|-(Q->R)'], cost: 20, rewardCoins: 22 },
+        { cx: 0, cy: -1, theoremId: '2a1i', goal: '|-(Q->(R->P))', premises: ['|-P'], cost: 18, rewardCoins: 18 },
+        { cx: 1, cy: -1, theoremId: 'mp1i', goal: '|-(R->Q)', premises: ['|-P', '|-(P->Q)'], cost: 20, rewardCoins: 20 },
+        { cx: -2, cy: -1, theoremId: 'imim2i', goal: '|-((R->P)->(R->Q))', premises: ['|-(P->Q)'], cost: 22, rewardCoins: 22 },
+        { cx: -1, cy: -2, theoremId: '3syl', goal: '|-(P->S)', premises: ['|-(P->Q)', '|-(Q->R)', '|-(R->S)'], cost: 28, rewardCoins: 26 },
+        { cx: 0, cy: -2, theoremId: '4syl', goal: '|-(P->T)', premises: ['|-(P->Q)', '|-(Q->R)', '|-(R->S)', '|-(S->T)'], cost: 32, rewardCoins: 30 },
+        { cx: 1, cy: -2, theoremId: 'mpi', goal: '|-(P->R)', premises: ['|-Q', '|-(P->(Q->R))'], cost: 22, rewardCoins: 22 },
+        { cx: -2, cy: -2, theoremId: 'mpisyl', goal: '|-(P->S)', premises: ['|-(P->Q)', '|-R', '|-(Q->(R->S))'], cost: 30, rewardCoins: 28 },
         { cx: 2, cy: 0, theoremId: 'idd', goal: '|-(P->(Q->Q))', premises: [], cost: 20, rewardCoins: 18 },
-        { cx: -2, cy: 0, theoremId: '2a1d', goal: '|-(P->(R->(S->Q)))', premises: ['P->Q'], cost: 24, rewardCoins: 22 },
+        { cx: -2, cy: 0, theoremId: '2a1d', goal: '|-(P->(R->(S->Q)))', premises: ['|-(P->Q)'], cost: 24, rewardCoins: 22 },
     ];
 
     for (const item of optionalIslands) {

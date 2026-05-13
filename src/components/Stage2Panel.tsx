@@ -37,13 +37,16 @@ export default function Stage2Panel({
         }));
     }, [goalIslands]);
 
+    // We want the total count of collected theorems, regardless of which level they were collected in.
+    const theoremCount = Object.values(progress.collectedTheorems).length;
+
+    // For the list display, we still only show the theorems collected in the CURRENT level
     const collectedTheoremsForLevel = useMemo(() => {
         return Object.values(progress.collectedTheorems).filter((theorem) => {
             const collectedIn = theorem.collectedInLevelId ?? 'level-11';
             return collectedIn === config.levelId;
         });
     }, [config.levelId, progress.collectedTheorems]);
-    const theoremCount = collectedTheoremsForLevel.length;
     const focusIslandName = config.world.getIslandById(config.focusIslandId)?.name ?? '';
     const unlockedGoalCount = goalIslands.filter((island) => island.unlocked).length;
     const introText = config.introTextKey ? t(config.introTextKey as TranslationKey) : config.introText;
