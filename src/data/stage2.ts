@@ -98,11 +98,10 @@ const estimatePremiseWidth = (formula: string) => {
     return 10;
 };
 
-const placePremiseNodes = (islandBounds: Stage2MapBounds, formulas: string[], baseId: string) => {
+const placePremiseNodes = (islandBounds: Stage2MapBounds, formulas: string[], baseId: string, gapY = 14) => {
     const nodes: Stage2IslandPremiseDefinition[] = [];
     const startX = islandBounds.x + 8;
     const startY = islandBounds.y + 8;
-    const gapY = 14;
     const gapX = 4;
     for (let i = 0; i < formulas.length; i += 1) {
         const w = estimatePremiseWidth(formulas[i]);
@@ -215,7 +214,7 @@ const createStage2World = (mapSeed: number, metaById: Map<string, IslandMeta>): 
                 descriptionKey: meta.descriptionKey,
                 goalFormula: meta.goalFormula,
                 goalBounds: meta.goalFormula ? makeGoalBounds(bounds) : undefined,
-                premiseNodes: premiseFormulas.length > 0 ? placePremiseNodes(bounds, premiseFormulas, `premise-${id}`) : [],
+                premiseNodes: premiseFormulas.length > 0 ? placePremiseNodes(bounds, premiseFormulas, `premise-${id}`, id === 'i_2_-3' || id === 'i_-1_-2' ? 18 : 14) : [],
                 rewardCoins: meta.rewardCoins,
                 rewardTheorem: meta.rewardTheorem,
             };
