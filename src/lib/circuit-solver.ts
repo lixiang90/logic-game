@@ -870,14 +870,18 @@ function computeNodeOutput(
         }
 
         const expectedConclusion = substitute(conclusionTemplate, mapping);
+        if (node.theoremIsFormulaOnly) {
+            return expectedConclusion;
+        }
         return new Provable(expectedConclusion);
     }
 
     if (node.type === 'premise') {
         const formulaStr = node.subType;
-        const formula = parseFormula(formulaStr);
+        const isFormulaOnly = !formulaStr.trim().startsWith('|-') && !formulaStr.trim().startsWith('⊢');
+        const formula = parseFormula(formulaStr.replace(/^\s*(\|-|⊢)\s*/, ''));
         if (formula) {
-            return new Provable(formula);
+            return isFormulaOnly ? formula : new Provable(formula);
         }
     }
 

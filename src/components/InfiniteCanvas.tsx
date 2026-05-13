@@ -328,7 +328,9 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     if (!island) return null;
 
                     const premises = (island.premiseNodes ?? []).map((p) => p.formula);
-                    const conclusion = normalizeFormulaText(island.goalFormula ?? '');
+                    const rawGoal = island.goalFormula ?? '';
+                    const conclusion = normalizeFormulaText(rawGoal);
+                    const isFormulaOnly = !rawGoal.trim().startsWith('|-') && !rawGoal.trim().startsWith('⊢');
                     const vars = extractVariables([...premises, conclusion]);
                     const portRows = Math.max(1, vars.length + premises.length);
                     const h = Math.max(6, portRows * 2 + 2);
@@ -338,6 +340,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                         theoremVars: vars,
                         theoremPremises: premises,
                         theoremConclusion: conclusion,
+                        theoremIsFormulaOnly: isFormulaOnly,
                         w: 10,
                         h,
                     };
@@ -356,12 +359,12 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                             theoremVars: meta.theoremVars,
                             theoremPremises: meta.theoremPremises,
                             theoremConclusion: meta.theoremConclusion,
+                            theoremIsFormulaOnly: meta.theoremIsFormulaOnly,
                             w: meta.w,
                             h: meta.h,
                         };
                     }
                     if (node.type === 'theorem') {
-                        if (node.theoremVars && node.theoremPremises && node.theoremConclusion) return node;
                         const meta = resolveTheoremMeta(node.theoremId);
                         if (!meta) return node;
                         return {
@@ -370,6 +373,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                             theoremVars: meta.theoremVars,
                             theoremPremises: meta.theoremPremises,
                             theoremConclusion: meta.theoremConclusion,
+                            theoremIsFormulaOnly: meta.theoremIsFormulaOnly,
                             w: meta.w,
                             h: meta.h,
                         };
@@ -864,8 +868,9 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             ctx.fill();
             ctx.restore();
 
-            const renderProvable = (formulaText: string, cx: number, cy: number, w: number, h: number, sizeScale: number) => {
-                const parsed = parseGoal(`|-${normalize(formulaText)}`);
+            const renderFormulaOrProvable = (formulaText: string, cx: number, cy: number, w: number, h: number, sizeScale: number, forceFormula: boolean = false) => {
+                const prefix = forceFormula ? '' : '|-';
+                const parsed = parseGoal(`${prefix}${normalize(formulaText)}`);
                 if (!parsed) return;
                 const renderSize = Math.min(w, h) * sizeScale;
                 formulaRenderer.render(ctx, parsed, cx, cy, renderSize, scale);
@@ -886,7 +891,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     ctx.lineWidth = 1;
                     ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
                     ctx.stroke();
-                    renderProvable(premises[i], sx + sw / 2, sy + sh / 2, sw, sh, 0.9);
+                    renderFormulaOrProvable(premises[i], sx + sw / 2, sy + sh / 2, sw, sh, 0.9, false);
                 }
 
                 if (premises.length > renderPremiseCount) {
@@ -910,7 +915,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
             const cx = contentX + leftW + midW + rightW / 2;
             const cy = contentY + contentH / 2;
-            renderProvable(conclusion, cx, cy, rightW, contentH, 0.95);
+            renderFormulaOrProvable(conclusion, cx, cy, rightW, contentH, 0.95, node.theoremIsFormulaOnly === true);
 
             if (!isGhost) {
                 const nodePorts = getNodePorts(node as NodeData);
@@ -984,14 +989,13 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             ctx.stroke();
 
             const label = ('customLabel' in node ? node.customLabel : undefined) || node.subType || '?';
-            let formulaStr = label
+            const formulaStr = label
                 .replace(/->/g, '→')
                 .replace(/-\./g, '¬')
                 .replace('|-', '⊢');
             
-            if (!formulaStr.startsWith('⊢') && !formulaStr.startsWith('|-')) {
-                formulaStr = '⊢ ' + formulaStr;
-            }
+            // Do NOT forcefully prepend ⊢ here. Render it exactly as defined.
+            // If it's a raw formula (like -.P), it will render as a raw formula.
 
             const parsedFormula = parseGoal(formulaStr);
             if (parsedFormula) {
@@ -1006,26 +1010,10 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 ctx.fillText(formulaStr, dx + drawW/2, dy + drawH/2);
             }
 
-            // 3. Ports (Interaction Circles)
             if (!isGhost) {
-                const w = node.w;
-                const h = node.h;
-                
-                // Top
-                for (let x = 1; x < w; x++) {
-                    drawPortCircle(dx + x * GRID_SIZE, dy, 'provable', `out_t_${x}`);
-                }
-                // Bottom
-                for (let x = 1; x < w; x++) {
-                    drawPortCircle(dx + x * GRID_SIZE, dy + drawH, 'provable', `out_b_${x}`);
-                }
-                // Left
-                for (let y = 1; y < h; y++) {
-                    drawPortCircle(dx, dy + y * GRID_SIZE, 'provable', `out_l_${y}`);
-                }
-                // Right
-                for (let y = 1; y < h; y++) {
-                    drawPortCircle(dx + drawW, dy + y * GRID_SIZE, 'provable', `out_r_${y}`);
+                const nodePorts = getNodePorts(node as NodeData);
+                for (const port of nodePorts) {
+                    drawPortCircle(dx + port.x * GRID_SIZE, dy + port.y * GRID_SIZE, port.type, port.id);
                 }
             }
         } else if (node.type === 'display') {
@@ -2000,6 +1988,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     theoremVars: activeTool.theoremVars,
                     theoremPremises: activeTool.theoremPremises,
                     theoremConclusion: activeTool.theoremConclusion,
+                    theoremIsFormulaOnly: activeTool.theoremIsFormulaOnly,
                 };
 
                 if (canPlaceNode && !canPlaceNode(newNode)) {

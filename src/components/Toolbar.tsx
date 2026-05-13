@@ -336,7 +336,9 @@ export default function Toolbar({
         if (!canAffordTheorem(theorem)) return;
 
         const premises = theorem.premises ?? [];
-        const conclusion = normalizeTheoremFormula(theorem.formula);
+        const rawFormula = theorem.formula ?? '';
+        const conclusion = normalizeTheoremFormula(rawFormula);
+        const isFormulaOnly = !rawFormula.trim().startsWith('|-') && !rawFormula.trim().startsWith('⊢');
         const vars = extractVariables([...premises, conclusion]);
         const portRows = Math.max(1, vars.length + premises.length);
         const h = Math.max(6, portRows * 2 + 2);
@@ -352,11 +354,13 @@ export default function Toolbar({
             theoremVars: vars,
             theoremPremises: premises,
             theoremConclusion: conclusion,
+            theoremIsFormulaOnly: isFormulaOnly,
             w: 10,
             h,
             rotation: 0,
         });
-        setShowTheoremLibrary(false);
+        // We do NOT hide the library here if they are just dragging.
+        // It's only hidden explicitly by the library UI's own logic (e.g., Return to game button).
     };
 
     const isUnlocked = (type: string, subType?: string) => {
@@ -411,7 +415,7 @@ export default function Toolbar({
         const conclusion = normalizeTheoremFormula(selectedTheorem.formula);
         const vars = extractVariables([...premises, conclusion]);
         return { premises, conclusion, vars };
-    }, [selectedTheorem]);
+    }, [selectedTheorem, extractVariables]);
 
     const folderOptions = React.useMemo(() => {
         const out: Array<{ id: string; name: string; depth: number }> = [];
@@ -706,12 +710,13 @@ export default function Toolbar({
                                         onClick={() => setTheoremLibrarySelectedId(theorem.theoremId)}
                                         draggable
                                         onDragStart={(e) => {
-                                            setIsDraggingTheoremToToolbar(true);
-                                            setShowTheoremMenu(true);
-                                            e.dataTransfer.setData('application/x-logicgame-theorem-id', theorem.theoremId);
-                                            e.dataTransfer.setData('text/plain', theorem.theoremId);
-                                            e.dataTransfer.effectAllowed = 'copyMove';
-                                        }}
+                                                    setIsDraggingTheoremToToolbar(true);
+                                                    setShowTheoremMenu(true);
+                                                    handleTheoremSelect(theorem);
+                                                    e.dataTransfer.setData('application/x-logicgame-theorem-id', theorem.theoremId);
+                                                    e.dataTransfer.setData('text/plain', theorem.theoremId);
+                                                    e.dataTransfer.effectAllowed = 'copyMove';
+                                                }}
                                         onDragEnd={() => {
                                             setIsDraggingTheoremToToolbar(false);
                                             setTheoremMenuDragOverIndex(null);
@@ -884,6 +889,7 @@ export default function Toolbar({
                                                         if (!theorem) return;
                                                         handleTheoremSelect(theorem);
                                                         setShowTheoremMenu(false);
+                                                        setShowTheoremLibrary(false);
                                                     }}
                                                     disabled={disabled}
                                                     onDragEnter={() => setTheoremMenuDragOverIndex(idx)}
@@ -1436,6 +1442,8 @@ export default function Toolbar({
                                                                             onDragStart={(e) => {
                                                                                 setIsDraggingTheoremToToolbar(true);
                                                                                 setShowTheoremMenu(true);
+                                                                                // Always set active tool immediately when dragging starts!
+                                                                                handleTheoremSelect(theorem);
                                                                                 e.dataTransfer.setData('application/x-logicgame-theorem-id', theorem.theoremId);
                                                                                 e.dataTransfer.setData('text/plain', theorem.theoremId);
                                                                                 e.dataTransfer.effectAllowed = 'copyMove';
@@ -1521,7 +1529,10 @@ export default function Toolbar({
                                         </div>
                                         <button
                                             type="button"
-                                            onClick={() => handleTheoremSelect(selectedTheorem)}
+                                            onClick={() => {
+                                                handleTheoremSelect(selectedTheorem);
+                                                setShowTheoremLibrary(false);
+                                            }}
                                             disabled={!canAffordTheorem(selectedTheorem)}
                                             className={`shrink-0 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
                                                 canAffordTheorem(selectedTheorem)
@@ -1575,7 +1586,11 @@ export default function Toolbar({
                                                 <div className="mt-3 flex flex-col gap-3">
                                                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-3 text-sm text-slate-200">
                                                         <div className="text-xs text-slate-400">out</div>
-                                                        <div className="mt-1 font-bold text-emerald-300">⊢ {selectedTheoremDetails.conclusion}</div>
+                                                        <div className="mt-1 font-bold text-emerald-300">
+                                                            {!selectedTheorem.formula?.trim().startsWith('|-') && !selectedTheorem.formula?.trim().startsWith('⊢') 
+                                                                ? selectedTheoremDetails.conclusion 
+                                                                : `⊢ ${selectedTheoremDetails.conclusion}`}
+                                                        </div>
                                                     </div>
                                                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-3 text-sm text-slate-400">
                                                         <div className="text-xs font-bold uppercase tracking-widest">{t('theoremPremises')}</div>

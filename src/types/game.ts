@@ -20,6 +20,7 @@ export interface NodeData {
     theoremVars?: string[];
     theoremPremises?: string[];
     theoremConclusion?: string;
+    theoremIsFormulaOnly?: boolean;
 }
 
 export interface Wire {
@@ -54,4 +55,5 @@ export interface Tool {
     theoremVars?: string[];
     theoremPremises?: string[];
     theoremConclusion?: string;
+    theoremIsFormulaOnly?: boolean;
 }

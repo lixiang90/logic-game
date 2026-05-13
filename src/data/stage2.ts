@@ -292,9 +292,7 @@ const addStage1OptionalIslands = (metaById: Map<string, IslandMeta>) => {
         const id = makeIslandId(item.cx, item.cy);
         const data = getStage1LevelData(item.levelId);
         if (!data?.goalFormula) continue;
-        const theoremFormula = data.goalFormula.trim().startsWith('|-') || data.goalFormula.trim().startsWith('⊢')
-            ? data.goalFormula
-            : `|-${data.goalFormula}`;
+        const theoremFormula = data.goalFormula;
         metaById.set(id, {
             name: item.name,
             category: 'optional',
