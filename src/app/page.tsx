@@ -272,6 +272,14 @@ export default function Home() {
     }
   };
 
+  // Expose methods to global window for testing or debugging
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).debugStage2Progress = () => {
+      console.log('stage2Progress:', stage2Progress);
+    };
+  }, [stage2Progress]);
+
   const consumeTheoremPlacement = (baseProgress: Stage2MetaProgress, theoremId: string) => {
     const theorem = baseProgress.collectedTheorems[theoremId];
     if (!theorem) return baseProgress;
@@ -288,7 +296,7 @@ export default function Home() {
         [theoremId]: {
           ...theorem,
           freeUsesRemaining: usedFreePlacement ? theorem.freeUsesRemaining - 1 : theorem.freeUsesRemaining,
-          useCount: theorem.useCount + 1,
+          useCount: (theorem.useCount || 0) + 1,
         }
       }
     };
@@ -325,7 +333,7 @@ export default function Home() {
         premises: (completedIsland.premiseNodes ?? []).map((premise) => premise.formula),
         sourceIslandId: completedIsland.id,
         collectedInLevelId: stage2Config.levelId,
-        freeUsesRemaining: 1,
+        freeUsesRemaining: 5,
         useCount: 0,
       };
       nextCollectedTheorems[theoremEntry.theoremId] = theoremEntry;

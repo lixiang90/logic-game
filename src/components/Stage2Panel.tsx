@@ -21,7 +21,7 @@ export default function Stage2Panel({
     selectedIslandId,
     onSelectIsland
 }: Stage2PanelProps) {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const unlockedIslandIds = useMemo(() => new Set(progress.unlockedIslandIds), [progress.unlockedIslandIds]);
     const completedIslandIds = useMemo(() => new Set(progress.completedIslandIds), [progress.completedIslandIds]);
     const goalIslands = useMemo(() => {
@@ -200,7 +200,7 @@ export default function Stage2Panel({
                                     {t('freeUsesRemaining')}: {theorem.freeUsesRemaining}
                                 </div>
                                 <div className="mt-1 text-xs text-slate-500">
-                                    {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('coins')}: -${theorem.cost}`}
+                                    {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}${language === 'zh' ? '' : ' '}${t('coins')}`}
                                 </div>
                             </div>
                         ))}

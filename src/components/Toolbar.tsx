@@ -29,7 +29,7 @@ export default function Toolbar({
     recommendedTheoremIds = [],
     coins = 0
 }: ToolbarProps) {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const [showTheoremLibrary, setShowTheoremLibrary] = React.useState(false);
     const [theoremLibrarySelectedId, setTheoremLibrarySelectedId] = React.useState<string | null>(null);
     const THEOREM_LIBRARY_STORAGE_KEY = 'logic_game_theorem_library_tree_v1';
@@ -702,7 +702,7 @@ export default function Toolbar({
                             {theorems.map((theorem) => {
                                 const isSelected = theorem.theoremId === theoremLibrarySelectedId;
                                 const isFree = theorem.freeUsesRemaining > 0;
-                                const statusLabel = isFree ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}`;
+                                const statusLabel = isFree ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}${language === 'zh' ? '' : ' '}${t('coins')}`;
                                 return (
                                     <button
                                         key={theorem.theoremId}
@@ -749,6 +749,8 @@ export default function Toolbar({
             theoremLibrarySelectedId,
             theoremsByFolderId,
             t,
+            language,
+            handleTheoremSelect,
             toggleFolderExpanded,
         ]
     );
@@ -921,7 +923,7 @@ export default function Toolbar({
                                                     <div className="truncate text-xs font-bold text-slate-100">{theorem ? theorem.name : '-'}</div>
                                                     {theorem && (
                                                         <div className="mt-0.5 truncate text-[10px] text-slate-400">
-                                                            {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}`}
+                                                            {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}${language === 'zh' ? '' : ' '}${t('coins')}`}
                                                         </div>
                                                     )}
                                                 </button>
@@ -1432,7 +1434,7 @@ export default function Toolbar({
                                                                 .map((theorem) => {
                                                                     const isSelected = theorem.theoremId === theoremLibrarySelectedId;
                                                                     const isFree = theorem.freeUsesRemaining > 0;
-                                                                    const statusLabel = isFree ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}`;
+                                                                    const statusLabel = isFree ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}${language === 'zh' ? '' : ' '}${t('coins')}`;
                                                                     return (
                                                                         <button
                                                                             key={`${col.folderId}-${theorem.theoremId}`}
