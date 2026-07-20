@@ -1027,7 +1027,7 @@ export default function Home() {
       {/* Save Button */}
       <div className="absolute top-4 right-4 z-50 flex flex-row items-center gap-2">
           <button 
-              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => {
                   setActiveTool(null);
                   setGameState('menu');
@@ -1038,7 +1038,7 @@ export default function Home() {
           </button>
           
           <button 
-              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => forceStartTutorial(currentLevelIndex)}
               title="Help / Tutorial"
           >
@@ -1046,7 +1046,7 @@ export default function Home() {
           </button>
 
           <button 
-              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => {
                 setSaveMenuTab('save');
                 setShowSaveMenu(true);
@@ -1056,7 +1056,7 @@ export default function Home() {
               <span role="img" aria-label="Save Game">💾</span>
           </button>
           <button 
-              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => {
                   if (stage2Config) {
                       canvasRef.current?.jumpToStage2Island(stage2Config.focusIslandId);
@@ -1069,14 +1069,14 @@ export default function Home() {
               <span role="img" aria-label="Home">🏠</span>
           </button>
           <button 
-              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => setShowResetConfirm(true)}
               title={t('resetLevel')}
           >
               <span role="img" aria-label="Reset">🔄</span>
           </button>
           <button 
-              className="bg-slate-800 text-white p-2 rounded hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
+              className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => setShowSettings(true)}
               title={t('settings')}
           >

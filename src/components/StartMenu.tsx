@@ -121,7 +121,7 @@ export default function StartMenu({
                                             <p className="text-slate-300">{t('level')} {slot.levelIndex + 1}</p>
                                             <button 
                                                 onClick={() => onLoadGame(index + 1)}
-                                                className="mt-2 bg-blue-600 hover:bg-blue-500 py-2 px-4 rounded transition-colors text-sm w-full font-bold"
+                                                className="game-action mt-2 bg-cyan-500/15 hover:bg-cyan-400/25 py-2 px-4 text-sm w-full font-bold text-cyan-100"
                                             >
                                                 {t('load')}
                                             </button>
@@ -164,15 +164,18 @@ export default function StartMenu({
     }
 
     return (
-        <div className="absolute inset-0 bg-slate-900 z-50 flex flex-col items-center text-white overflow-y-auto">
-            <div className="min-h-full flex flex-col items-center w-full py-12">
-                <div className="my-auto flex flex-col items-center w-full">
-                    <h1 className="text-6xl font-bold mb-12 text-blue-400 text-center px-4">{t('gameTitle')}</h1>
+        <div className="menu-shell absolute inset-0 z-50 flex flex-col items-center text-white overflow-y-auto">
+            <div className="menu-content min-h-full flex flex-col items-center justify-center w-full py-12 px-4">
+                <div className="flex flex-col items-center w-full">
+                    <div className="menu-mark" aria-hidden="true">∴</div>
+                    <p className="menu-subtitle mb-3">{language === 'zh' ? '演绎推理 · 建造 · 证明' : 'DEDUCTION · BUILD · PROVE'}</p>
+                    <h1 className="menu-title text-5xl sm:text-6xl font-bold mb-3 text-cyan-200 text-center">{t('gameTitle')}</h1>
+                    <p className="mb-10 text-center text-sm text-slate-400">{language === 'zh' ? '把每一步推理，连接成清晰的证明。' : 'Connect every inference into a clear proof.'}</p>
                     
-                    <div className="flex flex-col gap-4 w-64">
+                    <div className="menu-panel game-chrome flex flex-col gap-3">
                         <button  
                         onClick={onNewGame}
-                        className="bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold text-lg transition-colors"
+                        className="game-action bg-cyan-500/15 hover:bg-cyan-400/25 py-3.5 text-cyan-100 font-bold text-lg"
                     >
                         {t('newGame')}
                     </button>
@@ -180,10 +183,10 @@ export default function StartMenu({
                     <button 
                         onClick={onContinue}
                         disabled={!hasAutoSave}
-                        className={`py-3 rounded-lg font-bold text-lg transition-colors ${
+                        className={`game-action py-3.5 font-bold text-lg ${
                             hasAutoSave 
-                            ? 'bg-green-600 hover:bg-green-500' 
-                            : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                            ? 'bg-emerald-400/15 hover:bg-emerald-400/25 text-emerald-200'
+                            : 'bg-slate-800/70 text-slate-600 cursor-not-allowed'
                         }`}
                     >
                         {t('continue')}
@@ -191,17 +194,18 @@ export default function StartMenu({
 
                     <button 
                         onClick={() => setShowLoadMenu(true)}
-                        className="bg-slate-700 hover:bg-slate-600 py-3 rounded-lg font-bold text-lg transition-colors"
+                        className="game-action bg-white/5 hover:bg-white/10 py-3.5 text-slate-200 font-bold text-lg"
                     >
                         {t('loadGame')}
                     </button>
 
                     <button 
                         onClick={() => setShowSettings(true)}
-                        className="bg-slate-700 hover:bg-slate-600 py-3 rounded-lg font-bold text-lg transition-colors"
+                        className="game-action bg-white/5 hover:bg-white/10 py-3.5 text-slate-200 font-bold text-lg"
                     >
                         {t('settings')}
                     </button>
+                    <div className="menu-footer mt-4 text-center">{language === 'zh' ? '逻辑游戏 · 版本 2.0' : 'LOGIC GAME · VERSION 2.0'}</div>
                 </div>
             </div>
         </div>
