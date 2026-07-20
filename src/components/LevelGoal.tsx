@@ -19,7 +19,7 @@ export default function LevelGoal({ level, title, goalFormula, description }: Le
     }, [goalFormula]);
 
     return (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur-md border border-slate-500/50 rounded-2xl px-8 py-4 shadow-2xl z-40 flex flex-col items-center gap-2 select-none min-w-[300px]">
+        <div className="game-chrome absolute top-4 left-1/2 -translate-x-1/2 rounded-2xl px-8 py-4 z-40 flex flex-col items-center gap-2 select-none min-w-[300px]">
             <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">
                     {t('level')} {level}
