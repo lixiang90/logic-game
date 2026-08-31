@@ -22,6 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+          path: production
 
       - name: Checkout development branch
         uses: actions/checkout@v4
@@ -35,16 +36,20 @@ jobs:
           node-version: "20"
           cache: npm
           cache-dependency-path: |
-            package-lock.json
+            production/package-lock.json
             development/package-lock.json
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
-        with:
-          # The current main branch still relies on this action to inject /logic-game.
-          static_site_generator: next
+
+      - name: Apply shared Pages configuration to production
+        shell: bash
+        run: cp development/next.config.ts production/next.config.ts
 
       - name: Build production site
+        working-directory: production
+        env:
+          NEXT_PUBLIC_BASE_PATH: /logic-game
         run: |
           npm ci
           npm run build
@@ -61,7 +66,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p site/dev
-          cp -a out/. site/
+          cp -a production/out/. site/
           cp -a development/out/. site/dev/
 
       - name: Upload Pages artifact
