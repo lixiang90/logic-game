@@ -17,6 +17,8 @@ interface ToolbarProps {
     theoremInventory?: TheoremChipInventoryEntry[];
     recommendedTheoremIds?: string[];
     coins?: number;
+    quickMpUnlocked?: boolean;
+    quickMpUses?: number;
 }
 
 export default function Toolbar({
@@ -27,11 +29,14 @@ export default function Toolbar({
     unlockedTools,
     theoremInventory = [],
     recommendedTheoremIds = [],
-    coins = 0
+    coins = 0,
+    quickMpUnlocked = false,
+    quickMpUses = 0,
 }: ToolbarProps) {
     const { t, language } = useLanguage();
     const [showTheoremLibrary, setShowTheoremLibrary] = React.useState(false);
     const [theoremLibrarySelectedId, setTheoremLibrarySelectedId] = React.useState<string | null>(null);
+    const [theoremSearch, setTheoremSearch] = React.useState('');
     const THEOREM_LIBRARY_STORAGE_KEY = 'logic_game_theorem_library_tree_v1';
     const THEOREM_TOOLBAR_PINS_KEY = 'logic_game_theorem_toolbar_pins_v1';
     const THEOREM_TOOLBAR_PIN_COUNT = 8;
@@ -42,6 +47,7 @@ export default function Toolbar({
     const theoremMenuRef = React.useRef<HTMLDivElement | null>(null);
     const theoremMenuButtonRef = React.useRef<HTMLButtonElement | null>(null);
     const [showMoreAtomsMenu, setShowMoreAtomsMenu] = React.useState(false);
+    const [activeToolCategory, setActiveToolCategory] = React.useState<'utility' | 'formula' | 'proof' | 'theorems' | 'display'>('utility');
     const moreAtomsMenuRef = React.useRef<HTMLDivElement | null>(null);
     const moreAtomsButtonRef = React.useRef<HTMLButtonElement | null>(null);
 
@@ -367,6 +373,7 @@ export default function Toolbar({
         if (!unlockedTools) return true;
         if (type === 'wire') return true; // Wire always unlocked
         if (type === 'mp' && unlockedTools.includes('mp')) return true;
+        if (type === 'quick-mp' && quickMpUnlocked && unlockedTools.includes('quick-mp')) return true;
         if (type === 'display' && subType && unlockedTools.includes(`display:${subType}`)) return true;
         if (type === 'bridge') return unlockedTools.includes('bridge');
         return unlockedTools.includes(`${type}:${subType}`);
@@ -758,9 +765,29 @@ export default function Toolbar({
     return (
         <>
         <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur-xl border border-slate-500/50 px-6 py-4 rounded-2xl flex items-end gap-2 shadow-[0_0_40px_-10px_rgba(0,0,0,0.8)] ${showTheoremLibrary ? 'z-[120]' : 'z-50'} pointer-events-auto ring-1 ring-white/10`}>
+            <nav className="mr-2 flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-950/75 p-1" aria-label={language === 'zh' ? '工具分类' : 'Tool categories'}>
+                {([
+                    ['utility', '⌁', language === 'zh' ? '建造' : 'Build'],
+                    ['formula', '◇', language === 'zh' ? '公式' : 'Formula'],
+                    ['proof', '⊢', language === 'zh' ? '证明' : 'Proof'],
+                    ['theorems', '▣', language === 'zh' ? '定理' : 'Theorems'],
+                    ['display', '▤', language === 'zh' ? '显示' : 'Display'],
+                ] as const).map(([id, icon, label]) => (
+                    <button
+                        key={id}
+                        type="button"
+                        onClick={() => setActiveToolCategory(id)}
+                        className={`group relative grid h-11 w-11 place-items-center rounded-lg border text-lg font-black transition ${activeToolCategory === id ? 'border-cyan-300 bg-cyan-400/20 text-cyan-200' : 'border-transparent text-slate-400 hover:border-slate-600 hover:bg-slate-800 hover:text-white'}`}
+                        title={label}
+                    >
+                        {icon}
+                        <span className="pointer-events-none absolute -top-9 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-[10px] font-bold text-slate-200 shadow-lg group-hover:block">{label}</span>
+                    </button>
+                ))}
+            </nav>
             
             {/* Tools Group (Pointer & Box Select & Wire) */}
-            <div className="flex flex-col items-center gap-2">
+            <div className={`${activeToolCategory === 'utility' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-transparent select-none font-bold uppercase tracking-widest">{t('tools')}</span>
                 </div>
@@ -844,7 +871,7 @@ export default function Toolbar({
                 </div>
             </div>
 
-            {theoremInventoryOrdered.length > 0 && (
+            {theoremInventoryOrdered.length > 0 && activeToolCategory === 'theorems' && (
                 <>
                     <div className="w-px h-8 bg-slate-700 mb-2 mx-2"></div>
 
@@ -946,10 +973,10 @@ export default function Toolbar({
                 </>
             )}
 
-            <div className="w-px h-8 bg-slate-700 mb-2 mx-2"></div>
+            <div className={`${activeToolCategory === 'formula' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* ATOMS Section */}
-            <div className="flex flex-col items-center gap-2">
+            <div className={`${activeToolCategory === 'formula' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('atoms')}</span>
                 </div>
@@ -1056,10 +1083,10 @@ export default function Toolbar({
                 </div>
             </div>
 
-            <div className="w-px h-8 bg-slate-700 mb-2 mx-2"></div>
+            <div className={`${activeToolCategory === 'formula' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* GATES Section */}
-            <div className="flex flex-col items-center gap-2">
+            <div className={`${activeToolCategory === 'formula' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('gates')}</span>
                 </div>
@@ -1098,13 +1125,25 @@ export default function Toolbar({
                         <span className="ml-1 font-bold text-lg">¬</span>
                     </div>
                     )}
+
+                    {/* And */}
+                    {isUnlocked('gate', 'and') && (
+                    <div
+                        id="tool-gate-and"
+                        onClick={() => handleSelect('gate', 'and', 4, 4)}
+                        className={`flex h-12 w-12 cursor-pointer select-none items-center justify-center rounded-[4px_24px_24px_4px] border border-violet-400 bg-violet-500/10 text-xl font-bold text-violet-300 transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-[0_0_12px_rgba(192,132,252,0.45)] active:scale-95 ${isActive('and') ? activeClass : ''}`}
+                        title="And (∧)"
+                    >
+                        ∧
+                    </div>
+                    )}
                 </div>
             </div>
 
-            <div className="w-px h-8 bg-slate-700 mb-2 mx-2"></div>
+            <div className={`${activeToolCategory === 'proof' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* AXIOMS Section */}
-            <div className="flex flex-col items-center gap-2">
+            <div className={`${activeToolCategory === 'proof' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('axioms')}</span>
                 </div>
@@ -1156,10 +1195,10 @@ export default function Toolbar({
                 </div>
             </div>
 
-            <div className="w-px h-8 bg-slate-700 mb-2 mx-2"></div>
+            <div className={`${activeToolCategory === 'proof' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* RULES Section */}
-            <div className="flex flex-col items-center gap-2">
+            <div className={`${activeToolCategory === 'proof' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('rules')}</span>
                 </div>
@@ -1181,13 +1220,23 @@ export default function Toolbar({
                         MP
                     </div>
                     )}
+                    {isUnlocked('quick-mp') && (
+                    <div
+                        onClick={() => quickMpUses > 0 && handleSelect('quick-mp', 'quick-mp', 5, 5)}
+                        className={`relative flex h-12 w-12 select-none items-center justify-center rounded-lg border-2 border-amber-300 bg-amber-950/80 text-xs font-black text-amber-200 shadow-[0_0_16px_rgba(251,191,36,.3)] transition ${quickMpUses > 0 ? 'cursor-pointer hover:-translate-y-1 hover:scale-110' : 'cursor-not-allowed opacity-45'} ${activeTool?.type === 'quick-mp' ? activeClass : ''}`}
+                        title={`Simplified MP · ${quickMpUses} uses`}
+                    >
+                        MP+
+                        <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-amber-300 px-1 text-center text-[10px] text-slate-950">{quickMpUses}</span>
+                    </div>
+                    )}
                 </div>
             </div>
 
-            <div className="w-px h-8 bg-slate-700 mb-2 mx-2"></div>
+            <div className={`${activeToolCategory === 'display' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* DISPLAY Section */}
-            <div className="flex flex-col items-center gap-2">
+            <div className={`${activeToolCategory === 'display' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('display')}</span>
                 </div>
@@ -1280,9 +1329,36 @@ export default function Toolbar({
                                     </button>
                                 </div>
                                 <div className="max-h-full overflow-y-auto p-3">
-                                    <div className="flex flex-col gap-2">
-                                        {renderFolderTree(theoremLibraryState.root, 0)}
-                                    </div>
+                                    <input
+                                        value={theoremSearch}
+                                        onChange={(event) => setTheoremSearch(event.target.value)}
+                                        className="mb-3 w-full rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-400/60"
+                                        placeholder={language === 'zh' ? '搜索名称、公式或前提…' : 'Search name, formula or premise…'}
+                                    />
+                                    {theoremSearch.trim() ? (
+                                        <div className="flex flex-col gap-2">
+                                            {theoremInventoryOrdered
+                                                .filter((theorem) => {
+                                                    const query = theoremSearch.trim().toLowerCase();
+                                                    return `${theorem.name} ${theorem.formula} ${(theorem.premises ?? []).join(' ')}`.toLowerCase().includes(query);
+                                                })
+                                                .map((theorem) => (
+                                                    <button
+                                                        key={`search-${theorem.theoremId}`}
+                                                        type="button"
+                                                        onClick={() => setTheoremLibrarySelectedId(theorem.theoremId)}
+                                                        className={`rounded-xl border p-3 text-left transition ${theorem.theoremId === theoremLibrarySelectedId ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-slate-800 bg-slate-950/30 hover:border-slate-600'}`}
+                                                    >
+                                                        <div className="font-bold text-cyan-100">{theorem.name}</div>
+                                                        <div className="mt-1 break-all text-[10px] text-slate-400">{theorem.formula}</div>
+                                                    </button>
+                                                ))}
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col gap-2">
+                                            {renderFolderTree(theoremLibraryState.root, 0)}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ) : (

@@ -179,5 +179,69 @@
       "nodes": [],
       "wires": []
     }
+  },
+  {
+    "id": "level-13",
+    "title": "Level 13: Stage 2 - Relay",
+    "description": "Use syllogism variants to carry a conclusion through a nested implication.",
+    "goal": { "formula": "|-(P->(Q->S))" },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "atom:S", "atom:T", "gate:implies", "gate:not", "axiom:1", "axiom:2", "axiom:3", "mp", "display:small", "display:large", "bridge"],
+    "initialState": { "nodes": [], "wires": [] }
+  },
+  {
+    "id": "level-14",
+    "title": "Level 14: Stage 2 - Contraction",
+    "description": "Remove a redundant repeated antecedent and restore the Logic Farm.",
+    "goal": { "formula": "|-(P->Q)" },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "atom:S", "atom:T", "gate:implies", "gate:not", "axiom:1", "axiom:2", "axiom:3", "mp", "display:small", "display:large", "bridge"],
+    "initialState": { "nodes": [], "wires": [] }
+  },
+  {
+    "id": "level-15",
+    "title": "Level 15: Stage 2 - Contradiction Seeds",
+    "description": "Prove that a contradiction can imply any formula and begin cultivating the Logic Farm.",
+    "goal": { "formula": "|-(-.P->(P->Q))" },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "atom:S", "atom:T", "gate:implies", "gate:not", "axiom:1", "axiom:2", "axiom:3", "mp", "display:small", "display:large", "bridge"],
+    "initialState": { "nodes": [], "wires": [] }
+  },
+  {
+    "id": "level-16",
+    "title": "Level 16: Stage 2 - Contraposition",
+    "description": "Turn an implication around by negating its conclusion and premise.",
+    "goal": { "formula": "|-(-.Q->-.P)" },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "atom:S", "atom:T", "gate:implies", "gate:not", "axiom:1", "axiom:2", "axiom:3", "mp", "display:small", "display:large", "bridge"],
+    "initialState": { "nodes": [], "wires": [] }
+  },
+  {
+    "id": "level-17",
+    "title": "Level 17: Stage 2 - Modus Tollens",
+    "description": "Derive the negation of a premise and unlock the Simplified MP inference engine.",
+    "goal": { "formula": "|-(-.P)" },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "atom:S", "atom:T", "gate:implies", "gate:not", "axiom:1", "axiom:2", "axiom:3", "mp", "display:small", "display:large", "bridge"],
+    "initialState": { "nodes": [], "wires": [] }
+  },
+  {
+    "id": "level-18",
+    "title": "Level 18: Stage 2 - Clavius",
+    "description": "Close a contradiction loop: if not-P implies P, prove P.",
+    "goal": { "formula": "|-P" },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "atom:S", "atom:T", "gate:implies", "gate:not", "axiom:1", "axiom:2", "axiom:3", "mp", "quick-mp", "display:small", "display:large", "bridge"],
+    "initialState": { "nodes": [], "wires": [] }
+  },
+  {
+    "id": "level-19",
+    "title": "Level 19: Stage 2 - Contraposition Under an Antecedent",
+    "description": "Carry contraposition through a shared outer antecedent.",
+    "goal": { "formula": "|-(P->(-.R->-.Q))" },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "atom:S", "atom:T", "gate:implies", "gate:not", "axiom:1", "axiom:2", "axiom:3", "mp", "quick-mp", "display:small", "display:large", "bridge"],
+    "initialState": { "nodes": [], "wires": [] }
+  },
+  {
+    "id": "level-20",
+    "title": "Level 20: Stage 2 - Exportation (Boss)",
+    "description": "Compress nested assumptions and open the gate to new logical symbols.",
+    "goal": { "formula": "|-((¬(P->¬Q)->R)->(P->(Q->R)))" },
+    "unlockedTools": ["atom:P", "atom:Q", "atom:R", "atom:S", "atom:T", "gate:implies", "gate:not", "axiom:1", "axiom:2", "axiom:3", "mp", "quick-mp", "display:small", "display:large", "bridge"],
+    "initialState": { "nodes": [], "wires": [] }
   }
 ]

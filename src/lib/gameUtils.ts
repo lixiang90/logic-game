@@ -24,8 +24,8 @@ export const getNodePorts = (node: NodeData): Port[] => {
         });
         
         // Inputs
-        if (subType === 'implies') {
-            // Implies: 2 inputs at 1.0 and 3.0 (h=4)
+        if (subType === 'implies' || subType === 'and') {
+            // Binary connective: 2 inputs at 1.0 and 3.0 (h=4)
             ports.push({ id: 'in0', x: 0, y: 1.0, type: 'formula', isInput: true });
             ports.push({ id: 'in1', x: 0, y: 3.0, type: 'formula', isInput: true });
         } else if (subType === 'not') {
@@ -71,6 +71,10 @@ export const getNodePorts = (node: NodeData): Port[] => {
         ports.push({ id: 'in1', x: 0, y: 2.0, type: 'formula', isInput: true });
         ports.push({ id: 'in2', x: 0, y: 4.0, type: 'provable', isInput: true });
         ports.push({ id: 'in3', x: 0, y: 5.0, type: 'provable', isInput: true });
+    } else if (type === 'quick-mp') {
+        ports.push({ id: 'out', x: w, y: h / 2, type: 'provable', isInput: false });
+        ports.push({ id: 'in0', x: 0, y: h * 0.32, type: 'provable', isInput: true });
+        ports.push({ id: 'in1', x: 0, y: h * 0.68, type: 'provable', isInput: true });
     } else if (type === 'theorem') {
         const isFormulaOnly = node.theoremIsFormulaOnly === true;
         ports.push({

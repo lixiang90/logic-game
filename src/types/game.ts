@@ -1,5 +1,5 @@
 
-export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'wire' | 'premise' | 'theorem' | 'display' | 'bridge';
+export type NodeType = 'atom' | 'gate' | 'axiom' | 'mp' | 'quick-mp' | 'wire' | 'premise' | 'theorem' | 'display' | 'bridge';
 
 export interface NodeData {
     id: string;
@@ -21,6 +21,7 @@ export interface NodeData {
     theoremPremises?: string[];
     theoremConclusion?: string;
     theoremIsFormulaOnly?: boolean;
+    note?: string; // Player-authored annotation shown on the canvas.
 }
 
 export interface Wire {
@@ -31,6 +32,7 @@ export interface Wire {
     endPortId: string;
     type: 'formula' | 'provable';
     path: { x: number, y: number }[]; // Grid coordinates
+    note?: string;
 }
 
 export interface Port {

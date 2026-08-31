@@ -38,6 +38,18 @@ export interface InfiniteCanvasHandle {
     getState: () => { nodes: NodeData[], wires: Wire[] };
     loadState: (state: { nodes: NodeData[], wires: Wire[] }) => void;
     jumpToStage2Island: (islandId: string) => void;
+    undo: () => boolean;
+    redo: () => boolean;
+    copySelection: () => number;
+    pasteSelection: () => number;
+    autoArrangeSelection: () => number;
+    alignSelection: (axis: 'left' | 'top' | 'center-x' | 'center-y') => number;
+    distributeSelection: (axis: 'horizontal' | 'vertical') => number;
+    annotateSelection: (note: string) => number;
+    traceGoalDependencies: () => number;
+    toggleFocusMode: () => boolean;
+    getSelectionState: () => { nodes: NodeData[], wires: Wire[] };
+    insertBlueprint: (state: { nodes: NodeData[], wires: Wire[] }) => number;
 }
 
 const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
@@ -145,6 +157,17 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     const [boxSelectEnd, setBoxSelectEnd] = useState<Point | null>(null);
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
     const [selectedWireIds, setSelectedWireIds] = useState<Set<string>>(new Set());
+    const [focusMode, setFocusMode] = useState(false);
+    const clipboardRef = useRef<{ nodes: NodeData[], wires: Wire[] } | null>(null);
+    const historyRef = useRef<{
+        undo: Array<{ nodes: NodeData[], wires: Wire[] }>;
+        redo: Array<{ nodes: NodeData[], wires: Wire[] }>;
+    }>({ undo: [], redo: [] });
+    const lastHistoryStateRef = useRef<{ nodes: NodeData[], wires: Wire[] }>({
+        nodes: initialState?.nodes ?? [],
+        wires: initialState?.wires ?? [],
+    });
+    const restoringHistoryRef = useRef(false);
 
     const displayGoalFormula = React.useMemo(() => {
         if (!goalFormula) return '';
@@ -163,6 +186,21 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
     const showStage2InteriorDetails = scale >= STAGE2_DETAIL_SCALE_THRESHOLD;
     const showStage2IslandOverlayDetails = stage2Config ? scale >= STAGE2_MARKER_SCALE_THRESHOLD : false;
+
+    useEffect(() => {
+        const current = { nodes, wires };
+        if (restoringHistoryRef.current) {
+            restoringHistoryRef.current = false;
+            lastHistoryStateRef.current = current;
+            return;
+        }
+        const previous = lastHistoryStateRef.current;
+        if (previous.nodes === nodes && previous.wires === wires) return;
+        historyRef.current.undo.push(structuredClone(previous));
+        if (historyRef.current.undo.length > 100) historyRef.current.undo.shift();
+        historyRef.current.redo = [];
+        lastHistoryStateRef.current = current;
+    }, [nodes, wires]);
 
     useEffect(() => {
         stage2IslandRenderCacheRef.current.clear();
@@ -254,6 +292,32 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         }
     }, [isSolved, onLevelComplete]);
     
+    const makeSelectionState = () => {
+        const selected = nodes.filter((node) => selectedNodeIds.has(node.id) && !node.locked);
+        if (selected.length === 0) return { nodes: [], wires: [] };
+        const minX = Math.min(...selected.map((node) => node.x));
+        const minY = Math.min(...selected.map((node) => node.y));
+        const selectedIds = new Set(selected.map((node) => node.id));
+        return {
+            nodes: selected.map((node) => ({ ...structuredClone(node), x: node.x - minX, y: node.y - minY })),
+            wires: wires
+                .filter((wire) => selectedIds.has(wire.startNodeId) && selectedIds.has(wire.endNodeId))
+                .map((wire) => ({
+                    ...structuredClone(wire),
+                    path: wire.path.map((point) => ({ x: point.x - minX, y: point.y - minY })),
+                })),
+        };
+    };
+
+    const restoreHistoryState = (state: { nodes: NodeData[], wires: Wire[] }) => {
+        restoringHistoryRef.current = true;
+        lastHistoryStateRef.current = state;
+        setNodes(structuredClone(state.nodes));
+        setWires(structuredClone(state.wires));
+        setSelectedNodeIds(new Set());
+        setSelectedWireIds(new Set());
+    };
+
     // Expose methods to parent
     useImperativeHandle(ref, () => ({
         resetView: () => {
@@ -389,6 +453,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
             setNodes(newNodes);
             setWires(state.wires);
+            historyRef.current = { undo: [], redo: [] };
+            lastHistoryStateRef.current = { nodes: newNodes, wires: state.wires };
         },
         jumpToStage2Island: (islandId: string) => {
             if (!stage2Config) return;
@@ -405,7 +471,129 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 });
             });
         },
-    }), [GRID_SIZE, nodes, scale, wires, initialState, stage2Config]);
+        undo: () => {
+            const previous = historyRef.current.undo.pop();
+            if (!previous) return false;
+            historyRef.current.redo.push(structuredClone({ nodes, wires }));
+            restoreHistoryState(previous);
+            return true;
+        },
+        redo: () => {
+            const next = historyRef.current.redo.pop();
+            if (!next) return false;
+            historyRef.current.undo.push(structuredClone({ nodes, wires }));
+            restoreHistoryState(next);
+            return true;
+        },
+        copySelection: () => {
+            const state = makeSelectionState();
+            if (state.nodes.length > 0) clipboardRef.current = structuredClone(state);
+            return state.nodes.length;
+        },
+        pasteSelection: () => {
+            const source = clipboardRef.current;
+            if (!source || source.nodes.length === 0) return 0;
+            const idMap = new Map<string, string>();
+            source.nodes.forEach((node) => idMap.set(node.id, crypto.randomUUID()));
+            const centerX = Math.round(((window.innerWidth / 2 - offset.x) / scale) / GRID_SIZE);
+            const centerY = Math.round(((window.innerHeight / 2 - offset.y) / scale) / GRID_SIZE);
+            const pastedNodes = source.nodes.map((node) => ({
+                ...structuredClone(node),
+                id: idMap.get(node.id)!,
+                x: centerX + node.x + 2,
+                y: centerY + node.y + 2,
+                locked: false,
+            }));
+            const pastedWires = source.wires.map((wire) => ({
+                ...structuredClone(wire),
+                id: crypto.randomUUID(),
+                startNodeId: idMap.get(wire.startNodeId) ?? wire.startNodeId,
+                endNodeId: idMap.get(wire.endNodeId) ?? wire.endNodeId,
+                path: wire.path.map((point) => ({ x: centerX + point.x + 2, y: centerY + point.y + 2 })),
+            }));
+            setNodes((previous) => [...previous, ...pastedNodes]);
+            setWires((previous) => [...previous, ...pastedWires]);
+            setSelectedNodeIds(new Set(pastedNodes.map((node) => node.id)));
+            return pastedNodes.length;
+        },
+        autoArrangeSelection: () => {
+            const selected = nodes.filter((node) => selectedNodeIds.has(node.id) && !node.locked && node.type !== 'wire');
+            if (selected.length < 2) return selected.length;
+            const ordered = [...selected].sort((a, b) => a.x - b.x || a.y - b.y);
+            const startX = Math.min(...ordered.map((node) => node.x));
+            const startY = Math.min(...ordered.map((node) => node.y));
+            const positions = new Map(ordered.map((node, index) => [node.id, {
+                x: startX + (index % 3) * 14,
+                y: startY + Math.floor(index / 3) * 11,
+            }]));
+            setNodes((previous) => previous.map((node) => positions.has(node.id) ? { ...node, ...positions.get(node.id)! } : node));
+            return selected.length;
+        },
+        alignSelection: (axis) => {
+            const selected = nodes.filter((node) => selectedNodeIds.has(node.id) && !node.locked && node.type !== 'wire');
+            if (selected.length < 2) return selected.length;
+            const left = Math.min(...selected.map((node) => node.x));
+            const top = Math.min(...selected.map((node) => node.y));
+            const centerX = selected.reduce((sum, node) => sum + node.x + node.w / 2, 0) / selected.length;
+            const centerY = selected.reduce((sum, node) => sum + node.y + node.h / 2, 0) / selected.length;
+            const selectedIds = new Set(selected.map((node) => node.id));
+            setNodes((previous) => previous.map((node) => {
+                if (!selectedIds.has(node.id)) return node;
+                if (axis === 'left') return { ...node, x: left };
+                if (axis === 'top') return { ...node, y: top };
+                if (axis === 'center-x') return { ...node, x: Math.round(centerX - node.w / 2) };
+                return { ...node, y: Math.round(centerY - node.h / 2) };
+            }));
+            return selected.length;
+        },
+        distributeSelection: (axis) => {
+            const selected = nodes.filter((node) => selectedNodeIds.has(node.id) && !node.locked && node.type !== 'wire');
+            if (selected.length < 3) return selected.length;
+            const ordered = [...selected].sort((a, b) => axis === 'horizontal' ? a.x - b.x : a.y - b.y);
+            const first = axis === 'horizontal' ? ordered[0].x : ordered[0].y;
+            const last = axis === 'horizontal' ? ordered.at(-1)!.x : ordered.at(-1)!.y;
+            const step = (last - first) / (ordered.length - 1);
+            const positions = new Map(ordered.map((node, index) => [node.id, Math.round(first + step * index)]));
+            setNodes((previous) => previous.map((node) => {
+                const value = positions.get(node.id);
+                if (value == null) return node;
+                return axis === 'horizontal' ? { ...node, x: value } : { ...node, y: value };
+            }));
+            return selected.length;
+        },
+        annotateSelection: (note: string) => {
+            if (selectedNodeIds.size === 0) return 0;
+            setNodes((previous) => previous.map((node) => selectedNodeIds.has(node.id) ? { ...node, note } : node));
+            return selectedNodeIds.size;
+        },
+        traceGoalDependencies: () => {
+            const traced = new Set(activeNodeIds);
+            setSelectedNodeIds(traced);
+            setFocusMode(true);
+            return traced.size;
+        },
+        toggleFocusMode: () => {
+            const next = !focusMode;
+            setFocusMode(next);
+            return next;
+        },
+        getSelectionState: makeSelectionState,
+        insertBlueprint: (state) => {
+            if (state.nodes.length === 0) return 0;
+            clipboardRef.current = structuredClone(state);
+            const source = clipboardRef.current;
+            const idMap = new Map<string, string>();
+            source.nodes.forEach((node) => idMap.set(node.id, crypto.randomUUID()));
+            const centerX = Math.round(((window.innerWidth / 2 - offset.x) / scale) / GRID_SIZE);
+            const centerY = Math.round(((window.innerHeight / 2 - offset.y) / scale) / GRID_SIZE);
+            const pastedNodes = source.nodes.map((node) => ({ ...structuredClone(node), id: idMap.get(node.id)!, x: centerX + node.x, y: centerY + node.y, locked: false }));
+            const pastedWires = source.wires.map((wire) => ({ ...structuredClone(wire), id: crypto.randomUUID(), startNodeId: idMap.get(wire.startNodeId) ?? wire.startNodeId, endNodeId: idMap.get(wire.endNodeId) ?? wire.endNodeId, path: wire.path.map((point) => ({ x: centerX + point.x, y: centerY + point.y })) }));
+            setNodes((previous) => [...previous, ...pastedNodes]);
+            setWires((previous) => [...previous, ...pastedWires]);
+            setSelectedNodeIds(new Set(pastedNodes.map((node) => node.id)));
+            return pastedNodes.length;
+        },
+    }), [GRID_SIZE, nodes, scale, wires, initialState, stage2Config, selectedNodeIds, activeNodeIds, focusMode, offset]);
 
     useEffect(() => {
         if (!stage2Config) {
@@ -721,6 +909,14 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 ctx.lineTo(dx + drawW, dy + drawH/2);
                 ctx.lineTo(dx, dy + drawH);
                 ctx.closePath();
+            } else if (node.subType === 'and') {
+                bgColor = 'rgba(168,85,247,0.12)'; borderColor = '#c084fc'; textColor = '#d8b4fe';
+                ctx.beginPath();
+                ctx.moveTo(dx, dy);
+                ctx.lineTo(dx + drawW * 0.5, dy);
+                ctx.bezierCurveTo(dx + drawW * 1.1, dy, dx + drawW * 1.1, dy + drawH, dx + drawW * 0.5, dy + drawH);
+                ctx.lineTo(dx, dy + drawH);
+                ctx.closePath();
             }
 
             ctx.fillStyle = bgColor;
@@ -734,8 +930,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             ctx.font = 'bold 32px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            const label = node.subType === 'implies' ? '→' : '¬';
-            ctx.fillText(label, dx + drawW/2 - (node.subType === 'implies' ? 0 : 10), dy + drawH/2);
+            const label = node.subType === 'implies' ? '→' : node.subType === 'and' ? '∧' : '¬';
+            ctx.fillText(label, dx + drawW/2 - (node.subType === 'not' ? 10 : 0), dy + drawH/2);
 
             // Ports
             if (!isGhost) {
@@ -744,7 +940,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 drawPortCircle(outX, dy + drawH/2, 'formula', 'out');
 
                 // Inputs (Left) - Formula
-                if (node.subType === 'implies') {
+                if (node.subType === 'implies' || node.subType === 'and') {
                     // in0 (top), in1 (bottom)
                     drawPortCircle(dx, dy + drawH * 0.25, 'formula', 'in0');
                     drawPortCircle(dx, dy + drawH * 0.75, 'formula', 'in1');
@@ -796,7 +992,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 }
             }
 
-        } else if (node.type === 'mp') {
+        } else if (node.type === 'mp' || node.type === 'quick-mp') {
+            const isQuickMp = node.type === 'quick-mp';
             bgColor = '#1a1a00'; borderColor = '#ffff00'; textColor = '#ffff00';
             
             drawPentagon(ctx, dx, dy, drawW, drawH);
@@ -811,17 +1008,22 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             ctx.font = 'bold 24px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText("MP", dx + drawW * 0.4, dy + drawH/2);
+            ctx.fillText(isQuickMp ? "MP+" : "MP", dx + drawW * 0.4, dy + drawH/2);
 
             // Ports
             if (!isGhost) {
                 // Inputs: Left edge (0.5, 1.0, 2.0, 2.5) -> in0, in1, in2, in3
-                const inputs = [
-                    { y: dy + drawH * (0.5/3), type: 'formula' as const, id: 'in0' },
-                    { y: dy + drawH * (1.0/3), type: 'formula' as const, id: 'in1' },
-                    { y: dy + drawH * (2.0/3), type: 'provable' as const, id: 'in2' },
-                    { y: dy + drawH * (2.5/3), type: 'provable' as const, id: 'in3' }
-                ];
+                const inputs = isQuickMp
+                    ? [
+                          { y: dy + drawH * 0.32, type: 'provable' as const, id: 'in0' },
+                          { y: dy + drawH * 0.68, type: 'provable' as const, id: 'in1' },
+                      ]
+                    : [
+                          { y: dy + drawH * (0.5/3), type: 'formula' as const, id: 'in0' },
+                          { y: dy + drawH * (1.0/3), type: 'formula' as const, id: 'in1' },
+                          { y: dy + drawH * (2.0/3), type: 'provable' as const, id: 'in2' },
+                          { y: dy + drawH * (2.5/3), type: 'provable' as const, id: 'in3' }
+                      ];
                 
                 inputs.forEach(p => {
                     drawPortCircle(dx, p.y, p.type, p.id);
@@ -1768,7 +1970,22 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 }
             }
 
+            ctx.save();
+            if (focusMode && !activeNodeIds.has(node.id)) ctx.globalAlpha = 0.06;
             drawNode(ctx, node, node.x * GRID_SIZE, node.y * GRID_SIZE);
+            if (node.note && scale >= 0.45) {
+                const noteX = (node.x + node.w / 2) * GRID_SIZE;
+                const noteY = (node.y + node.h) * GRID_SIZE + 10;
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                const measured = Math.min(240, ctx.measureText(node.note).width + 16);
+                ctx.fillStyle = 'rgba(2, 6, 23, 0.88)';
+                ctx.fillRect(noteX - measured / 2, noteY, measured, 24);
+                ctx.fillStyle = '#cbd5e1';
+                ctx.fillText(node.note.length > 30 ? `${node.note.slice(0, 29)}…` : node.note, noteX, noteY + 6, measured - 10);
+            }
+            ctx.restore();
         });
 
         // --- Ghost Nodes from Tutorial ---
@@ -1832,7 +2049,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             // Level Solved indicator handled by HTML overlay in parent
         }
 
-    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, showStage2InteriorDetails, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById]);
+    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, showStage2InteriorDetails, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById, focusMode, activeNodeIds]);
 
     // Handle Window Resize
     useEffect(() => {
@@ -1865,8 +2082,58 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     // Key handlers
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (target?.isContentEditable || ['input', 'textarea', 'select'].includes(target?.tagName?.toLowerCase() ?? '')) return;
             const key = e.key.toLowerCase();
-            if (key === 'q') {
+            if ((e.ctrlKey || e.metaKey) && key === 'z') {
+                e.preventDefault();
+                const state = e.shiftKey ? historyRef.current.redo.pop() : historyRef.current.undo.pop();
+                if (!state) return;
+                if (e.shiftKey) historyRef.current.undo.push(structuredClone({ nodes, wires }));
+                else historyRef.current.redo.push(structuredClone({ nodes, wires }));
+                restoreHistoryState(state);
+            } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
+                e.preventDefault();
+                const state = historyRef.current.redo.pop();
+                if (!state) return;
+                historyRef.current.undo.push(structuredClone({ nodes, wires }));
+                restoreHistoryState(state);
+            } else if ((e.ctrlKey || e.metaKey) && key === 'c') {
+                e.preventDefault();
+                const state = makeSelectionState();
+                if (state.nodes.length > 0) clipboardRef.current = structuredClone(state);
+            } else if ((e.ctrlKey || e.metaKey) && key === 'v') {
+                e.preventDefault();
+                const source = clipboardRef.current;
+                if (!source || source.nodes.length === 0) return;
+                const idMap = new Map<string, string>();
+                source.nodes.forEach((node) => idMap.set(node.id, crypto.randomUUID()));
+                const centerX = Math.round(((window.innerWidth / 2 - offset.x) / scale) / GRID_SIZE);
+                const centerY = Math.round(((window.innerHeight / 2 - offset.y) / scale) / GRID_SIZE);
+                const pastedNodes = source.nodes.map((node) => ({
+                    ...structuredClone(node),
+                    id: idMap.get(node.id)!,
+                    x: centerX + node.x + 2,
+                    y: centerY + node.y + 2,
+                    locked: false,
+                }));
+                const pastedWires = source.wires.map((wire) => ({
+                    ...structuredClone(wire),
+                    id: crypto.randomUUID(),
+                    startNodeId: idMap.get(wire.startNodeId) ?? wire.startNodeId,
+                    endNodeId: idMap.get(wire.endNodeId) ?? wire.endNodeId,
+                    path: wire.path.map((point) => ({ x: centerX + point.x + 2, y: centerY + point.y + 2 })),
+                }));
+                setNodes((previous) => [...previous, ...pastedNodes]);
+                setWires((previous) => [...previous, ...pastedWires]);
+                setSelectedNodeIds(new Set(pastedNodes.map((node) => node.id)));
+            } else if (key.startsWith('arrow') && selectedNodeIds.size > 0) {
+                e.preventDefault();
+                const amount = e.shiftKey ? 4 : 1;
+                const deltaX = key === 'arrowleft' ? -amount : key === 'arrowright' ? amount : 0;
+                const deltaY = key === 'arrowup' ? -amount : key === 'arrowdown' ? amount : 0;
+                setNodes((previous) => previous.map((node) => selectedNodeIds.has(node.id) && !node.locked ? { ...node, x: node.x + deltaX, y: node.y + deltaY } : node));
+            } else if (key === 'q') {
                 onToolClear();
             } else if (key === 'r') {
                 onToolRotate?.();
@@ -1876,7 +2143,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [onToolClear, onToolRotate, onToolToggleType]);
+    }, [onToolClear, onToolRotate, onToolToggleType, nodes, wires, selectedNodeIds, offset, scale]);
 
     useEffect(() => {
         const isEditableTarget = (target: EventTarget | null) => {

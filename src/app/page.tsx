@@ -9,8 +9,14 @@ import VariantSelector from "@/components/VariantSelector";
 import SettingsModal from "@/components/SettingsModal";
 import Stage2Panel from "@/components/Stage2Panel";
 import TutorialOverlay from "@/components/TutorialOverlay";
+import LogicFarmModal from "@/components/LogicFarmModal";
+import LogicExchangeModal from "@/components/LogicExchangeModal";
+import StoryDialog from "@/components/StoryDialog";
+import CircuitWorkbench from "@/components/CircuitWorkbench";
 import levels from "@/data/levels.json";
 import { getStage2LevelConfig } from "@/data/stage2";
+import { getFarmCrop } from "@/data/farm";
+import { STAGE2_STORIES } from "@/data/story";
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Tool } from '@/types/game';
 import { SaveSystem, LevelState, SaveData } from '@/lib/saveSystem';
@@ -18,7 +24,7 @@ import { NodeData } from '@/types/game';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTutorial } from '@/contexts/TutorialContext';
 import { TranslationKey } from '@/data/translations';
-import { Stage2MetaProgress, TheoremChipInventoryEntry, createDefaultStage2MetaProgress } from '@/types/stage2';
+import { FarmCropId, Stage2MetaProgress, TheoremChipInventoryEntry, createDefaultStage2MetaProgress } from '@/types/stage2';
 
 interface Level {
   id: string;
@@ -123,6 +129,8 @@ export default function Home() {
   const [stage2Progress, setStage2Progress] = useState<Stage2MetaProgress>(createDefaultStage2MetaProgress());
   const [showStage2Intro, setShowStage2Intro] = useState(false);
   const [selectedStage2IslandId, setSelectedStage2IslandId] = useState<string | null>(null);
+  const [showLogicFarm, setShowLogicFarm] = useState(false);
+  const [showLogicExchange, setShowLogicExchange] = useState(false);
   const stage2IntroShownKeyRef = useRef<string | null>(null);
 
   const currentLevel = levels[currentLevelIndex] as Level;
@@ -130,6 +138,11 @@ export default function Home() {
     () => getStage2LevelConfig(currentLevel.id, 42),
     [currentLevel.id]
   );
+  const activeStoryScene = useMemo(() => {
+    const storyId = stage2Config?.storyId;
+    if (!storyId || stage2Progress.seenStoryIds.includes(storyId)) return null;
+    return STAGE2_STORIES[storyId] ?? null;
+  }, [stage2Config?.storyId, stage2Progress.seenStoryIds]);
   const stage2GoalIslands = useMemo(() => {
     if (!stage2Config) return [];
     return stage2Config.goalIslandIds
@@ -216,10 +229,11 @@ export default function Home() {
     return tileSet;
   }, [effectiveUnlockedIslandIds, stage2Config]);
 
-  const readTheoremUiStateFromStorage = (): Pick<SaveData, 'theoremLibrary' | 'theoremToolbarPins'> => {
+  const readTheoremUiStateFromStorage = (): Pick<SaveData, 'theoremLibrary' | 'theoremToolbarPins' | 'blueprints'> => {
     if (typeof window === 'undefined') return {};
     let theoremLibrary: SaveData['theoremLibrary'] | undefined;
     let theoremToolbarPins: SaveData['theoremToolbarPins'] | undefined;
+    let blueprints: SaveData['blueprints'] | undefined;
     try {
       const raw = localStorage.getItem('logic_game_theorem_library_tree_v1');
       if (raw) {
@@ -240,7 +254,15 @@ export default function Home() {
       }
     } catch {
     }
-    return { theoremLibrary, theoremToolbarPins };
+    try {
+      const rawBlueprints = localStorage.getItem('logic_game_blueprints_v1');
+      if (rawBlueprints) {
+        const parsed = JSON.parse(rawBlueprints) as unknown;
+        if (Array.isArray(parsed)) blueprints = parsed as SaveData['blueprints'];
+      }
+    } catch {
+    }
+    return { theoremLibrary, theoremToolbarPins, blueprints };
   };
 
   const buildSaveData = (
@@ -249,6 +271,7 @@ export default function Home() {
     metaProgress: Stage2MetaProgress,
     levelStartStates: Record<number, { levelState: LevelState; metaProgress: Stage2MetaProgress }>
   ): SaveData => ({
+    version: 2,
     timestamp: Date.now(),
     levelIndex,
     levelStates,
@@ -259,13 +282,16 @@ export default function Home() {
 
   const applyTheoremLibraryFromSave = (saved: SaveData) => {
     if (typeof window === 'undefined') return;
-    if (!saved.theoremLibrary && !saved.theoremToolbarPins) return;
+    if (!saved.theoremLibrary && !saved.theoremToolbarPins && !saved.blueprints) return;
     try {
       if (saved.theoremLibrary) {
         localStorage.setItem('logic_game_theorem_library_tree_v1', JSON.stringify(saved.theoremLibrary));
       }
       if (saved.theoremToolbarPins) {
         localStorage.setItem('logic_game_theorem_toolbar_pins_v1', JSON.stringify(saved.theoremToolbarPins));
+      }
+      if (saved.blueprints) {
+        localStorage.setItem('logic_game_blueprints_v1', JSON.stringify(saved.blueprints));
       }
       window.dispatchEvent(new Event('logic_game_save_loaded'));
     } catch {
@@ -348,7 +374,7 @@ export default function Home() {
           const dist = Math.abs(dx) + Math.abs(dy);
           if (dist === 0 || dist > 3) continue;
           const id = makeIslandId(parsed.cx + dx, parsed.cy + dy);
-          if (unlockedSet.has(id)) continue;
+          if (unlockedSet.has(id) || !stage2Config.goalIslandIds.includes(id)) continue;
           candidates.push({ id, dist });
         }
       }
@@ -356,13 +382,67 @@ export default function Home() {
       candidates.slice(0, 2).forEach((c) => unlockedSet.add(c.id));
     }
 
+    const isMainIsland = completedIsland.id === stage2Config.focusIslandId;
+    const unlocksFarm = isMainIsland && stage2Config.unlockFarmOnComplete;
+    const unlocksQuickMp = isMainIsland && stage2Config.unlockQuickMpOnComplete;
+
     return {
       ...baseProgress,
       coins: baseProgress.coins + (completedIsland.rewardCoins ?? 0),
+      insight: baseProgress.insight + (isMainIsland ? (stage2Config.insightReward ?? 0) : 0),
       unlockedIslandIds: Array.from(unlockedSet),
       completedIslandIds: [...baseProgress.completedIslandIds, completedIsland.id],
       collectedTheorems: nextCollectedTheorems,
+      farm: unlocksFarm ? { ...baseProgress.farm, unlocked: true } : baseProgress.farm,
+      quickMpUnlocked: baseProgress.quickMpUnlocked || Boolean(unlocksQuickMp),
+      quickMpUses: baseProgress.quickMpUses + (unlocksQuickMp && !baseProgress.quickMpUnlocked ? 3 : 0),
     };
+  };
+
+  const handlePlantCrop = (plotId: string, cropId: FarmCropId) => {
+    const crop = getFarmCrop(cropId);
+    if (!crop) return;
+    setStage2Progress((previous) => {
+      if (!previous.farm.unlocked || previous.coins < crop.seedCost) return previous;
+      const plot = previous.farm.plots.find((item) => item.id === plotId);
+      if (!plot || plot.cropId) return previous;
+      const plantedAt = Date.now();
+      return {
+        ...previous,
+        coins: previous.coins - crop.seedCost,
+        farm: {
+          ...previous.farm,
+          plots: previous.farm.plots.map((item) => item.id === plotId
+            ? { ...item, cropId, plantedAt, readyAt: plantedAt + crop.growMs }
+            : item),
+        },
+      };
+    });
+  };
+
+  const handleHarvestCrop = (plotId: string) => {
+    setStage2Progress((previous) => {
+      const plot = previous.farm.plots.find((item) => item.id === plotId);
+      const crop = getFarmCrop(plot?.cropId);
+      if (!plot || !crop || !plot.readyAt || Date.now() < plot.readyAt) return previous;
+      return {
+        ...previous,
+        coins: previous.coins + crop.coinYield,
+        insight: previous.insight + crop.insightYield,
+        farm: {
+          ...previous.farm,
+          harvestedCount: previous.farm.harvestedCount + 1,
+          plots: previous.farm.plots.map((item) => item.id === plotId ? { id: item.id } : item),
+        },
+      };
+    });
+  };
+
+  const handleBuyQuickMp = (uses: number, coinCost: number) => {
+    setStage2Progress((previous) => {
+      if (!previous.quickMpUnlocked || previous.coins < coinCost) return previous;
+      return { ...previous, coins: previous.coins - coinCost, quickMpUses: previous.quickMpUses + uses };
+    });
   };
 
   useEffect(() => {
@@ -939,6 +1019,12 @@ export default function Home() {
       }
     }
 
+    if (node.type === 'quick-mp') {
+      if (stage2Progress.quickMpUnlocked && stage2Progress.quickMpUses > 0) return true;
+      alert(language === 'zh' ? '简化版 MP 次数不足，请前往证明交易所购买。' : 'No Simplified MP uses remain. Visit the Proof Exchange.');
+      return false;
+    }
+
     if (!node.theoremId) return true;
 
     const theorem = stage2Progress.collectedTheorems[node.theoremId];
@@ -951,6 +1037,11 @@ export default function Home() {
   };
 
   const handleNodePlaced = (node: NodeData) => {
+    if (node.type === 'quick-mp') {
+      setStage2Progress((previous) => ({ ...previous, quickMpUses: Math.max(0, previous.quickMpUses - 1) }));
+      if (stage2Progress.quickMpUses <= 1) setActiveTool(null);
+      return;
+    }
     if (!node.theoremId) return;
 
     const theorem = stage2Progress.collectedTheorems[node.theoremId];
@@ -987,7 +1078,7 @@ export default function Home() {
   return (
     <main className="w-screen h-screen overflow-hidden relative">
       <InfiniteCanvas 
-        key={stage2Config ? `stage2-42` : currentLevel.id}
+        key={stage2Config ? `${stage2Config.levelId}-42` : currentLevel.id}
         ref={canvasRef}
         activeTool={activeTool} 
         selectMode={selectMode}
@@ -1006,6 +1097,44 @@ export default function Home() {
         selectedStage2IslandId={selectedStage2IslandId}
       />
 
+      {activeStoryScene && (
+        <StoryDialog
+          key={activeStoryScene.id}
+          scene={activeStoryScene}
+          language={language}
+          onComplete={() => setStage2Progress((previous) => ({
+            ...previous,
+            seenStoryIds: previous.seenStoryIds.includes(activeStoryScene.id)
+              ? previous.seenStoryIds
+              : [...previous.seenStoryIds, activeStoryScene.id],
+          }))}
+        />
+      )}
+
+      {showLogicFarm && (
+        <LogicFarmModal
+          language={language}
+          progress={stage2Progress.farm}
+          coins={stage2Progress.coins}
+          insight={stage2Progress.insight}
+          onPlant={handlePlantCrop}
+          onHarvest={handleHarvestCrop}
+          onClose={() => setShowLogicFarm(false)}
+        />
+      )}
+
+      {showLogicExchange && (
+        <LogicExchangeModal
+          language={language}
+          coins={stage2Progress.coins}
+          insight={stage2Progress.insight}
+          quickMpUnlocked={stage2Progress.quickMpUnlocked}
+          quickMpUses={stage2Progress.quickMpUses}
+          onBuyQuickMp={handleBuyQuickMp}
+          onClose={() => setShowLogicExchange(false)}
+        />
+      )}
+
       {stage2Config && (
         <Stage2Panel
           config={stage2Config}
@@ -1023,9 +1152,43 @@ export default function Home() {
         activeTool={activeTool} 
         onSelectVariant={handleToolSetType} 
       />
+
+      <CircuitWorkbench
+        language={language}
+        onUndo={() => canvasRef.current?.undo() ?? false}
+        onRedo={() => canvasRef.current?.redo() ?? false}
+        onCopy={() => canvasRef.current?.copySelection() ?? 0}
+        onPaste={() => canvasRef.current?.pasteSelection() ?? 0}
+        onArrange={() => canvasRef.current?.autoArrangeSelection() ?? 0}
+        onAlign={(axis) => canvasRef.current?.alignSelection(axis) ?? 0}
+        onDistribute={(axis) => canvasRef.current?.distributeSelection(axis) ?? 0}
+        onAnnotate={(note) => canvasRef.current?.annotateSelection(note) ?? 0}
+        onTrace={() => canvasRef.current?.traceGoalDependencies() ?? 0}
+        onToggleFocus={() => canvasRef.current?.toggleFocusMode() ?? false}
+        getSelectionState={() => canvasRef.current?.getSelectionState() ?? { nodes: [], wires: [] }}
+        onInsertBlueprint={(state) => canvasRef.current?.insertBlueprint(state) ?? 0}
+      />
       
       {/* Save Button */}
       <div className="absolute top-4 right-4 z-50 flex flex-row items-center gap-2">
+          {stage2Config && stage2Progress.farm.unlocked && (
+            <button
+              className="game-tool flex h-10 items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-950/85 px-3 font-bold text-emerald-200 shadow-lg hover:bg-emerald-900"
+              onClick={() => setShowLogicFarm(true)}
+              title={language === 'zh' ? '逻辑农场' : 'Logic Farm'}
+            >
+              <span aria-hidden="true">🌱</span><span className="hidden xl:inline">{language === 'zh' ? '农场' : 'Farm'}</span>
+            </button>
+          )}
+          {stage2Config && (
+            <button
+              className="game-tool flex h-10 items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-950/85 px-3 font-bold text-violet-200 shadow-lg hover:bg-violet-900"
+              onClick={() => setShowLogicExchange(true)}
+              title={language === 'zh' ? '证明交易所' : 'Proof Exchange'}
+            >
+              <span aria-hidden="true">✦</span><span className="hidden xl:inline">{stage2Progress.insight}</span>
+            </button>
+          )}
           <button 
               className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => {
@@ -1368,11 +1531,13 @@ export default function Home() {
                 'atom:R',
                 ...(stage2Config?.levelId !== 'level-11' ? ['atom:S', 'atom:T'] : []),
                 'gate:implies',
-                'gate:not',
+                ...(isFreeBuild || (stage2Config?.chapterLevel ?? 0) >= 5 ? ['gate:not'] : []),
+                ...(isFreeBuild || (stage2Config?.chapterLevel ?? 0) >= 10 ? ['gate:and'] : []),
                 'axiom:1',
                 'axiom:2',
                 'axiom:3',
                 'mp',
+                ...(stage2Progress.quickMpUnlocked ? ['quick-mp'] : []),
                 'bridge',
                 'display:small',
                 'display:large',
@@ -1382,6 +1547,8 @@ export default function Home() {
         theoremInventory={stage2Config ? resolvedTheoremInventory : []}
         recommendedTheoremIds={stage2Config?.recommendedTheoremIds ?? []}
         coins={stage2Progress.coins}
+        quickMpUnlocked={stage2Progress.quickMpUnlocked}
+        quickMpUses={stage2Progress.quickMpUses}
       />
       <TutorialOverlay />
     </main>

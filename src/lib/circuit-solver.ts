@@ -787,6 +787,12 @@ function computeNodeOutput(
             if (in0 instanceof Formula && in1 instanceof Formula) {
                  return new Implies(in0, in1);
             }
+        } else if (node.subType === 'and') {
+            const in0 = getInput('in0');
+            const in1 = getInput('in1');
+            if (in0 instanceof Formula && in1 instanceof Formula) {
+                return new And(in0, in1);
+            }
         }
     }
 
@@ -820,6 +826,20 @@ function computeNodeOutput(
             in2 instanceof Provable && in3 instanceof Provable) {
             return checkModusPonens(in0, in1, in2, in3);
         }
+    }
+
+    if (node.type === 'quick-mp') {
+        const first = getInput('in0');
+        const second = getInput('in1');
+        if (!(first instanceof Provable) || !(second instanceof Provable)) return null;
+
+        const detach = (minor: Provable, major: Provable) => {
+            if (!(major.formula instanceof Implies)) return null;
+            if (!major.formula.left.equals(minor.formula)) return null;
+            return new Provable(major.formula.right);
+        };
+
+        return detach(first, second) ?? detach(second, first);
     }
 
     if (node.type === 'theorem') {
@@ -966,4 +986,3 @@ function isEqual(a: unknown, b: unknown): boolean {
 
 // --- Geometry Helpers ---
 // getNodePorts and getAbsolutePortPosition are now imported from ./gameUtils
-

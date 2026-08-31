@@ -7,6 +7,16 @@ export interface LevelState {
     wires: Wire[];
 }
 
+export interface CircuitBlueprint {
+    id: string;
+    name: string;
+    description?: string;
+    createdAt: number;
+    nodes: NodeData[];
+    wires: Wire[];
+    tags: string[];
+}
+
 export type TheoremFolderNode = {
     id: string;
     name: string;
@@ -20,6 +30,7 @@ export type TheoremLibrarySaveState = {
 };
 
 export interface SaveData {
+    version?: 2;
     timestamp: number;
     levelIndex: number;
     levelStates: Record<number, LevelState>; // Store state for each level index
@@ -27,6 +38,7 @@ export interface SaveData {
     theoremLibrary?: TheoremLibrarySaveState;
     theoremToolbarPins?: Array<string | null>;
     levelStartStates?: Record<number, { levelState: LevelState, metaProgress: Stage2MetaProgress }>;
+    blueprints?: CircuitBlueprint[];
 }
 
 const STORAGE_KEY_PREFIX = 'logic_game_save_';
@@ -34,29 +46,40 @@ const AUTO_SAVE_KEY = 'logic_game_autosave';
 
 export const SaveSystem = {
     createEmptySave: (): SaveData => ({
+        version: 2,
         timestamp: Date.now(),
         levelIndex: 0,
         levelStates: {},
         metaProgress: createDefaultStage2MetaProgress(),
+        blueprints: [],
     }),
 
     normalizeSaveData: (data: Partial<SaveData> | null): SaveData | null => {
         if (!data) return null;
         const baseSeed = 42; // Fixed map seed for everyone
+        const defaultMeta = createDefaultStage2MetaProgress(baseSeed);
+        const savedMeta = data.metaProgress;
         return {
+            version: 2,
             timestamp: data.timestamp ?? Date.now(),
             levelIndex: data.levelIndex ?? 0,
             levelStates: data.levelStates ?? {},
-            metaProgress: data.metaProgress
+            metaProgress: savedMeta
                 ? {
-                      ...createDefaultStage2MetaProgress(baseSeed),
-                      ...data.metaProgress,
+                      ...defaultMeta,
+                      ...savedMeta,
+                      farm: {
+                          ...defaultMeta.farm,
+                          ...(savedMeta.farm ?? {}),
+                          plots: savedMeta.farm?.plots?.length ? savedMeta.farm.plots : defaultMeta.farm.plots,
+                      },
                       mapSeed: baseSeed, // Always force fixed map seed
                   }
-                : createDefaultStage2MetaProgress(baseSeed),
+                : defaultMeta,
             theoremLibrary: data.theoremLibrary,
             theoremToolbarPins: data.theoremToolbarPins,
             levelStartStates: data.levelStartStates ?? {},
+            blueprints: data.blueprints ?? [],
         };
     },
 

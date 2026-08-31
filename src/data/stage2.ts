@@ -384,6 +384,9 @@ const createLevel11 = (mapSeed: number): Stage2LevelConfig => {
         initialUnlockedIslandIds,
         recommendedTheoremIds: ['a1i', 'a2i', 'mpd'],
         goalIslandIds,
+        storyId: 'stage2-1',
+        insightReward: 1,
+        metamathSourceUrl: 'https://us.metamath.org/mpeuni/mmtheorems1.html',
     };
 };
 
@@ -492,11 +495,217 @@ const createLevel12 = (mapSeed: number): Stage2LevelConfig => {
         initialUnlockedIslandIds,
         recommendedTheoremIds: ['a1d', 'sylcom', 'syl5com'],
         goalIslandIds,
+        storyId: 'stage2-2',
+        insightReward: 2,
+        metamathSourceUrl: 'https://us.metamath.org/mpeuni/mmtheorems1.html',
+    };
+};
+
+type ChapterIslandSpec = {
+    cx: number;
+    cy: number;
+    theoremId: string;
+    category: Stage2IslandCategory;
+    goal: string;
+    premises: string[];
+    cost: number;
+    rewardCoins: number;
+    initiallyUnlocked?: boolean;
+};
+
+type ChapterDefinition = {
+    levelId: string;
+    chapterLevel: number;
+    introText: string;
+    islands: ChapterIslandSpec[];
+    recommendedTheoremIds: string[];
+    storyId: string;
+    insightReward: number;
+    unlockFarmOnComplete?: boolean;
+    unlockQuickMpOnComplete?: boolean;
+    newSymbols?: Array<'not' | 'and' | 'or' | 'equiv'>;
+    sourcePage: 1 | 2;
+};
+
+const chapterDefinitions: ChapterDefinition[] = [
+    {
+        levelId: 'level-13',
+        chapterLevel: 3,
+        introText: 'Carry implications through nested antecedents. Compare several syllogism variants before choosing a route.',
+        storyId: 'stage2-3',
+        insightReward: 2,
+        sourcePage: 1,
+        recommendedTheoremIds: ['syl5', 'mpcom', 'syli'],
+        islands: [
+            { cx: 0, cy: -8, theoremId: 'syl6', category: 'main', goal: '|-(P->(Q->S))', premises: ['|-(P->(Q->R))', '|-(R->S)'], cost: 34, rewardCoins: 90 },
+            { cx: -2, cy: -8, theoremId: 'syl5', category: 'support', goal: '|-(R->(P->S))', premises: ['|-(P->Q)', '|-(R->(Q->S))'], cost: 30, rewardCoins: 54 },
+            { cx: 2, cy: -8, theoremId: 'mpcom', category: 'support', goal: '|-(Q->R)', premises: ['|-(Q->P)', '|-(P->(Q->R))'], cost: 28, rewardCoins: 52 },
+            { cx: 0, cy: -10, theoremId: 'syli', category: 'optional', goal: '|-(Q->(P->S))', premises: ['|-(Q->(P->R))', '|-(R->(P->S))'], cost: 32, rewardCoins: 58, initiallyUnlocked: false },
+        ],
+    },
+    {
+        levelId: 'level-14',
+        chapterLevel: 4,
+        introText: 'Repeated antecedents can be contracted. Restore the abandoned Logic Farm after completing the main island.',
+        storyId: 'stage2-4',
+        insightReward: 3,
+        unlockFarmOnComplete: true,
+        sourcePage: 1,
+        recommendedTheoremIds: ['imim2d', 'pm2.43a', 'pm2.43b'],
+        islands: [
+            { cx: 0, cy: -12, theoremId: 'pm2.43i', category: 'main', goal: '|-(P->Q)', premises: ['|-(P->(P->Q))'], cost: 36, rewardCoins: 110 },
+            { cx: -2, cy: -12, theoremId: 'imim2d', category: 'support', goal: '|-(P->((S->Q)->(S->R)))', premises: ['|-(P->(Q->R))'], cost: 32, rewardCoins: 62 },
+            { cx: 2, cy: -12, theoremId: 'pm2.43a', category: 'support', goal: '|-(Q->(P->R))', premises: ['|-(Q->(P->(Q->R)))'], cost: 30, rewardCoins: 58 },
+            { cx: 0, cy: -14, theoremId: 'pm2.43b', category: 'optional', goal: '|-(P->(Q->R))', premises: ['|-(Q->(P->(Q->R)))'], cost: 30, rewardCoins: 60, initiallyUnlocked: false },
+        ],
+    },
+    {
+        levelId: 'level-15',
+        chapterLevel: 5,
+        introText: 'Negation becomes a first-class tool. Prove the Duns Scotus law while your first logic crops grow.',
+        storyId: 'stage2-5',
+        insightReward: 3,
+        newSymbols: ['not'],
+        sourcePage: 2,
+        recommendedTheoremIds: ['pm2.24', 'con4'],
+        islands: [
+            { cx: 0, cy: -16, theoremId: 'pm2.21', category: 'main', goal: '|-(-.P->(P->Q))', premises: [], cost: 42, rewardCoins: 120 },
+            { cx: -2, cy: -16, theoremId: 'pm2.24', category: 'support', goal: '|-(P->(-.P->Q))', premises: [], cost: 40, rewardCoins: 70 },
+            { cx: 2, cy: -16, theoremId: 'con4', category: 'support', goal: '|-((-.P->-.Q)->(Q->P))', premises: [], cost: 44, rewardCoins: 76 },
+            { cx: 0, cy: -18, theoremId: 'jarl', category: 'optional', goal: '|-(((P->Q)->R)->(-.P->R))', premises: [], cost: 46, rewardCoins: 82, initiallyUnlocked: false },
+        ],
+    },
+    {
+        levelId: 'level-16',
+        chapterLevel: 6,
+        introText: 'Follow failed conclusions backward. This chapter develops the practical forms of contraposition.',
+        storyId: 'stage2-6',
+        insightReward: 4,
+        sourcePage: 2,
+        recommendedTheoremIds: ['con1i', 'pm2.24i', 'con3'],
+        islands: [
+            { cx: 0, cy: -20, theoremId: 'con3i', category: 'main', goal: '|-(-.Q->-.P)', premises: ['|-(P->Q)'], cost: 44, rewardCoins: 130 },
+            { cx: -2, cy: -20, theoremId: 'con1i', category: 'support', goal: '|-(-.Q->P)', premises: ['|-(-.P->Q)'], cost: 38, rewardCoins: 72 },
+            { cx: 2, cy: -20, theoremId: 'pm2.24i', category: 'support', goal: '|-(-.P->Q)', premises: ['|-P'], cost: 36, rewardCoins: 68 },
+            { cx: 0, cy: -22, theoremId: 'con3', category: 'optional', goal: '|-((P->Q)->(-.Q->-.P))', premises: [], cost: 48, rewardCoins: 88, initiallyUnlocked: false },
+        ],
+    },
+    {
+        levelId: 'level-17',
+        chapterLevel: 7,
+        introText: 'Apply modus tollens, then claim the Simplified MP engine that can infer formula ports automatically.',
+        storyId: 'stage2-7',
+        insightReward: 5,
+        unlockQuickMpOnComplete: true,
+        sourcePage: 2,
+        recommendedTheoremIds: ['mt3i', 'con3rr3'],
+        islands: [
+            { cx: 0, cy: -24, theoremId: 'mto', category: 'main', goal: '|-(-.P)', premises: ['|-(-.Q)', '|-(P->Q)'], cost: 48, rewardCoins: 150 },
+            { cx: -2, cy: -24, theoremId: 'mt3i', category: 'support', goal: '|-(P->Q)', premises: ['|-(-.R)', '|-(P->(-.Q->R))'], cost: 42, rewardCoins: 80 },
+            { cx: 2, cy: -24, theoremId: 'con3rr3', category: 'support', goal: '|-(-.R->(P->-.Q))', premises: ['|-(P->(Q->R))'], cost: 40, rewardCoins: 78 },
+            { cx: 0, cy: -26, theoremId: 'mt3d', category: 'optional', goal: '|-(P->Q)', premises: ['|-(P->-.R)', '|-(P->(-.Q->R))'], cost: 46, rewardCoins: 86, initiallyUnlocked: false },
+        ],
+    },
+    {
+        levelId: 'level-18',
+        chapterLevel: 8,
+        introText: 'Use the Clavius law to close a contradiction loop. Simplified MP is now available when charged.',
+        storyId: 'stage2-8',
+        insightReward: 5,
+        sourcePage: 2,
+        recommendedTheoremIds: ['pm2.18', 'pm2.21i', 'jarl'],
+        islands: [
+            { cx: 0, cy: -28, theoremId: 'pm2.18i', category: 'main', goal: '|-P', premises: ['|-(-.P->P)'], cost: 50, rewardCoins: 170 },
+            { cx: -2, cy: -28, theoremId: 'pm2.18', category: 'support', goal: '|-((-.P->P)->P)', premises: [], cost: 48, rewardCoins: 90 },
+            { cx: 2, cy: -28, theoremId: 'pm2.21i', category: 'support', goal: '|-(P->Q)', premises: ['|-(-.P)'], cost: 40, rewardCoins: 84 },
+            { cx: 0, cy: -30, theoremId: 'jarr', category: 'optional', goal: '|-(((P->Q)->R)->(Q->R))', premises: [], cost: 48, rewardCoins: 92, initiallyUnlocked: false },
+        ],
+    },
+    {
+        levelId: 'level-19',
+        chapterLevel: 9,
+        introText: 'Carry negated conclusions through shared antecedents and repair the fracture in Aurelia’s halo.',
+        storyId: 'stage2-9',
+        insightReward: 6,
+        sourcePage: 2,
+        recommendedTheoremIds: ['nsyli', 'nsyl4', 'nsyl5'],
+        islands: [
+            { cx: 0, cy: -32, theoremId: 'con3d', category: 'main', goal: '|-(P->(-.R->-.Q))', premises: ['|-(P->(Q->R))'], cost: 54, rewardCoins: 190 },
+            { cx: -2, cy: -32, theoremId: 'nsyli', category: 'support', goal: '|-(P->(S->-.Q))', premises: ['|-(P->(Q->R))', '|-(S->-.R)'], cost: 48, rewardCoins: 96 },
+            { cx: 2, cy: -32, theoremId: 'nsyl4', category: 'support', goal: '|-(-.R->Q)', premises: ['|-(P->Q)', '|-(-.P->R)'], cost: 46, rewardCoins: 92 },
+            { cx: 0, cy: -34, theoremId: 'nsyl5', category: 'optional', goal: '|-(-.Q->R)', premises: ['|-(P->Q)', '|-(-.P->R)'], cost: 46, rewardCoins: 94, initiallyUnlocked: false },
+        ],
+    },
+    {
+        levelId: 'level-20',
+        chapterLevel: 10,
+        introText: 'Second-stage boss: transform an encoded conjunction into nested assumptions and open the gate to derived connectives.',
+        storyId: 'stage2-10',
+        insightReward: 10,
+        newSymbols: ['and'],
+        sourcePage: 2,
+        recommendedTheoremIds: ['impi', 'expi', 'jc'],
+        islands: [
+            { cx: 0, cy: -36, theoremId: 'expt', category: 'main', goal: '|-((¬(P->¬Q)->R)->(P->(Q->R)))', premises: [], cost: 70, rewardCoins: 260 },
+            { cx: -2, cy: -36, theoremId: 'impi', category: 'support', goal: '|-(¬(P->¬Q)->R)', premises: ['|-(P->(Q->R))'], cost: 54, rewardCoins: 110 },
+            { cx: 2, cy: -36, theoremId: 'expi', category: 'support', goal: '|-(P->(Q->R))', premises: ['|-(¬(P->¬Q)->R)'], cost: 54, rewardCoins: 110 },
+            { cx: 0, cy: -38, theoremId: 'jc', category: 'optional', goal: '|-(P->¬(Q->¬R))', premises: ['|-(P->Q)', '|-(P->R)'], cost: 56, rewardCoins: 120, initiallyUnlocked: false },
+        ],
+    },
+];
+
+const createConfiguredChapter = (mapSeed: number, definition: ChapterDefinition): Stage2LevelConfig => {
+    const metaById = new Map<string, IslandMeta>();
+    for (const island of definition.islands) {
+        const id = makeIslandId(island.cx, island.cy);
+        metaById.set(id, {
+            name: island.theoremId,
+            category: island.category,
+            descriptionKey: island.category === 'main' ? 'stage2-island-desc-main' : 'stage2-island-desc-support',
+            goalFormula: island.goal,
+            premiseFormulas: island.premises,
+            rewardCoins: island.rewardCoins,
+            rewardTheorem: {
+                theoremId: island.theoremId,
+                name: island.theoremId,
+                formula: island.goal,
+                premises: island.premises,
+                cost: island.cost,
+            },
+        });
+    }
+
+    const world = createStage2World(mapSeed, metaById);
+    const main = definition.islands.find((island) => island.category === 'main') ?? definition.islands[0];
+    const goalIslandIds = definition.islands.map((island) => makeIslandId(island.cx, island.cy));
+    const initialUnlockedIslandIds = definition.islands
+        .filter((island) => island.initiallyUnlocked !== false)
+        .map((island) => makeIslandId(island.cx, island.cy));
+
+    return {
+        levelId: definition.levelId,
+        stageNumber: 2,
+        chapterLevel: definition.chapterLevel,
+        focusIslandId: makeIslandId(main.cx, main.cy),
+        introTitle: `Stage 2 / Chapter ${definition.chapterLevel}`,
+        introText: definition.introText,
+        world,
+        initialUnlockedIslandIds,
+        recommendedTheoremIds: definition.recommendedTheoremIds,
+        goalIslandIds,
+        storyId: definition.storyId,
+        unlockFarmOnComplete: definition.unlockFarmOnComplete,
+        unlockQuickMpOnComplete: definition.unlockQuickMpOnComplete,
+        insightReward: definition.insightReward,
+        newSymbols: definition.newSymbols,
+        metamathSourceUrl: `https://us.metamath.org/mpeuni/mmtheorems${definition.sourcePage}.html`,
     };
 };
 
 export const getStage2LevelConfig = (levelId: string, mapSeed: number = 0): Stage2LevelConfig | undefined => {
     if (levelId === 'level-11') return createLevel11(mapSeed);
     if (levelId === 'level-12') return createLevel12(mapSeed);
+    const configuredChapter = chapterDefinitions.find((definition) => definition.levelId === levelId);
+    if (configuredChapter) return createConfiguredChapter(mapSeed, configuredChapter);
     return undefined;
 };

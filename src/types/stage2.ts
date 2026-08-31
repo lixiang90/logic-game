@@ -73,6 +73,27 @@ export interface Stage2LevelConfig {
     initialUnlockedIslandIds: string[];
     recommendedTheoremIds: string[];
     goalIslandIds: string[];
+    storyId?: string;
+    unlockFarmOnComplete?: boolean;
+    unlockQuickMpOnComplete?: boolean;
+    insightReward?: number;
+    newSymbols?: Array<'not' | 'and' | 'or' | 'equiv'>;
+    metamathSourceUrl?: string;
+}
+
+export type FarmCropId = 'axiom-wheat' | 'implication-vine' | 'contradiction-berry' | 'theorem-lotus';
+
+export interface FarmPlotState {
+    id: string;
+    cropId?: FarmCropId;
+    plantedAt?: number;
+    readyAt?: number;
+}
+
+export interface LogicFarmProgress {
+    unlocked: boolean;
+    plots: FarmPlotState[];
+    harvestedCount: number;
 }
 
 export interface Stage2MetaProgress {
@@ -81,6 +102,11 @@ export interface Stage2MetaProgress {
     unlockedIslandIds: string[];
     completedIslandIds: string[];
     collectedTheorems: Record<string, TheoremChipInventoryEntry>;
+    insight: number;
+    farm: LogicFarmProgress;
+    quickMpUnlocked: boolean;
+    quickMpUses: number;
+    seenStoryIds: string[];
 }
 
 export const createDefaultStage2MetaProgress = (seed?: number): Stage2MetaProgress => ({
@@ -89,4 +115,13 @@ export const createDefaultStage2MetaProgress = (seed?: number): Stage2MetaProgre
     unlockedIslandIds: [],
     completedIslandIds: [],
     collectedTheorems: {},
+    insight: 0,
+    farm: {
+        unlocked: false,
+        plots: Array.from({ length: 6 }, (_, index) => ({ id: `plot-${index + 1}` })),
+        harvestedCount: 0,
+    },
+    quickMpUnlocked: false,
+    quickMpUses: 0,
+    seenStoryIds: [],
 });
