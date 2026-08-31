@@ -1549,6 +1549,7 @@ export default function Home() {
         coins={stage2Progress.coins}
         quickMpUnlocked={stage2Progress.quickMpUnlocked}
         quickMpUses={stage2Progress.quickMpUses}
+        useCategoryMenu={Boolean(stage2Config)}
       />
       <TutorialOverlay />
     </main>

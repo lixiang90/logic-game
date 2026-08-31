@@ -19,6 +19,7 @@ interface ToolbarProps {
     coins?: number;
     quickMpUnlocked?: boolean;
     quickMpUses?: number;
+    useCategoryMenu?: boolean;
 }
 
 export default function Toolbar({
@@ -32,6 +33,7 @@ export default function Toolbar({
     coins = 0,
     quickMpUnlocked = false,
     quickMpUses = 0,
+    useCategoryMenu = false,
 }: ToolbarProps) {
     const { t, language } = useLanguage();
     const [showTheoremLibrary, setShowTheoremLibrary] = React.useState(false);
@@ -384,6 +386,7 @@ export default function Toolbar({
     const isPointerActive = activeTool === null && selectMode === 'pointer';
     const isBoxSelectActive = activeTool === null && selectMode === 'box';
     const activeClass = "ring-2 ring-white ring-offset-2 ring-offset-slate-900";
+    const isCategoryVisible = (category: typeof activeToolCategory) => !useCategoryMenu || activeToolCategory === category;
 
     const handleReplacePinnedTheorem = React.useCallback((targetIndex: number, theoremId: string) => {
         setPinnedTheoremIds((prev) => {
@@ -764,30 +767,10 @@ export default function Toolbar({
 
     return (
         <>
-        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur-xl border border-slate-500/50 px-6 py-4 rounded-2xl flex items-end gap-2 shadow-[0_0_40px_-10px_rgba(0,0,0,0.8)] ${showTheoremLibrary ? 'z-[120]' : 'z-50'} pointer-events-auto ring-1 ring-white/10`}>
-            <nav className="mr-2 flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-950/75 p-1" aria-label={language === 'zh' ? '工具分类' : 'Tool categories'}>
-                {([
-                    ['utility', '⌁', language === 'zh' ? '建造' : 'Build'],
-                    ['formula', '◇', language === 'zh' ? '公式' : 'Formula'],
-                    ['proof', '⊢', language === 'zh' ? '证明' : 'Proof'],
-                    ['theorems', '▣', language === 'zh' ? '定理' : 'Theorems'],
-                    ['display', '▤', language === 'zh' ? '显示' : 'Display'],
-                ] as const).map(([id, icon, label]) => (
-                    <button
-                        key={id}
-                        type="button"
-                        onClick={() => setActiveToolCategory(id)}
-                        className={`group relative grid h-11 w-11 place-items-center rounded-lg border text-lg font-black transition ${activeToolCategory === id ? 'border-cyan-300 bg-cyan-400/20 text-cyan-200' : 'border-transparent text-slate-400 hover:border-slate-600 hover:bg-slate-800 hover:text-white'}`}
-                        title={label}
-                    >
-                        {icon}
-                        <span className="pointer-events-none absolute -top-9 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-[10px] font-bold text-slate-200 shadow-lg group-hover:block">{label}</span>
-                    </button>
-                ))}
-            </nav>
-            
+        <div className={`fixed bottom-8 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 rounded-2xl border border-slate-500/50 bg-slate-800/95 px-6 py-4 shadow-[0_0_40px_-10px_rgba(0,0,0,0.8)] backdrop-blur-xl ${showTheoremLibrary ? 'z-[120]' : 'z-50'} pointer-events-auto ring-1 ring-white/10`}>
+            <div className="flex items-end gap-2">
             {/* Tools Group (Pointer & Box Select & Wire) */}
-            <div className={`${activeToolCategory === 'utility' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
+            <div className={`${isCategoryVisible('utility') ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-transparent select-none font-bold uppercase tracking-widest">{t('tools')}</span>
                 </div>
@@ -871,7 +854,7 @@ export default function Toolbar({
                 </div>
             </div>
 
-            {theoremInventoryOrdered.length > 0 && activeToolCategory === 'theorems' && (
+            {theoremInventoryOrdered.length > 0 && isCategoryVisible('theorems') && (
                 <>
                     <div className="w-px h-8 bg-slate-700 mb-2 mx-2"></div>
 
@@ -973,10 +956,10 @@ export default function Toolbar({
                 </>
             )}
 
-            <div className={`${activeToolCategory === 'formula' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
+            <div className={`${isCategoryVisible('formula') ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* ATOMS Section */}
-            <div className={`${activeToolCategory === 'formula' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
+            <div className={`${isCategoryVisible('formula') ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('atoms')}</span>
                 </div>
@@ -1083,10 +1066,10 @@ export default function Toolbar({
                 </div>
             </div>
 
-            <div className={`${activeToolCategory === 'formula' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
+            <div className={`${isCategoryVisible('formula') ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* GATES Section */}
-            <div className={`${activeToolCategory === 'formula' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
+            <div className={`${isCategoryVisible('formula') ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('gates')}</span>
                 </div>
@@ -1140,10 +1123,10 @@ export default function Toolbar({
                 </div>
             </div>
 
-            <div className={`${activeToolCategory === 'proof' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
+            <div className={`${isCategoryVisible('proof') ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* AXIOMS Section */}
-            <div className={`${activeToolCategory === 'proof' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
+            <div className={`${isCategoryVisible('proof') ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('axioms')}</span>
                 </div>
@@ -1195,10 +1178,10 @@ export default function Toolbar({
                 </div>
             </div>
 
-            <div className={`${activeToolCategory === 'proof' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
+            <div className={`${isCategoryVisible('proof') ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* RULES Section */}
-            <div className={`${activeToolCategory === 'proof' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
+            <div className={`${isCategoryVisible('proof') ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('rules')}</span>
                 </div>
@@ -1233,10 +1216,10 @@ export default function Toolbar({
                 </div>
             </div>
 
-            <div className={`${activeToolCategory === 'display' ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
+            <div className={`${isCategoryVisible('display') ? 'block' : 'hidden'} w-px h-8 bg-slate-700 mb-2 mx-2`}></div>
 
             {/* DISPLAY Section */}
-            <div className={`${activeToolCategory === 'display' ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
+            <div className={`${isCategoryVisible('display') ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
                 <div className="h-[15px] flex items-center">
                     <span className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">{t('display')}</span>
                 </div>
@@ -1280,6 +1263,30 @@ export default function Toolbar({
                     )}
                 </div>
             </div>
+            </div>
+
+            {useCategoryMenu && (
+                <nav className="flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-950/75 p-1" aria-label={language === 'zh' ? '工具分类' : 'Tool categories'}>
+                    {([
+                        ['utility', '⌁', language === 'zh' ? '建造' : 'Build'],
+                        ['formula', '◇', language === 'zh' ? '公式' : 'Formula'],
+                        ['proof', '⊢', language === 'zh' ? '证明' : 'Proof'],
+                        ['theorems', '▣', language === 'zh' ? '定理' : 'Theorems'],
+                        ['display', '▤', language === 'zh' ? '显示' : 'Display'],
+                    ] as const).map(([id, icon, label]) => (
+                        <button
+                            key={id}
+                            type="button"
+                            onClick={() => setActiveToolCategory(id)}
+                            className={`group relative grid h-11 w-11 place-items-center rounded-lg border text-lg font-black transition ${activeToolCategory === id ? 'border-cyan-300 bg-cyan-400/20 text-cyan-200' : 'border-transparent text-slate-400 hover:border-slate-600 hover:bg-slate-800 hover:text-white'}`}
+                            title={label}
+                        >
+                            {icon}
+                            <span className="pointer-events-none absolute -top-9 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-[10px] font-bold text-slate-200 shadow-lg group-hover:block">{label}</span>
+                        </button>
+                    ))}
+                </nav>
+            )}
         </div>
         {showTheoremLibrary && theoremInventoryOrdered.length > 0 && (
             <div className="fixed inset-0 z-[90] bg-slate-950/95 text-white backdrop-blur-sm">
