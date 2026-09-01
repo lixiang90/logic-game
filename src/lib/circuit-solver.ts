@@ -867,6 +867,45 @@ function computeNodeOutput(
             return formula;
         };
 
+        const matchTemplate = (
+            template: Formula,
+            actual: Formula,
+            variables: Set<string>,
+            mapping: Map<string, Formula>
+        ): boolean => {
+            if (template instanceof Atom) {
+                if (!variables.has(template.name)) return template.equals(actual);
+                const existing = mapping.get(template.name);
+                if (existing) return existing.equals(actual);
+                mapping.set(template.name, actual);
+                return true;
+            }
+            if (template instanceof Not) {
+                return actual instanceof Not && matchTemplate(template.child, actual.child, variables, mapping);
+            }
+            if (template instanceof Implies) {
+                return actual instanceof Implies &&
+                    matchTemplate(template.left, actual.left, variables, mapping) &&
+                    matchTemplate(template.right, actual.right, variables, mapping);
+            }
+            if (template instanceof And) {
+                return actual instanceof And &&
+                    matchTemplate(template.left, actual.left, variables, mapping) &&
+                    matchTemplate(template.right, actual.right, variables, mapping);
+            }
+            if (template instanceof Or) {
+                return actual instanceof Or &&
+                    matchTemplate(template.left, actual.left, variables, mapping) &&
+                    matchTemplate(template.right, actual.right, variables, mapping);
+            }
+            if (template instanceof Equiv) {
+                return actual instanceof Equiv &&
+                    matchTemplate(template.left, actual.left, variables, mapping) &&
+                    matchTemplate(template.right, actual.right, variables, mapping);
+            }
+            return false;
+        };
+
         const vars = node.theoremVars ?? [];
         const premises = node.theoremPremises ?? [];
         const conclusionText = normalizeFormulaText(node.theoremConclusion ?? '');
@@ -874,20 +913,30 @@ function computeNodeOutput(
         if (!conclusionTemplate) return null;
 
         const mapping = new Map<string, Formula>();
-        vars.forEach((v) => {
-            const input = getInput(`var_${v}`);
-            mapping.set(v, input instanceof Formula ? input : new Atom(v));
-        });
+        const variableSet = new Set(vars);
+        if (!node.theoremSimplified) {
+            for (const variable of vars) {
+                const input = getInput(`var_${variable}`);
+                if (!(input instanceof Formula)) return null;
+                mapping.set(variable, input);
+            }
+        }
 
         for (let i = 0; i < premises.length; i += 1) {
             const premiseTemplate = parseFormula(normalizeFormulaText(premises[i]));
             if (!premiseTemplate) return null;
-            const expectedPremise = substitute(premiseTemplate, mapping);
-
             const provided = getInput(`prem_${i}`);
             if (!(provided instanceof Provable)) return null;
-            if (!provided.formula.equals(expectedPremise)) return null;
+
+            if (node.theoremSimplified) {
+                if (!matchTemplate(premiseTemplate, provided.formula, variableSet, mapping)) return null;
+            } else {
+                const expectedPremise = substitute(premiseTemplate, mapping);
+                if (!provided.formula.equals(expectedPremise)) return null;
+            }
         }
+
+        if (node.theoremSimplified && vars.some((variable) => !mapping.has(variable))) return null;
 
         const expectedConclusion = substitute(conclusionTemplate, mapping);
         if (node.theoremIsFormulaOnly) {

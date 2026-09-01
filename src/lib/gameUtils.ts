@@ -1,4 +1,33 @@
-import { NodeData, Port, Wire } from '@/types/game';
+import { NodeData, Port, Wire } from '../types/game';
+
+export interface NodeBounds {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
+/** Axis-aligned visual bounds after rotating a solid node around its center. */
+export const getNodeBounds = (node: Pick<NodeData, 'type' | 'x' | 'y' | 'w' | 'h' | 'rotation'>): NodeBounds => {
+    const rotation = node.rotation ?? 0;
+    if (node.type === 'wire' || rotation % 2 === 0) {
+        return { x: node.x, y: node.y, w: node.w, h: node.h };
+    }
+
+    return {
+        x: node.x + (node.w - node.h) / 2,
+        y: node.y + (node.h - node.w) / 2,
+        w: node.h,
+        h: node.w,
+    };
+};
+
+export const boundsOverlap = (first: NodeBounds, second: NodeBounds) => !(
+    first.x >= second.x + second.w ||
+    first.x + first.w <= second.x ||
+    first.y >= second.y + second.h ||
+    first.y + first.h <= second.y
+);
 
 // Helper to get ports for a node based on its type and subtype
 export const getNodePorts = (node: NodeData): Port[] => {
@@ -77,6 +106,7 @@ export const getNodePorts = (node: NodeData): Port[] => {
         ports.push({ id: 'in1', x: 0, y: h * 0.68, type: 'provable', isInput: true });
     } else if (type === 'theorem') {
         const isFormulaOnly = node.theoremIsFormulaOnly === true;
+        const isSimplified = node.theoremSimplified === true;
         ports.push({
             id: 'out',
             x: w,
@@ -85,7 +115,7 @@ export const getNodePorts = (node: NodeData): Port[] => {
             isInput: false,
         });
 
-        const vars = node.theoremVars ?? [];
+        const vars = isSimplified ? [] : (node.theoremVars ?? []);
         const premises = node.theoremPremises ?? [];
         const rows = Math.max(1, vars.length + premises.length);
         const maxRows = Math.min(rows, Math.floor((h - 2) / 2));
@@ -244,8 +274,9 @@ export const findWirePath = (
         
         const margin = 0.1; 
         for (const node of nodes) {
-            if (x > node.x + margin && x < node.x + node.w - margin &&
-                y > node.y + margin && y < node.y + node.h - margin) {
+            const bounds = getNodeBounds(node);
+            if (x > bounds.x + margin && x < bounds.x + bounds.w - margin &&
+                y > bounds.y + margin && y < bounds.y + bounds.h - margin) {
                 return true;
             }
         }

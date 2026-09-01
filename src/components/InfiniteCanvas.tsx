@@ -2,13 +2,14 @@
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Tool, NodeData, NodeType, Wire, Port } from '@/types/game';
-import { getNodePorts, getAbsolutePortPosition, findWirePath } from '@/lib/gameUtils';
+import { boundsOverlap, getNodeBounds, getNodePorts, getAbsolutePortPosition, findWirePath } from '@/lib/gameUtils';
 import { getGoalPortsForRect, solveCircuit, solveCircuitGoals } from '@/lib/circuit-solver';
 import { parseGoal, parseFormula, Provable } from '@/lib/logic-engine';
 import { formulaRenderer } from '@/lib/formula-renderer';
 import { useTutorial } from '@/contexts/TutorialContext';
 import { SelectMode } from '@/components/Toolbar';
 import { Stage2IslandDefinition, Stage2LevelConfig, Stage2MetaProgress } from '@/types/stage2';
+import { getTheoremChipHeight } from '@/lib/theorem-chips';
 
 interface Point {
     x: number;
@@ -412,6 +413,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                         theoremIsFormulaOnly: isFormulaOnly,
                         w: 10,
                         h,
+                        simplifiedH: getTheoremChipHeight(vars.length, premises.length, true),
                     };
                 };
 
@@ -430,7 +432,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                             theoremConclusion: meta.theoremConclusion,
                             theoremIsFormulaOnly: meta.theoremIsFormulaOnly,
                             w: meta.w,
-                            h: meta.h,
+                            h: node.theoremSimplified ? meta.simplifiedH : meta.h,
                         };
                     }
                     if (node.type === 'theorem') {
@@ -444,7 +446,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                             theoremConclusion: meta.theoremConclusion,
                             theoremIsFormulaOnly: meta.theoremIsFormulaOnly,
                             w: meta.w,
-                            h: meta.h,
+                            h: node.theoremSimplified ? meta.simplifiedH : meta.h,
                         };
                     }
                     return node;
@@ -1049,7 +1051,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             drawRoundedRect(ctx, dx + 4, dy + 4, drawW - 8, drawH - 8, 6);
             ctx.stroke();
 
-            const name = node.theoremName || node.subType || 'THM';
+            const name = `${node.theoremName || node.subType || 'THM'}${node.theoremSimplified ? '+' : ''}`;
             ctx.fillStyle = textColor;
             ctx.font = 'bold 18px sans-serif';
             ctx.textAlign = 'center';
@@ -2269,6 +2271,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     theoremPremises: activeTool.theoremPremises,
                     theoremConclusion: activeTool.theoremConclusion,
                     theoremIsFormulaOnly: activeTool.theoremIsFormulaOnly,
+                    theoremSimplified: activeTool.theoremSimplified,
                 };
 
                 if (canPlaceNode && !canPlaceNode(newNode)) {
@@ -2284,19 +2287,11 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                           .map((island) => island.goalBounds!)
                     : [];
                 const goalRects = stage2GoalRects.length > 0 ? stage2GoalRects : [{ x: -4, y: -4, w: 8, h: 8 }];
-                const goalCollision = goalRects.some((goalRect) => !(
-                    newNode.x >= goalRect.x + goalRect.w || 
-                    newNode.x + newNode.w <= goalRect.x || 
-                    newNode.y >= goalRect.y + goalRect.h || 
-                    newNode.y + newNode.h <= goalRect.y
-                ));
+                const newNodeBounds = getNodeBounds(newNode);
+                const goalCollision = goalRects.some((goalRect) => boundsOverlap(newNodeBounds, goalRect));
 
                 const overlappingNodes = nodes.filter(n => {
-                    const isOverlapping = !(newNode.x >= n.x + n.w || 
-                        newNode.x + newNode.w <= n.x || 
-                        newNode.y >= n.y + n.h || 
-                        newNode.y + newNode.h <= n.y);
-                    return isOverlapping;
+                    return boundsOverlap(newNodeBounds, getNodeBounds(n));
                 });
 
                 // 2. Check against existing nodes
@@ -2320,10 +2315,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
                 const isDuplicate = nodes.some(n => {
                     if (newNode.type !== 'wire' || n.type !== 'wire') return false;
-                    const isOverlapping = !(newNode.x >= n.x + n.w || 
-                        newNode.x + newNode.w <= n.x || 
-                        newNode.y >= n.y + n.h || 
-                        newNode.y + newNode.h <= n.y);
+                    const isOverlapping = boundsOverlap(newNodeBounds, getNodeBounds(n));
                     return isOverlapping && n.rotation === newNode.rotation;
                 });
 
@@ -2460,19 +2452,12 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 const canAddWire = (candidate: NodeData): { blocked: boolean; duplicate: boolean } => {
                     if (canPlaceNode && !canPlaceNode(candidate)) return { blocked: true, duplicate: false };
 
-                    const goalCollision = goalRects.some((goalRect) => !(
-                        candidate.x >= goalRect.x + goalRect.w || 
-                        candidate.x + candidate.w <= goalRect.x || 
-                        candidate.y >= goalRect.y + goalRect.h || 
-                        candidate.y + candidate.h <= goalRect.y
-                    ));
+                    const candidateBounds = getNodeBounds(candidate);
+                    const goalCollision = goalRects.some((goalRect) => boundsOverlap(candidateBounds, goalRect));
                     if (goalCollision) return { blocked: true, duplicate: false };
 
                     for (const n of [...nodes, ...nodesToAdd]) {
-                        const isOverlapping = !(candidate.x >= n.x + n.w || 
-                            candidate.x + candidate.w <= n.x || 
-                            candidate.y >= n.y + n.h || 
-                            candidate.y + candidate.h <= n.y);
+                        const isOverlapping = boundsOverlap(candidateBounds, getNodeBounds(n));
                         if (!isOverlapping) continue;
 
                         if (candidate.type === 'wire' && n.type === 'wire') {
@@ -2687,7 +2672,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
             } else {
                 // Solid nodes: Check if point is inside bounding box
-                if (gx >= n.x && gx < n.x + n.w && gy >= n.y && gy < n.y + n.h) {
+                const bounds = getNodeBounds(n);
+                if (gx >= bounds.x && gx < bounds.x + bounds.w && gy >= bounds.y && gy < bounds.y + bounds.h) {
                     dist = 0; // Inside = distance 0 (highest priority)
                 }
             }

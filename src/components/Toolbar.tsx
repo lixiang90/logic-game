@@ -5,6 +5,12 @@ import React from 'react';
 import { Tool, NodeType } from '@/types/game';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { TheoremChipInventoryEntry } from '@/types/stage2';
+import {
+    canSimplifyTheoremChip,
+    extractTheoremVariables,
+    getTheoremChipHeight,
+    normalizeTheoremFormula,
+} from '@/lib/theorem-chips';
 
 export type SelectMode = 'pointer' | 'box';
 
@@ -86,18 +92,6 @@ export default function Toolbar({
 
     const handleSelect = (type: NodeType, subType: string, w: number, h: number) => {
         onSelectTool({ type, subType, w, h, rotation: 0 });
-    };
-
-    const normalizeTheoremFormula = (formula: string) => formula.replace(/^\s*(\|-|⊢)\s*/, '').trim();
-
-    const extractVariables = (parts: string[]) => {
-        const vars = new Set<string>();
-        parts.forEach((part) => {
-            const text = normalizeTheoremFormula(part);
-            const matches = text.match(/[A-Z][A-Za-z0-9]*/g) ?? [];
-            matches.forEach((m) => vars.add(m));
-        });
-        return Array.from(vars);
     };
 
     const findFolderById = React.useCallback(function findFolder(node: TheoremFolderNode, id: string): TheoremFolderNode | null {
@@ -340,16 +334,19 @@ export default function Toolbar({
     const canAffordTheorem = (theorem: TheoremChipInventoryEntry) =>
         theorem.freeUsesRemaining > 0 || coins >= theorem.cost;
 
-    const handleTheoremSelect = (theorem: TheoremChipInventoryEntry) => {
-        if (!canAffordTheorem(theorem)) return;
+    const handleTheoremSelect = (theorem: TheoremChipInventoryEntry, simplified = false) => {
+        if (simplified) {
+            if (!canSimplifyTheoremChip(theorem) || (theorem.simplifiedUsesRemaining ?? 0) <= 0) return;
+        } else if (!canAffordTheorem(theorem)) {
+            return;
+        }
 
         const premises = theorem.premises ?? [];
         const rawFormula = theorem.formula ?? '';
         const conclusion = normalizeTheoremFormula(rawFormula);
         const isFormulaOnly = !rawFormula.trim().startsWith('|-') && !rawFormula.trim().startsWith('⊢');
-        const vars = extractVariables([...premises, conclusion]);
-        const portRows = Math.max(1, vars.length + premises.length);
-        const h = Math.max(6, portRows * 2 + 2);
+        const vars = extractTheoremVariables([...premises, conclusion]);
+        const h = getTheoremChipHeight(vars.length, premises.length, simplified);
 
         onSelectTool({
             type: 'theorem',
@@ -363,6 +360,7 @@ export default function Toolbar({
             theoremPremises: premises,
             theoremConclusion: conclusion,
             theoremIsFormulaOnly: isFormulaOnly,
+            theoremSimplified: simplified,
             w: 10,
             h,
             rotation: 0,
@@ -382,7 +380,8 @@ export default function Toolbar({
     };
 
     const isActive = (subType: string) => activeTool?.subType === subType;
-    const isTheoremActive = (theoremId: string) => activeTool?.theoremId === theoremId;
+    const isTheoremActive = (theoremId: string, simplified = false) =>
+        activeTool?.theoremId === theoremId && Boolean(activeTool.theoremSimplified) === simplified;
     const isPointerActive = activeTool === null && selectMode === 'pointer';
     const isBoxSelectActive = activeTool === null && selectMode === 'box';
     const activeClass = "ring-2 ring-white ring-offset-2 ring-offset-slate-900";
@@ -423,9 +422,9 @@ export default function Toolbar({
         if (!selectedTheorem) return null;
         const premises = selectedTheorem.premises ?? [];
         const conclusion = normalizeTheoremFormula(selectedTheorem.formula);
-        const vars = extractVariables([...premises, conclusion]);
+        const vars = extractTheoremVariables([...premises, conclusion]);
         return { premises, conclusion, vars };
-    }, [selectedTheorem, extractVariables]);
+    }, [selectedTheorem]);
 
     const folderOptions = React.useMemo(() => {
         const out: Array<{ id: string; name: string; depth: number }> = [];
@@ -892,18 +891,11 @@ export default function Toolbar({
                                                 : null;
                                             const affordable = theorem ? canAffordTheorem(theorem) : false;
                                             const disabled = !theorem || !affordable;
+                                            const simplifiedUses = theorem?.simplifiedUsesRemaining ?? 0;
                                             const isDragOver = theoremMenuDragOverIndex === idx;
                                             return (
-                                                <button
+                                                <div
                                                     key={`${idx}-${theoremId ?? 'empty'}`}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        if (!theorem) return;
-                                                        handleTheoremSelect(theorem);
-                                                        setShowTheoremMenu(false);
-                                                        setShowTheoremLibrary(false);
-                                                    }}
-                                                    disabled={disabled}
                                                     onDragEnter={() => setTheoremMenuDragOverIndex(idx)}
                                                     onDragLeave={() => setTheoremMenuDragOverIndex((prev) => (prev === idx ? null : prev))}
                                                     onDragOver={(e) => {
@@ -918,25 +910,51 @@ export default function Toolbar({
                                                         if (dropped && availableTheoremIdSet.has(dropped)) {
                                                             handleReplacePinnedTheorem(idx, dropped);
                                                         }
-                                                setIsDraggingTheoremToToolbar(false);
+                                                        setIsDraggingTheoremToToolbar(false);
                                                         setTheoremMenuDragOverIndex(null);
                                                     }}
-                                                    className={`h-12 rounded-xl border px-2 text-left transition-colors ${
+                                                    className={`relative h-14 rounded-xl border transition-colors ${
                                                         isDragOver
                                                             ? 'border-cyan-400/80 bg-cyan-500/10'
                                                             : theorem
                                                                 ? 'border-slate-700 bg-slate-950/30 hover:border-slate-500 hover:bg-slate-800/60'
                                                                 : 'border-slate-800 bg-slate-950/20 text-slate-600'
-                                                    } ${theoremId && isTheoremActive(theoremId) ? activeClass : ''} ${disabled && theorem ? 'opacity-60' : ''}`}
-                                                    title={theorem ? `${theorem.name} ${theorem.formula}` : ''}
+                                                    }`}
                                                 >
-                                                    <div className="truncate text-xs font-bold text-slate-100">{theorem ? theorem.name : '-'}</div>
-                                                    {theorem && (
-                                                        <div className="mt-0.5 truncate text-[10px] text-slate-400">
-                                                            {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}${language === 'zh' ? '' : ' '}${t('coins')}`}
-                                                        </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (!theorem) return;
+                                                            handleTheoremSelect(theorem);
+                                                            setShowTheoremMenu(false);
+                                                            setShowTheoremLibrary(false);
+                                                        }}
+                                                        disabled={disabled}
+                                                        className={`h-full w-full rounded-xl px-2 text-left ${theoremId && isTheoremActive(theoremId) ? activeClass : ''} ${disabled && theorem ? 'opacity-50' : ''}`}
+                                                        title={theorem ? `${theorem.name} ${theorem.formula}` : ''}
+                                                    >
+                                                        <div className="truncate pr-8 text-xs font-bold text-slate-100">{theorem ? theorem.name : '-'}</div>
+                                                        {theorem && (
+                                                            <div className="mt-0.5 truncate text-[10px] text-slate-400">
+                                                                {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}${language === 'zh' ? '' : ' '}${t('coins')}`}
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                    {theorem && simplifiedUses > 0 && canSimplifyTheoremChip(theorem) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                handleTheoremSelect(theorem, true);
+                                                                setShowTheoremMenu(false);
+                                                                setShowTheoremLibrary(false);
+                                                            }}
+                                                            className={`absolute right-1 top-1 rounded-md border border-amber-300/60 bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-black text-amber-200 ${isTheoremActive(theorem.theoremId, true) ? activeClass : ''}`}
+                                                            title={language === 'zh' ? `选择纯黄口简化版（剩余 ${simplifiedUses} 次）` : `Select yellow-only version (${simplifiedUses} uses)`}
+                                                        >
+                                                            +{simplifiedUses}
+                                                        </button>
                                                     )}
-                                                </button>
+                                                </div>
                                             );
                                         })}
                                     </div>
@@ -1610,23 +1628,47 @@ export default function Toolbar({
                                                 <span>
                                                     {t('theoremCost')}: {selectedTheorem.cost}
                                                 </span>
+                                                {canSimplifyTheoremChip(selectedTheorem) && (
+                                                    <span className="text-amber-300">
+                                                        {language === 'zh' ? '简化版次数' : 'Simplified uses'}: {selectedTheorem.simplifiedUsesRemaining ?? 0}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                handleTheoremSelect(selectedTheorem);
-                                                setShowTheoremLibrary(false);
-                                            }}
-                                            disabled={!canAffordTheorem(selectedTheorem)}
-                                            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
-                                                canAffordTheorem(selectedTheorem)
-                                                    ? 'bg-cyan-600 text-white hover:bg-cyan-500'
-                                                    : 'cursor-not-allowed bg-slate-800 text-slate-500'
-                                            }`}
-                                        >
-                                            {t('selectTheoremChip')}
-                                        </button>
+                                        <div className="flex shrink-0 flex-col gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    handleTheoremSelect(selectedTheorem);
+                                                    setShowTheoremLibrary(false);
+                                                }}
+                                                disabled={!canAffordTheorem(selectedTheorem)}
+                                                className={`rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
+                                                    canAffordTheorem(selectedTheorem)
+                                                        ? 'bg-cyan-600 text-white hover:bg-cyan-500'
+                                                        : 'cursor-not-allowed bg-slate-800 text-slate-500'
+                                                }`}
+                                            >
+                                                {t('selectTheoremChip')}
+                                            </button>
+                                            {canSimplifyTheoremChip(selectedTheorem) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        handleTheoremSelect(selectedTheorem, true);
+                                                        setShowTheoremLibrary(false);
+                                                    }}
+                                                    disabled={(selectedTheorem.simplifiedUsesRemaining ?? 0) <= 0}
+                                                    className={`rounded-lg border px-4 py-2 text-sm font-bold transition-colors ${
+                                                        (selectedTheorem.simplifiedUsesRemaining ?? 0) > 0
+                                                            ? 'border-amber-300/60 bg-amber-400/15 text-amber-100 hover:bg-amber-400/25'
+                                                            : 'cursor-not-allowed border-slate-700 bg-slate-800 text-slate-500'
+                                                    }`}
+                                                >
+                                                    {language === 'zh' ? '选择纯黄口简化版' : 'Select yellow-only version'}
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div className="min-h-0 flex-1 overflow-y-auto p-4">

@@ -35,6 +35,7 @@ export interface TheoremChipInventoryEntry extends TheoremChipDefinition {
     collectedInLevelId?: string;
     freeUsesRemaining: number;
     useCount: number;
+    simplifiedUsesRemaining?: number;
 }
 
 export interface Stage2IslandDefinition {

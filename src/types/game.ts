@@ -21,6 +21,7 @@ export interface NodeData {
     theoremPremises?: string[];
     theoremConclusion?: string;
     theoremIsFormulaOnly?: boolean;
+    theoremSimplified?: boolean;
     note?: string; // Player-authored annotation shown on the canvas.
 }
 
@@ -58,4 +59,5 @@ export interface Tool {
     theoremPremises?: string[];
     theoremConclusion?: string;
     theoremIsFormulaOnly?: boolean;
+    theoremSimplified?: boolean;
 }

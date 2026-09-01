@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import type { TheoremChipInventoryEntry } from '@/types/stage2';
+import { getSimplifiedTheoremPackCost } from '@/lib/theorem-chips';
 
 interface LogicExchangeModalProps {
     language: 'en' | 'zh';
@@ -9,6 +11,8 @@ interface LogicExchangeModalProps {
     quickMpUnlocked: boolean;
     quickMpUses: number;
     onBuyQuickMp: (uses: number, coinCost: number) => void;
+    simplifiableTheorems: TheoremChipInventoryEntry[];
+    onBuySimplifiedTheorem: (theoremId: string, uses: number, coinCost: number) => void;
     onClose: () => void;
 }
 
@@ -18,7 +22,23 @@ const PACKS = [
     { uses: 40, cost: 360 },
 ];
 
-export default function LogicExchangeModal({ language, coins, insight, quickMpUnlocked, quickMpUses, onBuyQuickMp, onClose }: LogicExchangeModalProps) {
+const THEOREM_PACKS = [
+    { uses: 5, multiplier: 1.2 },
+    { uses: 15, multiplier: 1.0 },
+    { uses: 40, multiplier: 0.9 },
+];
+
+export default function LogicExchangeModal({
+    language,
+    coins,
+    insight,
+    quickMpUnlocked,
+    quickMpUses,
+    onBuyQuickMp,
+    simplifiableTheorems,
+    onBuySimplifiedTheorem,
+    onClose,
+}: LogicExchangeModalProps) {
     const zh = language === 'zh';
     return (
         <div className="fixed inset-0 z-[180] grid place-items-center overflow-y-auto bg-slate-950/95 p-5 text-white backdrop-blur-xl">
@@ -58,8 +78,62 @@ export default function LogicExchangeModal({ language, coins, insight, quickMpUn
                         </div>
                     )}
                 </section>
+
+                <section className="mt-6 rounded-3xl border border-amber-300/20 bg-black/25 p-6">
+                    <div>
+                        <div className="text-sm font-black uppercase tracking-widest text-amber-300">THEOREM-LITE</div>
+                        <h3 className="mt-1 text-2xl font-black">{zh ? '定理芯片简化版' : 'Simplified theorem chips'}</h3>
+                        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+                            {zh
+                                ? '仅列出能够由有序黄口前提唯一推断全部变量的定理。简化版移除蓝口，仍会严格验证每条黄口前提。'
+                                : 'Only theorems whose ordered yellow premises uniquely determine every variable are listed. Simplified versions remove blue ports while still validating every premise.'}
+                        </p>
+                    </div>
+
+                    {!quickMpUnlocked ? (
+                        <div className="mt-6 rounded-2xl border border-dashed border-slate-600 p-5 text-center text-slate-400">
+                            {zh ? '完成第二大关第 7 章后解锁简化芯片交易。' : 'Unlock simplified chip trading after completing Stage 2, Chapter 7.'}
+                        </div>
+                    ) : simplifiableTheorems.length === 0 ? (
+                        <div className="mt-6 rounded-2xl border border-dashed border-slate-600 p-5 text-center text-slate-400">
+                            {zh ? '尚未收集到可无歧义简化的混合输入定理。' : 'No collected mixed-input theorem can be simplified unambiguously yet.'}
+                        </div>
+                    ) : (
+                        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                            {simplifiableTheorems.map((theorem) => (
+                                <article key={theorem.theoremId} className="rounded-2xl border border-amber-300/15 bg-amber-400/5 p-5">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="min-w-0">
+                                            <div className="font-black text-amber-100">{theorem.name}+</div>
+                                            <div className="mt-1 break-words text-xs text-slate-400">{theorem.formula}</div>
+                                        </div>
+                                        <div className="shrink-0 rounded-xl bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+                                            {zh ? '剩余' : 'Left'} <b className="ml-1 text-lg">{theorem.simplifiedUsesRemaining ?? 0}</b>
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 grid grid-cols-3 gap-2">
+                                        {THEOREM_PACKS.map((pack) => {
+                                            const cost = getSimplifiedTheoremPackCost(theorem.cost, pack.uses, pack.multiplier);
+                                            return (
+                                                <button
+                                                    key={pack.uses}
+                                                    type="button"
+                                                    disabled={coins < cost}
+                                                    onClick={() => onBuySimplifiedTheorem(theorem.theoremId, pack.uses, cost)}
+                                                    className="rounded-xl border border-amber-300/20 bg-amber-400/10 p-3 text-left transition enabled:hover:-translate-y-0.5 enabled:hover:border-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
+                                                >
+                                                    <div className="font-black text-amber-100">+{pack.uses}</div>
+                                                    <div className="mt-1 text-xs text-amber-200">{cost} ◉</div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                    )}
+                </section>
             </div>
         </div>
     );
 }
-

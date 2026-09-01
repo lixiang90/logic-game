@@ -25,6 +25,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useTutorial } from '@/contexts/TutorialContext';
 import { TranslationKey } from '@/data/translations';
 import { FarmCropId, Stage2MetaProgress, TheoremChipInventoryEntry, createDefaultStage2MetaProgress } from '@/types/stage2';
+import { getNodeBounds } from '@/lib/gameUtils';
+import { canSimplifyTheoremChip } from '@/lib/theorem-chips';
 
 interface Level {
   id: string;
@@ -173,6 +175,10 @@ export default function Home() {
       return { ...entry, premises: (island.premiseNodes ?? []).map((premise) => premise.formula) };
     });
   }, [stage2Config, stage2GoalIslands, stage2Progress.collectedTheorems]);
+  const simplifiableTheorems = useMemo(
+    () => resolvedTheoremInventory.filter(canSimplifyTheoremChip),
+    [resolvedTheoremInventory]
+  );
   const stage2InitialState: LevelState | undefined = stage2Config
     ? {
         nodes: stage2GoalIslands
@@ -442,6 +448,32 @@ export default function Home() {
     setStage2Progress((previous) => {
       if (!previous.quickMpUnlocked || previous.coins < coinCost) return previous;
       return { ...previous, coins: previous.coins - coinCost, quickMpUses: previous.quickMpUses + uses };
+    });
+  };
+
+  const handleBuySimplifiedTheorem = (theoremId: string, uses: number, coinCost: number) => {
+    setStage2Progress((previous) => {
+      const theorem = previous.collectedTheorems[theoremId];
+      if (
+        !previous.quickMpUnlocked ||
+        !theorem ||
+        !canSimplifyTheoremChip(theorem) ||
+        previous.coins < coinCost
+      ) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        coins: previous.coins - coinCost,
+        collectedTheorems: {
+          ...previous.collectedTheorems,
+          [theoremId]: {
+            ...theorem,
+            simplifiedUsesRemaining: (theorem.simplifiedUsesRemaining ?? 0) + uses,
+          },
+        },
+      };
     });
   };
 
@@ -1010,8 +1042,9 @@ export default function Home() {
   const handleCanPlaceNode = (node: NodeData) => {
     if (stage2Config) {
       const tileSet = stage2BuildableTileSet ?? new Set<string>();
-      for (let x = node.x; x < node.x + node.w; x += 1) {
-        for (let y = node.y; y < node.y + node.h; y += 1) {
+      const bounds = getNodeBounds(node);
+      for (let x = Math.floor(bounds.x); x < Math.ceil(bounds.x + bounds.w); x += 1) {
+        for (let y = Math.floor(bounds.y); y < Math.ceil(bounds.y + bounds.h); y += 1) {
           if (!tileSet.has(`${x},${y}`)) {
             return false;
           }
@@ -1029,6 +1062,11 @@ export default function Home() {
 
     const theorem = stage2Progress.collectedTheorems[node.theoremId];
     if (!theorem) return false;
+    if (node.theoremSimplified) {
+      if (canSimplifyTheoremChip(theorem) && (theorem.simplifiedUsesRemaining ?? 0) > 0) return true;
+      alert(language === 'zh' ? '该定理的纯黄口简化版次数不足，请前往证明交易所购买。' : 'No yellow-only uses remain for this theorem. Visit the Proof Exchange.');
+      return false;
+    }
     if (theorem.freeUsesRemaining > 0) return true;
     if (stage2Progress.coins >= theorem.cost) return true;
 
@@ -1046,6 +1084,30 @@ export default function Home() {
 
     const theorem = stage2Progress.collectedTheorems[node.theoremId];
     if (!theorem) return;
+
+    if (node.theoremSimplified) {
+      const remaining = theorem.simplifiedUsesRemaining ?? 0;
+      if (remaining <= 0) return;
+      setStage2Progress((previous) => {
+        const current = previous.collectedTheorems[node.theoremId!];
+        const currentRemaining = current?.simplifiedUsesRemaining ?? 0;
+        if (!current || currentRemaining <= 0) return previous;
+        return {
+          ...previous,
+          collectedTheorems: {
+            ...previous.collectedTheorems,
+            [node.theoremId!]: {
+              ...current,
+              simplifiedUsesRemaining: currentRemaining - 1,
+            },
+          },
+        };
+      });
+      if (activeTool?.theoremId === node.theoremId && activeTool.theoremSimplified && remaining <= 1) {
+        setActiveTool(null);
+      }
+      return;
+    }
 
     const nextProgress = consumeTheoremPlacement(stage2Progress, node.theoremId);
     if (nextProgress === stage2Progress) return;
@@ -1131,6 +1193,8 @@ export default function Home() {
           quickMpUnlocked={stage2Progress.quickMpUnlocked}
           quickMpUses={stage2Progress.quickMpUses}
           onBuyQuickMp={handleBuyQuickMp}
+          simplifiableTheorems={simplifiableTheorems}
+          onBuySimplifiedTheorem={handleBuySimplifiedTheorem}
           onClose={() => setShowLogicExchange(false)}
         />
       )}
