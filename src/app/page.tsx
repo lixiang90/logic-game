@@ -1531,7 +1531,7 @@ export default function Home() {
                 'atom:R',
                 ...(stage2Config?.levelId !== 'level-11' ? ['atom:S', 'atom:T'] : []),
                 'gate:implies',
-                ...(isFreeBuild || (stage2Config?.chapterLevel ?? 0) >= 5 ? ['gate:not'] : []),
+                'gate:not',
                 ...(isFreeBuild || (stage2Config?.chapterLevel ?? 0) >= 10 ? ['gate:and'] : []),
                 'axiom:1',
                 'axiom:2',
