@@ -10,16 +10,19 @@ interface Stage2PanelProps {
     activeTheoremId?: string | null;
     selectedIslandId?: string | null;
     onSelectIsland?: (islandId: string) => void;
+    onOpenTheoremLibrary?: () => void;
 }
 
 const categoryOrder: Stage2IslandCategory[] = ['main', 'support', 'optional'];
+const RECENT_THEOREM_LIMIT = 6;
 
 export default function Stage2Panel({
     config,
     progress,
     activeTheoremId,
     selectedIslandId,
-    onSelectIsland
+    onSelectIsland,
+    onOpenTheoremLibrary,
 }: Stage2PanelProps) {
     const { t, language } = useLanguage();
     const unlockedIslandIds = useMemo(() => new Set(progress.unlockedIslandIds), [progress.unlockedIslandIds]);
@@ -40,13 +43,10 @@ export default function Stage2Panel({
     // We want the total count of collected theorems, regardless of which level they were collected in.
     const theoremCount = Object.values(progress.collectedTheorems).length;
 
-    // For the list display, we still only show the theorems collected in the CURRENT level
-    const collectedTheoremsForLevel = useMemo(() => {
-        return Object.values(progress.collectedTheorems).filter((theorem) => {
-            const collectedIn = theorem.collectedInLevelId ?? 'level-11';
-            return collectedIn === config.levelId;
-        });
-    }, [config.levelId, progress.collectedTheorems]);
+    const recentTheorems = useMemo(
+        () => Object.values(progress.collectedTheorems).slice(-RECENT_THEOREM_LIMIT).reverse(),
+        [progress.collectedTheorems]
+    );
     const focusIslandName = config.world.getIslandById(config.focusIslandId)?.name ?? '';
     const unlockedGoalCount = goalIslands.filter((island) => island.unlocked).length;
     const introText = config.introTextKey ? t(config.introTextKey as TranslationKey) : config.introText;
@@ -168,9 +168,11 @@ export default function Stage2Panel({
                 <div className="flex items-center justify-between">
                     <div>
                         <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{t('theoremChips')}</div>
-                        <div className="text-lg font-bold">{t('collectedTheorems')}</div>
+                        <div className="text-lg font-bold">{t('recentlyUnlocked')}</div>
                     </div>
-                    <div className="text-xs text-slate-400">{theoremCount}</div>
+                    <div className="text-xs text-slate-400">
+                        {Math.min(theoremCount, RECENT_THEOREM_LIMIT)} / {theoremCount}
+                    </div>
                 </div>
 
                 {theoremCount === 0 ? (
@@ -180,33 +182,52 @@ export default function Stage2Panel({
                 ) : (
                     <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                         <div className="flex flex-col gap-2">
-                        {collectedTheoremsForLevel.map((theorem) => (
-                            <div
-                                key={theorem.theoremId}
-                                className={`rounded-xl border bg-slate-800/70 p-3 ${
-                                    theorem.theoremId === activeTheoremId
-                                        ? 'border-cyan-400/70 shadow-[0_0_15px_rgba(34,211,238,0.15)]'
-                                        : 'border-slate-700'
-                                }`}
-                            >
-                                <div className="flex items-center justify-between gap-2">
-                                    <div className="font-bold text-cyan-200">{theorem.name}</div>
-                                    <div className="text-xs text-amber-300">
-                                        {t('theoremCost')}: {theorem.cost}
+                            {recentTheorems.map((theorem) => {
+                                const levelNumber = Number(theorem.collectedInLevelId?.replace('level-', '') ?? 11);
+                                const chapterNumber = Number.isFinite(levelNumber) ? Math.max(1, levelNumber - 10) : 1;
+                                return (
+                                    <div
+                                        key={theorem.theoremId}
+                                        className={`rounded-xl border bg-slate-800/70 p-3 ${
+                                            theorem.theoremId === activeTheoremId
+                                                ? 'border-cyan-400/70 shadow-[0_0_15px_rgba(34,211,238,0.15)]'
+                                                : 'border-slate-700'
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="font-bold text-cyan-200">{theorem.name}</div>
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <span className="rounded-full bg-slate-700/80 px-2 py-0.5 text-slate-300">
+                                                    {t('chapter')} {chapterNumber}
+                                                </span>
+                                                <span className="text-amber-300">
+                                                    {t('theoremCost')}: {theorem.cost}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="mt-1 text-sm text-slate-300">{theorem.formula}</div>
+                                        <div className="mt-1 text-xs text-slate-500">
+                                            {t('freeUsesRemaining')}: {theorem.freeUsesRemaining}
+                                        </div>
+                                        <div className="mt-1 text-xs text-slate-500">
+                                            {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}${language === 'zh' ? '' : ' '}${t('coins')}`}
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="mt-1 text-sm text-slate-300">{theorem.formula}</div>
-                                <div className="mt-1 text-xs text-slate-500">
-                                    {t('freeUsesRemaining')}: {theorem.freeUsesRemaining}
-                                </div>
-                                <div className="mt-1 text-xs text-slate-500">
-                                    {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}${language === 'zh' ? '' : ' '}${t('coins')}`}
-                                </div>
-                            </div>
-                        ))}
+                                );
+                            })}
                         </div>
                     </div>
                 )}
+
+                <button
+                    type="button"
+                    onClick={onOpenTheoremLibrary}
+                    disabled={theoremCount === 0}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-100 transition-colors hover:border-cyan-400/70 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800/60 disabled:text-slate-500"
+                >
+                    <span>{t('theoremLibrary')}</span>
+                    <span aria-hidden="true">→</span>
+                </button>
             </div>
         </>
     );

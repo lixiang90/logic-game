@@ -26,6 +26,8 @@ interface ToolbarProps {
     quickMpUnlocked?: boolean;
     quickMpUses?: number;
     useCategoryMenu?: boolean;
+    theoremLibraryOpen?: boolean;
+    onTheoremLibraryOpenChange?: (open: boolean) => void;
 }
 
 export default function Toolbar({
@@ -40,9 +42,12 @@ export default function Toolbar({
     quickMpUnlocked = false,
     quickMpUses = 0,
     useCategoryMenu = false,
+    theoremLibraryOpen = false,
+    onTheoremLibraryOpenChange,
 }: ToolbarProps) {
     const { t, language } = useLanguage();
-    const [showTheoremLibrary, setShowTheoremLibrary] = React.useState(false);
+    const showTheoremLibrary = theoremLibraryOpen;
+    const setShowTheoremLibrary = (open: boolean) => onTheoremLibraryOpenChange?.(open);
     const [theoremLibrarySelectedId, setTheoremLibrarySelectedId] = React.useState<string | null>(null);
     const [theoremSearch, setTheoremSearch] = React.useState('');
     const THEOREM_LIBRARY_STORAGE_KEY = 'logic_game_theorem_library_tree_v1';

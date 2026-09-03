@@ -14,7 +14,7 @@ import LogicExchangeModal from "@/components/LogicExchangeModal";
 import StoryDialog from "@/components/StoryDialog";
 import CircuitWorkbench from "@/components/CircuitWorkbench";
 import levels from "@/data/levels.json";
-import { getStage2LevelConfig } from "@/data/stage2";
+import { getStage2LevelConfig, STAGE2_START_LEVEL_INDEX } from "@/data/stage2";
 import { getFarmCrop } from "@/data/farm";
 import { STAGE2_STORIES } from "@/data/story";
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -43,6 +43,40 @@ const BGM_STORAGE_KEY = 'logic-game-bgm-volume';
 const DEFAULT_BGM_VOLUME = 0.35;
 
 const toTileKey = (x: number, y: number) => `${x},${y}`;
+
+const mergeCircuitStates = (states: Array<LevelState | undefined>): LevelState => {
+  const nodesById = new Map<string, NodeData>();
+  const wiresById = new Map<string, LevelState['wires'][number]>();
+
+  states.forEach((state) => {
+    state?.nodes.forEach((node) => nodesById.set(node.id, node));
+    state?.wires.forEach((wire) => wiresById.set(wire.id, wire));
+  });
+
+  return {
+    nodes: Array.from(nodesById.values()),
+    wires: Array.from(wiresById.values()),
+  };
+};
+
+const getAccumulatedStage2State = (
+  levelStates: Record<number, LevelState>,
+  throughLevelIndex: number,
+  liveState?: LevelState
+) => {
+  const states: Array<LevelState | undefined> = [];
+  for (let index = STAGE2_START_LEVEL_INDEX; index <= throughLevelIndex; index += 1) {
+    states.push(index === throughLevelIndex && liveState ? liveState : levelStates[index]);
+  }
+  return mergeCircuitStates(states);
+};
+
+const getSavedLevelState = (saved: SaveData) => {
+  const savedLevel = levels[saved.levelIndex] as Level | undefined;
+  return savedLevel && getStage2LevelConfig(savedLevel.id, 42)
+    ? getAccumulatedStage2State(saved.levelStates, saved.levelIndex)
+    : saved.levelStates[saved.levelIndex];
+};
 
 const isRectWithinTiles = (tileSet: Set<string>, x: number, y: number, w: number, h: number) => {
   for (let tx = x; tx < x + w; tx += 1) {
@@ -133,6 +167,7 @@ export default function Home() {
   const [selectedStage2IslandId, setSelectedStage2IslandId] = useState<string | null>(null);
   const [showLogicFarm, setShowLogicFarm] = useState(false);
   const [showLogicExchange, setShowLogicExchange] = useState(false);
+  const [showTheoremLibrary, setShowTheoremLibrary] = useState(false);
   const stage2IntroShownKeyRef = useRef<string | null>(null);
 
   const currentLevel = levels[currentLevelIndex] as Level;
@@ -156,7 +191,12 @@ export default function Home() {
     if (stage2Progress.unlockedIslandIds.length > 0) return stage2Progress.unlockedIslandIds;
     return stage2Config.initialUnlockedIslandIds;
   }, [stage2Config, stage2Progress.unlockedIslandIds]);
-  const unlockedIslandIdSet = useMemo(() => new Set(effectiveUnlockedIslandIds), [effectiveUnlockedIslandIds]);
+  const stage2StateIslands = useMemo(() => {
+    if (!stage2Config) return [];
+    return effectiveUnlockedIslandIds
+      .map((id) => stage2Config.world.getIslandById(id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }, [effectiveUnlockedIslandIds, stage2Config]);
 
   const resolvedTheoremInventory = useMemo(() => {
     const inventory = Object.values(stage2Progress.collectedTheorems);
@@ -181,8 +221,7 @@ export default function Home() {
   );
   const stage2InitialState: LevelState | undefined = stage2Config
     ? {
-        nodes: stage2GoalIslands
-          .filter((island) => unlockedIslandIdSet.has(island.id))
+        nodes: stage2StateIslands
           .flatMap((island) => {
           const tileSet = new Set(island.buildTiles.map((tile) => toTileKey(tile.x, tile.y)));
           const occupied = new Set<string>();
@@ -677,15 +716,22 @@ export default function Home() {
           // Clear previous canvas state when entering a new stage2 chapter from stage 1
           // Keep state when moving within stage2 (e.g., level-11 to level-12)
           const isEnteringStage2FirstTime = !stage2Config && nextStage2Config;
-          const targetStateToSave = isEnteringStage2FirstTime ? { nodes: [], wires: [] } : state;
+          const targetStateToSave = isEnteringStage2FirstTime
+            ? { nodes: [], wires: [] }
+            : stage2Config && nextStage2Config
+              ? getAccumulatedStage2State(currentSession.levelStates, currentLevelIndex, state)
+              : state;
 
-          const nextLevelStartState: LevelState = nextStage2Config ? targetStateToSave : (nextLevel.initialState || { nodes: [], wires: [] });
+          const nextLevelStartState: LevelState = nextStage2Config
+            ? targetStateToSave
+            : (nextLevel.initialState || { nodes: [], wires: [] });
 
           const saveData = buildSaveData(
               nextLevelIndex,
               {
                   ...currentSession.levelStates,
-                  [currentLevelIndex]: state // Save completed level state
+                  [currentLevelIndex]: state,
+                  [nextLevelIndex]: nextLevelStartState,
               },
               stage2Progress,
               {
@@ -694,10 +740,7 @@ export default function Home() {
               }
           );
           SaveSystem.autoSave(saveData);
-          
-          if (isEnteringStage2FirstTime) {
-            setPendingLoad({ nodes: [], wires: [] });
-          }
+          setPendingLoad(nextLevelStartState);
       }
 
       setCurrentLevelIndex(nextLevelIndex);
@@ -743,7 +786,7 @@ export default function Home() {
         applyTheoremLibraryFromSave(saved);
         setCurrentLevelIndex(saved.levelIndex);
         setStage2Progress(saved.metaProgress);
-        const levelState = saved.levelStates[saved.levelIndex];
+        const levelState = getSavedLevelState(saved);
         if (levelState) {
             setPendingLoad(levelState);
         }
@@ -762,7 +805,7 @@ export default function Home() {
         SaveSystem.autoSave(saved); // Set as current session
         setCurrentLevelIndex(saved.levelIndex);
         setStage2Progress(saved.metaProgress);
-        const levelState = saved.levelStates[saved.levelIndex];
+        const levelState = getSavedLevelState(saved);
         if (levelState) {
             setPendingLoad(levelState);
         }
@@ -907,7 +950,7 @@ export default function Home() {
         SaveSystem.autoSave(normalized);
         setCurrentLevelIndex(normalized.levelIndex);
         setStage2Progress(normalized.metaProgress);
-        const levelState = normalized.levelStates[normalized.levelIndex];
+        const levelState = getSavedLevelState(normalized);
         if (levelState) {
           setPendingLoad(levelState);
         } else {
@@ -1209,6 +1252,7 @@ export default function Home() {
             setSelectedStage2IslandId(islandId);
             canvasRef.current?.jumpToStage2Island(islandId);
           }}
+          onOpenTheoremLibrary={() => setShowTheoremLibrary(true)}
         />
       )}
 
@@ -1257,6 +1301,7 @@ export default function Home() {
               className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => {
                   setActiveTool(null);
+                  setShowTheoremLibrary(false);
                   setGameState('menu');
               }}
               title={t('mainMenu')}
@@ -1614,6 +1659,8 @@ export default function Home() {
         quickMpUnlocked={stage2Progress.quickMpUnlocked}
         quickMpUses={stage2Progress.quickMpUses}
         useCategoryMenu={Boolean(stage2Config)}
+        theoremLibraryOpen={showTheoremLibrary}
+        onTheoremLibraryOpenChange={setShowTheoremLibrary}
       />
       <TutorialOverlay />
     </main>

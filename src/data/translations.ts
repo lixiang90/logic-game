@@ -22,6 +22,7 @@ export type TranslationKey =
     | 'completedIsland'
     | 'revealed'
     | 'collectedTheorems'
+    | 'recentlyUnlocked'
     | 'noTheoremsCollected'
     | 'theoremCost'
     | 'freeUsesRemaining'
@@ -134,6 +135,7 @@ export const translations: Record<Language, Record<string, string>> = {
         completedIsland: 'Completed',
         revealed: 'Revealed',
         collectedTheorems: 'Collected Theorems',
+        recentlyUnlocked: 'Recently Unlocked',
         noTheoremsCollected: 'No theorem chips collected yet.',
         theoremCost: 'Cost',
         freeUsesRemaining: 'Free Uses',
@@ -313,6 +315,7 @@ export const translations: Record<Language, Record<string, string>> = {
         completedIsland: '已完成',
         revealed: '已显露',
         collectedTheorems: '已收集定理',
+        recentlyUnlocked: '最近解锁',
         noTheoremsCollected: '还没有收集到定理芯片。',
         theoremCost: '费用',
         freeUsesRemaining: '剩余免费次数',

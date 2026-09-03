@@ -113,11 +113,24 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     const LOD_THRESHOLD_SMALL = 0.4;
     const LOD_THRESHOLD_BLOCK = 0.2;
     
-    const stage2UnlockedIslandIdSet = stage2Config
-        ? new Set(
-              stage2Progress?.unlockedIslandIds?.length ? stage2Progress.unlockedIslandIds : stage2Config.initialUnlockedIslandIds
-          )
-        : new Set<string>();
+    const unlockedStage2IslandIds = stage2Progress?.unlockedIslandIds;
+    const stage2UnlockedIslandIdSet = React.useMemo(
+        () => stage2Config
+            ? new Set(
+                  unlockedStage2IslandIds?.length
+                      ? unlockedStage2IslandIds
+                      : stage2Config.initialUnlockedIslandIds
+              )
+            : new Set<string>(),
+        [stage2Config, unlockedStage2IslandIds]
+    );
+    const stage2DisplayedGoalIslandIds = React.useMemo(() => {
+        if (!stage2Config) return [];
+        return Array.from(new Set([
+            ...stage2Config.goalIslandIds,
+            ...(stage2Progress?.completedIslandIds ?? []),
+        ])).filter((id) => Boolean(stage2Config.world.getIslandById(id)?.goalFormula));
+    }, [stage2Config, stage2Progress?.completedIslandIds]);
 
     // Memoize circuit solution to avoid useEffect/setState cycle
     const { isSolved, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues, completedGoalIds, goalErrorsById } = React.useMemo(() => {
@@ -1950,7 +1963,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         }
 
         if (stage2Config && showStage2IslandOverlayDetails) {
-            stage2Config.goalIslandIds.forEach((islandId) => {
+            stage2DisplayedGoalIslandIds.forEach((islandId) => {
                 if (!stage2UnlockedIslandIdSet.has(islandId)) return;
                 const island = stage2Config.world.getIslandById(islandId);
                 if (!island?.goalBounds || !island.goalFormula) return;
@@ -1958,7 +1971,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     ctx,
                     island.goalBounds,
                     island.goalFormula,
-                    completedGoalIds.has(island.id),
+                    completedGoalIds.has(island.id) || Boolean(stage2Progress?.completedIslandIds.includes(island.id)),
                     goalErrorsById.get(island.id) ?? new Set<string>()
                 );
             });
@@ -2051,7 +2064,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             // Level Solved indicator handled by HTML overlay in parent
         }
 
-    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, showStage2InteriorDetails, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById, focusMode, activeNodeIds]);
+    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, stage2Progress?.completedIslandIds, stage2DisplayedGoalIslandIds, showStage2InteriorDetails, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById, focusMode, activeNodeIds]);
 
     // Handle Window Resize
     useEffect(() => {
@@ -2280,7 +2293,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
                 // Collision check
                 const stage2GoalRects = stage2Config
-                    ? stage2Config.goalIslandIds
+                    ? stage2DisplayedGoalIslandIds
                           .filter((id) => stage2UnlockedIslandIdSet.has(id))
                           .map((id) => stage2Config.world.getIslandById(id))
                           .filter((item): item is NonNullable<typeof item> => Boolean(item?.goalBounds))
@@ -2440,7 +2453,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 const dy = effectiveGy - lastWireGridPos.y;
 
                 const stage2GoalRects = stage2Config
-                    ? stage2Config.goalIslandIds
+                    ? stage2DisplayedGoalIslandIds
                           .filter((id) => stage2UnlockedIslandIdSet.has(id))
                           .map((id) => stage2Config.world.getIslandById(id))
                           .filter((item): item is NonNullable<typeof item> => Boolean(item?.goalBounds))

@@ -654,8 +654,10 @@ const chapterDefinitions: ChapterDefinition[] = [
     },
 ];
 
-const createConfiguredChapter = (mapSeed: number, definition: ChapterDefinition): Stage2LevelConfig => {
-    const metaById = new Map<string, IslandMeta>();
+const addConfiguredChapterIslands = (
+    metaById: Map<string, IslandMeta>,
+    definition: ChapterDefinition
+) => {
     for (const island of definition.islands) {
         const id = makeIslandId(island.cx, island.cy);
         metaById.set(id, {
@@ -674,6 +676,38 @@ const createConfiguredChapter = (mapSeed: number, definition: ChapterDefinition)
             },
         });
     }
+};
+
+const addHistoricalConfigIslands = (
+    metaById: Map<string, IslandMeta>,
+    config: Stage2LevelConfig
+) => {
+    config.goalIslandIds.forEach((id) => {
+        const island = config.world.getIslandById(id);
+        if (!island?.goalFormula) return;
+        metaById.set(id, {
+            name: island.name,
+            category: island.category,
+            description: island.description,
+            descriptionKey: island.descriptionKey,
+            goalFormula: island.goalFormula,
+            premiseFormulas: (island.premiseNodes ?? []).map((premise) => premise.formula),
+            rewardCoins: island.rewardCoins,
+            rewardTheorem: island.rewardTheorem,
+        });
+    });
+};
+
+const createConfiguredChapter = (mapSeed: number, definition: ChapterDefinition): Stage2LevelConfig => {
+    const metaById = new Map<string, IslandMeta>();
+
+    // Stage 2 is one continuous world. Keep metadata for every earlier island so
+    // completed circuits still have their terrain, premises, labels, and goals
+    // when the player advances to a later chapter.
+    addHistoricalConfigIslands(metaById, createLevel12(mapSeed));
+    chapterDefinitions
+        .filter((chapter) => chapter.chapterLevel <= definition.chapterLevel)
+        .forEach((chapter) => addConfiguredChapterIslands(metaById, chapter));
 
     const world = createStage2World(mapSeed, metaById);
     const main = definition.islands.find((island) => island.category === 'main') ?? definition.islands[0];
