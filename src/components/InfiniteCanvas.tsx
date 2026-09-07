@@ -127,6 +127,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     const [lastWireGridPos, setLastWireGridPos] = useState<Point | null>(null);
     const [lastMousePos, setLastMousePos] = useState<Point>({ x: 0, y: 0 });
     const [mouseGridPos, setMouseGridPos] = useState<Point | null>(null);
+    const [lastPlacement, setLastPlacement] = useState<{ nodeId: string; tool: Tool; x: number; y: number } | null>(null);
     const [nodes, setNodes] = useState<NodeData[]>(initialState?.nodes || []);
     const [wires, setWires] = useState<Wire[]>(initialState?.wires || []);
 
@@ -254,6 +255,10 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         stage2UnlockedIslandIdSet.forEach(id => stage2Config.world.getIslandById(id)?.buildTiles.forEach(tile => tiles.add(`${tile.x},${tile.y}`)));
         return tiles;
     }, [stage2Config, stage2UnlockedIslandIdSet]);
+    // Show the placed item, not a conflicting preview of another copy at the same cell.
+    const awaitingNextPlacement = Boolean(lastPlacement && lastPlacement.tool === activeTool
+        && lastPlacement.x === mouseGridPos?.x && lastPlacement.y === mouseGridPos?.y
+        && nodes.some(node => node.id === lastPlacement.nodeId));
     // This is a read-only preview. The existing placement handler remains authoritative.
     const previewBlocked = React.useMemo(() => {
         if (!activeTool || !mouseGridPos) return false;
@@ -1133,7 +1138,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         }
 
         // --- Ghost Node (Active Tool) ---
-        if (activeTool && mouseGridPos) {
+        if (activeTool && mouseGridPos && !awaitingNextPlacement) {
             drawNode(ctx, activeTool, mouseGridPos.x * GRID_SIZE, mouseGridPos.y * GRID_SIZE, true);
             const bounds = getNodeBounds({ ...activeTool, ...mouseGridPos });
             ctx.save(); ctx.strokeStyle = previewBlocked ? ART_THEME.error : ART_THEME.ivory;
@@ -1194,7 +1199,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         }
         ctx.restore();
 
-    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, stage2Progress?.completedIslandIds, stage2DisplayedGoalIslandIds, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById, focusMode, activeNodeIds, quality, language, stage2Progress?.mapSeed, selectedStage2Island?.id, previewBlocked, reducedMotion]);
+    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, stage2Progress?.completedIslandIds, stage2DisplayedGoalIslandIds, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById, focusMode, activeNodeIds, quality, language, stage2Progress?.mapSeed, selectedStage2Island?.id, previewBlocked, reducedMotion, awaitingNextPlacement]);
 
     // Animation is a rendering concern. React updates only when game or interaction state changes.
     useEffect(() => { drawRef.current = draw; draw(); }, [draw]);
@@ -1409,6 +1414,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             const gy = Math.round((worldY / GRID_SIZE) / snap) * snap;
 
             if (activeTool) {
+                // A new click is a new attempt; a genuine failure must remain visible.
+                setLastPlacement(null);
                 // Check if we are clicking on an existing node (to prevent overlap unless allowed?)
                 // For wire segments, maybe we want to allow overlap with ports?
                 // But for now, let's keep it simple: just place if space is empty-ish.
@@ -1495,6 +1502,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                             newNode
                         ]);
                         onNodePlaced?.(newNode);
+                        setMouseGridPos({ x: gx, y: gy });
+                        setLastPlacement({ nodeId: newNode.id, tool: activeTool, x: gx, y: gy });
                         if (newNode.type === 'wire') {
                              dispatchAction('CONNECT_WIRE', { 
                                  x: newNode.x, 
@@ -1571,6 +1580,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         const gy = Math.round((worldY / GRID_SIZE) / snap) * snap;
         
         setMouseGridPos({ x: gx, y: gy });
+        setLastPlacement(previous => previous && (previous.x !== gx || previous.y !== gy) ? null : previous);
 
         if (isBoxSelecting && boxSelectStart) {
             // Update box selection end point
