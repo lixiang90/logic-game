@@ -1,0 +1,41 @@
+.art-common-dialog { outline:none; width:min(100%,510px); }
+.art-common-dialog-wide { width:min(100%,880px); }
+.art-common-dialog .art-dialog-header { margin-bottom:22px; }
+.art-common-dialog .art-dialog-header h2 { font-size:26px; }
+.art-common-dialog .art-dialog-footer { margin-top:22px; }
+.art-common-description { font-size:14px; line-height:1.9; color:#c6d0d2; margin:0; }
+.art-common-symbol { display:grid; place-items:center; width:53px; height:53px; border:1px solid #b8a17066; border-radius:9px; background:#b59f6614; color:#d4b578; margin-bottom:18px; }
+.art-common-actions { display:flex; justify-content:flex-end; gap:10px; width:100%; }
+.art-button.art-button-danger { color:#f4d6c8; background:#7b4948; border-color:#b47b72; }
+.art-button.art-button-danger:hover { background:#955954; border-color:#d39183; }
+.art-save-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; border:1px solid #b19a663b; border-radius:7px; background:#0d1e30; padding:5px; margin-bottom:21px; }
+.art-save-tabs button { display:flex; justify-content:center; align-items:center; gap:7px; min-width:0; min-height:42px; padding:9px 8px; border:1px solid transparent; border-radius:4px; color:#b4c1c8; font-size:12px; }
+.art-save-tabs button[aria-pressed="true"] { background:#3c5060; border-color:#b49c6b80; color:#f2e2bd; }
+.art-save-tabs button:hover { background:#2c4052; }
+.art-game-save-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:13px; }
+.art-game-save-card { overflow:hidden; min-width:0; border:1px solid #b6a17040; border-radius:7px; background:#142638; }
+.art-game-save-card.is-empty { border-style:dashed; }
+.art-save-preview { height:92px; overflow:hidden; background:#0b1b2b; }
+.art-save-preview img { width:100%; height:100%; object-fit:cover; }
+.art-save-preview .art-blueprint-preview { margin:0; border-radius:0!important; border:0!important; }
+.art-save-empty-art { height:92px; display:grid; place-items:center; color:#617886; background:repeating-linear-gradient(135deg,transparent,transparent 18px,#9ca88706 19px,#9ca88706 20px),#102131; }
+.art-game-save-card-content { padding:13px; }
+.art-game-save-card .art-eyebrow { font-size:8px; letter-spacing:.11em; }
+.art-game-save-card h3 { color:#e5dbc2; font-size:13px; line-height:1.5; font-weight:500; margin:8px 0 4px; }
+.art-game-save-card time { display:block; font-size:9px; color:#95aab6; line-height:1.5; }
+.art-game-save-card .art-button { width:100%; padding:7px 8px; min-height:36px; margin-top:12px; font-size:11px; }
+.art-save-data-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:17px; }
+.art-save-data-card { padding:20px; background:linear-gradient(140deg,#294052,#132639); border:1px solid #bca26e4f; border-radius:8px; }
+.art-save-data-card>svg { color:#c6ad7f; margin-bottom:14px; }
+.art-save-data-card h3 { margin:0 0 7px; font-size:17px; color:#e9dec2; font-weight:500; }
+.art-save-data-card p { min-height:3.5em; font-size:12px; color:#a9bbc4; line-height:1.8; margin:0 0 19px; }
+.art-save-data-card .art-button { width:100%; }
+.art-data-import { cursor:pointer; }
+.art-data-import:focus-within { outline:2px solid #59d6f0; outline-offset:4px; }
+.art-save-confirmation { display:flex; gap:15px; align-items:center; padding:17px; border:1px solid #b7a16a4d; border-radius:7px; color:#e8dbb8; background:#adc07612; }
+.art-save-confirmation>svg { color:#b7d6a9; }
+.art-save-confirmation p { margin:0; font-size:14px; }
+.art-save-confirmation small { display:block; margin-top:6px; color:#a7b9b8; font-size:11px; }
+@media(max-width:600px) {
+ .art-common-dialog { padding:21px 17px; }.art-common-dialog .art-dialog-header h2 { font-size:23px; }.art-save-tabs { gap:3px; padding:4px; }.art-save-tabs button { gap:4px; padding:8px 4px; font-size:11px; min-height:43px; }.art-save-tabs button svg { width:15px; }.art-game-save-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }.art-game-save-card-content { padding:10px; }.art-game-save-card .art-eyebrow { font-size:7px; letter-spacing:.04em; }.art-game-save-card h3 { font-size:11px; }.art-game-save-card time { font-size:8px; }.art-game-save-card .art-button { font-size:10px; min-height:40px; gap:5px; }.art-save-data-grid { grid-template-columns:1fr; }.art-save-data-card { padding:18px; }.art-save-data-card p { min-height:0; }.art-common-actions .art-button { flex:1; }.art-common-description { font-size:13px; }
+}

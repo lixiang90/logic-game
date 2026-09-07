@@ -2,9 +2,15 @@
 'use client';
 
 import React from 'react';
-import { Tool, NodeType } from '@/types/game';
+import { Tool, NodeType, NodeData } from '@/types/game';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { TheoremChipInventoryEntry } from '@/types/stage2';
+import { ART_THEME, atomArt } from '@/lib/art-theme';
+import { assetUrl } from '@/lib/art-assets';
+import { useArtModal } from '@/lib/use-art-modal';
+import GameIcon from '@/components/GameIcon';
+import CircuitThumbnail from '@/components/CircuitThumbnail';
+import '@/styles/theorem-art.css';
 import {
     canSimplifyTheoremChip,
     extractTheoremVariables,
@@ -13,6 +19,27 @@ import {
 } from '@/lib/theorem-chips';
 
 export type SelectMode = 'pointer' | 'box';
+
+function ArchiveDialog({ children, label, onClose, compact = false }: {
+    children: React.ReactNode; label: string; onClose: () => void; compact?: boolean;
+}) {
+    const ref = React.useRef<HTMLDivElement>(null);
+    useArtModal(ref, onClose);
+    return <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={label}
+        className={compact ? 'theorem-archive-confirmation' : 'theorem-archive'}
+        style={compact ? undefined : { backgroundImage: `linear-gradient(110deg,#091522f2,#112336e8),url("${assetUrl('/art/scenes/observatory.webp')}")` }}>
+        {children}
+    </div>;
+}
+
+function AtomGlyph({ name }: { name: string }) {
+    const art = atomArt(name);
+    return <svg width="34" height="34" viewBox="0 0 40 40" aria-hidden="true" style={{ color: art.color }}>
+        <g fill="currentColor" fillOpacity=".16" stroke="currentColor" strokeWidth="1.3">
+            {art.shape === 'circle' ? <circle cx="20" cy="20" r="16" /> : art.shape === 'square' ? <rect x="5" y="5" width="30" height="30" rx="3" /> : <path d={art.shape === 'triangle' ? 'M20 2 38 35H2Z' : 'm20 2 18 18-18 18L2 20Z'} />}
+        </g><text x="20" y="25" textAnchor="middle" fill={ART_THEME.ivory} fontSize="16" fontFamily="Georgia, serif">{name}</text>
+    </svg>;
+}
 
 interface ToolbarProps {
     activeTool: Tool | null;
@@ -336,10 +363,28 @@ export default function Toolbar({
         return () => window.removeEventListener('pointerdown', onPointerDown);
     }, [showMoreAtomsMenu]);
 
-    const canAffordTheorem = (theorem: TheoremChipInventoryEntry) =>
-        theorem.freeUsesRemaining > 0 || coins >= theorem.cost;
+    React.useEffect(() => {
+        if ((!showMoreAtomsMenu && !showTheoremMenu) || showTheoremLibrary) return;
+        const closePopover = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (showMoreAtomsMenu) {
+                setShowMoreAtomsMenu(false);
+                moreAtomsButtonRef.current?.focus();
+            } else {
+                setShowTheoremMenu(false);
+                theoremMenuButtonRef.current?.focus();
+            }
+        };
+        window.addEventListener('keydown', closePopover, true);
+        return () => window.removeEventListener('keydown', closePopover, true);
+    }, [showMoreAtomsMenu, showTheoremMenu, showTheoremLibrary]);
 
-    const handleTheoremSelect = (theorem: TheoremChipInventoryEntry, simplified = false) => {
+    const canAffordTheorem = React.useCallback((theorem: TheoremChipInventoryEntry) =>
+        theorem.freeUsesRemaining > 0 || coins >= theorem.cost, [coins]);
+
+    const handleTheoremSelect = React.useCallback((theorem: TheoremChipInventoryEntry, simplified = false) => {
         if (simplified) {
             if (!canSimplifyTheoremChip(theorem) || (theorem.simplifiedUsesRemaining ?? 0) <= 0) return;
         } else if (!canAffordTheorem(theorem)) {
@@ -372,7 +417,7 @@ export default function Toolbar({
         });
         // We do NOT hide the library here if they are just dragging.
         // It's only hidden explicitly by the library UI's own logic (e.g., Return to game button).
-    };
+    }, [canAffordTheorem, onSelectTool]);
 
     const isUnlocked = (type: string, subType?: string) => {
         if (!unlockedTools) return true;
@@ -430,6 +475,21 @@ export default function Toolbar({
         const vars = extractTheoremVariables([...premises, conclusion]);
         return { premises, conclusion, vars };
     }, [selectedTheorem]);
+
+    const selectedTheoremPreviews = React.useMemo(() => {
+        if (!selectedTheorem || !selectedTheoremDetails) return [];
+        const standard: NodeData = {
+            id: `archive-${selectedTheorem.theoremId}`, type: 'theorem', subType: selectedTheorem.theoremId,
+            x: 0, y: 0, w: 10, h: getTheoremChipHeight(selectedTheoremDetails.vars.length, selectedTheoremDetails.premises.length, false),
+            rotation: 0, theoremId: selectedTheorem.theoremId, theoremName: selectedTheorem.name,
+            theoremVars: selectedTheoremDetails.vars, theoremPremises: selectedTheoremDetails.premises,
+            theoremConclusion: selectedTheoremDetails.conclusion, customLabel: selectedTheorem.formula,
+            theoremIsFormulaOnly: !selectedTheorem.formula.trim().startsWith('|-') && !selectedTheorem.formula.trim().startsWith('⊢'),
+        };
+        return canSimplifyTheoremChip(selectedTheorem)
+            ? [standard, { ...standard, id: `${standard.id}-simplified`, theoremSimplified: true, h: getTheoremChipHeight(selectedTheoremDetails.vars.length, selectedTheoremDetails.premises.length, true) }]
+            : [standard];
+    }, [selectedTheorem, selectedTheoremDetails]);
 
     const folderOptions = React.useMemo(() => {
         const out: Array<{ id: string; name: string; depth: number }> = [];
@@ -689,7 +749,8 @@ export default function Toolbar({
                             type="button"
                             onClick={() => toggleFolderExpanded(folder.id)}
                             className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 bg-slate-900/50 text-slate-200 hover:border-slate-500"
-                            aria-label="Toggle folder"
+                            aria-label={language === 'zh' ? `展开或收起 ${getFolderDisplayName(folder)}` : `Expand or collapse ${getFolderDisplayName(folder)}`}
+                            aria-expanded={expanded}
                         >
                             {expanded ? '−' : '+'}
                         </button>
@@ -740,7 +801,7 @@ export default function Toolbar({
                                                 ? 'border-cyan-400/70 bg-cyan-500/10'
                                                 : 'border-slate-700 bg-slate-900/50 hover:border-slate-500 hover:bg-slate-800/60'
                                         }`}
-                                        style={{ marginLeft: (depth + 1) * 10 }}
+                                        style={{ marginLeft: (depth + 1) * 10, width: `calc(100% - ${(depth + 1) * 10}px)` }}
                                     >
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="font-bold text-slate-100">{theorem.name}</div>
@@ -771,7 +832,7 @@ export default function Toolbar({
 
     return (
         <>
-        <div className={`fixed bottom-8 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 rounded-2xl border border-slate-500/50 bg-slate-800/95 px-6 py-4 shadow-[0_0_40px_-10px_rgba(0,0,0,0.8)] backdrop-blur-xl ${showTheoremLibrary ? 'z-[120]' : 'z-50'} pointer-events-auto ring-1 ring-white/10`}>
+        <div data-archive-open={showTheoremLibrary} data-archive-dragging={isDraggingTheoremToToolbar} className={`art-toolbar fixed bottom-8 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 rounded-2xl border border-slate-500/50 bg-slate-800/95 px-6 py-4 shadow-[0_0_40px_-10px_rgba(0,0,0,0.8)] backdrop-blur-xl ${showTheoremLibrary ? 'z-[120]' : 'z-50'} pointer-events-auto ring-1 ring-white/10`}>
             <div className="flex items-end gap-2">
             {/* Tools Group (Pointer & Box Select & Wire) */}
             <div className={`${isCategoryVisible('utility') ? 'flex' : 'hidden'} flex-col items-center gap-2`}>
@@ -780,7 +841,7 @@ export default function Toolbar({
                 </div>
                 <div className="h-12 flex items-center gap-2">
                     {/* Pointer / Select Tool */}
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "选择 / 移动" : "Select / Move"} aria-pressed={isPointerActive}
                         id="tool-select"
                         onClick={() => { onSelectTool(null); onSelectModeChange?.('pointer'); }}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -793,10 +854,10 @@ export default function Toolbar({
                             <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"></path>
                             <path d="M13 13l6 6"></path>
                         </svg>
-                    </div>
+                    </button>
 
                     {/* Box Select Tool */}
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "框选（右键删除选中项）" : "Box Select (Right-click to delete selected)"} aria-pressed={isBoxSelectActive}
                         id="tool-box-select"
                         onClick={() => { onSelectTool(null); onSelectModeChange?.('box'); }}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -808,12 +869,12 @@ export default function Toolbar({
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 3">
                             <path d="M4 4h16v16H4z"></path>
                         </svg>
-                    </div>
+                    </button>
 
                     <div className="w-px h-8 bg-slate-700"></div>
 
                     {/* Wire Tool */}
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "导线（R 旋转，T 切换类型）" : "Wire Tool (R to rotate, T to toggle type)"} aria-pressed={activeTool?.type === 'wire'}
                         id="tool-wire"
                         onClick={() => handleSelect('wire', 'formula', 1, 1)}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -824,20 +885,20 @@ export default function Toolbar({
                     >
                         {activeTool?.type === 'wire' && activeTool.subType === 'provable' ? (
                              // Yellow Zigzag
-                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={ART_THEME.provable} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
                              </svg>
                         ) : (
                             // Blue Zigzag (Default or Formula)
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={ART_THEME.formula} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
                             </svg>
                         )}
-                    </div>
+                    </button>
 
                     {/* Wire Bridge Tool */}
                     {isUnlocked('bridge') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "导线桥：交叉线路互不连接（R 旋转）" : "Wire Bridge - Allows wires to cross without merging (R to rotate)"} aria-pressed={activeTool?.type === 'bridge'}
                         id="tool-bridge"
                         onClick={() => handleSelect('bridge', 'bridge', 2, 2)}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -853,7 +914,7 @@ export default function Toolbar({
                             <path d="M12 14v4"></path>
                             <circle cx="12" cy="12" r="3" fill="none"></circle>
                         </svg>
-                    </div>
+                    </button>
                     )}
                 </div>
             </div>
@@ -870,6 +931,8 @@ export default function Toolbar({
                             <button
                                 ref={theoremMenuButtonRef}
                                 type="button"
+                                aria-expanded={showTheoremMenu}
+                                aria-controls="theorem-toolbar-popover"
                                 onClick={() => setShowTheoremMenu((v) => !v)}
                                 className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                         text-cyan-100 bg-slate-800 border border-cyan-500/40
@@ -887,6 +950,9 @@ export default function Toolbar({
                             {showTheoremMenu && (
                                 <div
                                     ref={theoremMenuRef}
+                                    id="theorem-toolbar-popover"
+                                    role="group"
+                                    aria-label={t('theoremBar')}
                                     className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-[22rem] max-w-[92vw] rounded-2xl border border-slate-600 bg-slate-900/95 p-3 shadow-2xl ring-1 ring-white/10"
                                 >
                                     <div className="grid grid-cols-4 gap-2">
@@ -989,7 +1055,7 @@ export default function Toolbar({
                 <div className="h-12 flex items-center gap-3 relative">
                     {/* Atom P */}
                     {isUnlocked('atom', 'P') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "原子 P" : "Atom P"} aria-pressed={isActive('P')}
                         id="tool-atom-P"
                         onClick={() => handleSelect('atom', 'P', 4, 4)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -998,13 +1064,13 @@ export default function Toolbar({
                                 ${isActive('P') ? activeClass : ''}`}
                         title="Atom P"
                     >
-                        P
-                    </div>
+                        <AtomGlyph name="P" />
+                    </button>
                     )}
 
                     {/* Atom Q */}
                     {isUnlocked('atom', 'Q') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "原子 Q" : "Atom Q"} aria-pressed={isActive('Q')}
                         id="tool-atom-Q"
                         onClick={() => handleSelect('atom', 'Q', 4, 4)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -1013,13 +1079,13 @@ export default function Toolbar({
                                 ${isActive('Q') ? activeClass : ''}`}
                         title="Atom Q"
                     >
-                        Q
-                    </div>
+                        <AtomGlyph name="Q" />
+                    </button>
                     )}
 
                     {/* Atom R */}
                     {isUnlocked('atom', 'R') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "原子 R" : "Atom R"} aria-pressed={isActive('R')}
                         onClick={() => handleSelect('atom', 'R', 4, 4)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                 text-[#ffaa00] border border-[#ffaa00] bg-linear-to-br from-[#2a1a0a] to-[#252015] 
@@ -1027,8 +1093,8 @@ export default function Toolbar({
                                 ${isActive('R') ? activeClass : ''}`}
                         title="Atom R"
                     >
-                        R
-                    </div>
+                        <AtomGlyph name="R" />
+                    </button>
                     )}
 
                     {(isUnlocked('atom', 'S') || isUnlocked('atom', 'T')) && (
@@ -1036,6 +1102,8 @@ export default function Toolbar({
                             <button
                                 ref={moreAtomsButtonRef}
                                 type="button"
+                                aria-expanded={showMoreAtomsMenu}
+                                aria-controls="more-atoms-popover"
                                 onClick={() => setShowMoreAtomsMenu((v) => !v)}
                                 className={`h-12 rounded-md border border-slate-600 bg-slate-800 px-3 text-xs font-bold text-slate-200 transition-all duration-200 hover:-translate-y-1 hover:bg-slate-700 hover:scale-110 active:scale-95 ${
                                     showMoreAtomsMenu ? activeClass : ''
@@ -1048,6 +1116,9 @@ export default function Toolbar({
                             {showMoreAtomsMenu && (
                                 <div
                                     ref={moreAtomsMenuRef}
+                                    id="more-atoms-popover"
+                                    role="group"
+                                    aria-label={t('atoms')}
                                     className="absolute bottom-full mb-3 right-0 w-44 rounded-2xl border border-slate-600 bg-slate-900/95 p-3 shadow-2xl ring-1 ring-white/10"
                                 >
                                     <div className="flex flex-col gap-2">
@@ -1062,8 +1133,10 @@ export default function Toolbar({
                                                     isActive('S') ? activeClass : ''
                                                 }`}
                                                 title="Atom S"
+                                                aria-label={language === 'zh' ? '原子 S' : 'Atom S'}
+                                                aria-pressed={isActive('S')}
                                             >
-                                                <span className="text-[#f97316]">S</span>
+                                                <AtomGlyph name="S" />
                                             </button>
                                         )}
                                         {isUnlocked('atom', 'T') && (
@@ -1077,8 +1150,10 @@ export default function Toolbar({
                                                     isActive('T') ? activeClass : ''
                                                 }`}
                                                 title="Atom T"
+                                                aria-label={language === 'zh' ? '原子 T' : 'Atom T'}
+                                                aria-pressed={isActive('T')}
                                             >
-                                                <span className="text-[#22c55e]">T</span>
+                                                <AtomGlyph name="T" />
                                             </button>
                                         )}
                                     </div>
@@ -1099,7 +1174,7 @@ export default function Toolbar({
                 <div className="h-12 flex items-center gap-3">
                     {/* Implies */}
                     {isUnlocked('gate', 'implies') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "蕴含门 →" : "Implies (→)"} aria-pressed={isActive('implies')}
                         id="tool-gate-implies"
                         onClick={() => handleSelect('gate', 'implies', 4, 4)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -1110,12 +1185,12 @@ export default function Toolbar({
                         title="Implies (→)"
                     >
                         →
-                    </div>
+                    </button>
                     )}
 
                     {/* Not */}
                     {isUnlocked('gate', 'not') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "否定门 ¬" : "Not (¬)"} aria-pressed={isActive('not')}
                         id="tool-gate-not"
                         onClick={() => handleSelect('gate', 'not', 4, 4)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -1129,19 +1204,19 @@ export default function Toolbar({
                         title="Not (¬)"
                     >
                         <span className="ml-1 font-bold text-lg">¬</span>
-                    </div>
+                    </button>
                     )}
 
                     {/* And */}
                     {isUnlocked('gate', 'and') && (
-                    <div
+                    <button type="button" aria-label={language === 'zh' ? "合取门 ∧" : "And (∧)"} aria-pressed={isActive('and')}
                         id="tool-gate-and"
                         onClick={() => handleSelect('gate', 'and', 4, 4)}
                         className={`flex h-12 w-12 cursor-pointer select-none items-center justify-center rounded-[4px_24px_24px_4px] border border-violet-400 bg-violet-500/10 text-xl font-bold text-violet-300 transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-[0_0_12px_rgba(192,132,252,0.45)] active:scale-95 ${isActive('and') ? activeClass : ''}`}
                         title="And (∧)"
                     >
                         ∧
-                    </div>
+                    </button>
                     )}
                 </div>
             </div>
@@ -1156,7 +1231,7 @@ export default function Toolbar({
                 <div className="h-12 flex items-center gap-3">
                     {/* Axiom 1 */}
                     {isUnlocked('axiom', '1') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "公理 I：A → (B → A)" : "A → (B → A)"} aria-pressed={isActive('1')}
                         onClick={() => handleSelect('axiom', '1', 4, 4)}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                 text-[#00ffaa] border-4 border-double border-[#00ffaa] bg-[#0a1a15] 
@@ -1166,12 +1241,12 @@ export default function Toolbar({
                         title="A → (B → A)"
                     >
                         I
-                    </div>
+                    </button>
                     )}
 
                     {/* Axiom 2 */}
                     {isUnlocked('axiom', '2') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "公理 II：(A→(B→C)) → ((A→B)→(A→C))" : "(A→(B→C)) → ((A→B)→(A→C))"} aria-pressed={isActive('2')}
                         onClick={() => handleSelect('axiom', '2', 4, 6)}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                 text-[#00ffaa] border-4 border-double border-[#00ffaa] bg-[#0a1a15] 
@@ -1181,12 +1256,12 @@ export default function Toolbar({
                         title="(A→(B→C)) → ((A→B)→(A→C))"
                     >
                         II
-                    </div>
+                    </button>
                     )}
 
                     {/* Axiom 3 */}
                     {isUnlocked('axiom', '3') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "公理 III：(¬A → ¬B) → (B → A)" : "(¬A → ¬B) → (B → A)"} aria-pressed={isActive('3')}
                         onClick={() => handleSelect('axiom', '3', 4, 4)}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                 text-[#00ffaa] border-4 border-double border-[#00ffaa] bg-[#0a1a15] 
@@ -1196,7 +1271,7 @@ export default function Toolbar({
                         title="(¬A → ¬B) → (B → A)"
                     >
                         III
-                    </div>
+                    </button>
                     )}
                 </div>
             </div>
@@ -1211,7 +1286,7 @@ export default function Toolbar({
                 <div className="h-12 flex items-center gap-3">
                     {/* MP Rule */}
                     {isUnlocked('mp') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "分离规则 MP" : "Modus Ponens"} aria-pressed={isActive('mp')}
                         onClick={() => handleSelect('mp', 'mp', 6, 6)}
                         className={`w-12 h-12 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
                                 text-[#ffff00] bg-[#1a1a00] 
@@ -1224,17 +1299,17 @@ export default function Toolbar({
                         title="Modus Ponens"
                     >
                         MP
-                    </div>
+                    </button>
                     )}
                     {isUnlocked('quick-mp') && (
-                    <div
+                    <button type="button" aria-label={language === 'zh' ? `简化 MP，剩余 ${quickMpUses} 次` : `Simplified MP, ${quickMpUses} uses left`} aria-pressed={activeTool?.type === 'quick-mp'} disabled={quickMpUses <= 0}
                         onClick={() => quickMpUses > 0 && handleSelect('quick-mp', 'quick-mp', 5, 5)}
                         className={`relative flex h-12 w-12 select-none items-center justify-center rounded-lg border-2 border-amber-300 bg-amber-950/80 text-xs font-black text-amber-200 shadow-[0_0_16px_rgba(251,191,36,.3)] transition ${quickMpUses > 0 ? 'cursor-pointer hover:-translate-y-1 hover:scale-110' : 'cursor-not-allowed opacity-45'} ${activeTool?.type === 'quick-mp' ? activeClass : ''}`}
                         title={`Simplified MP · ${quickMpUses} uses`}
                     >
                         MP+
                         <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-amber-300 px-1 text-center text-[10px] text-slate-950">{quickMpUses}</span>
-                    </div>
+                    </button>
                     )}
                 </div>
             </div>
@@ -1249,7 +1324,7 @@ export default function Toolbar({
                 <div className="h-12 flex items-center gap-3">
                     {/* Small Display */}
                     {isUnlocked('display', 'small') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "小型显示器（4×4）" : "Small Display (4x4)"} aria-pressed={isActive('small')}
                         id="tool-display-small"
                         onClick={() => handleSelect('display', 'small', 4, 4)}
                         className={`w-10 h-10 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -1262,12 +1337,12 @@ export default function Toolbar({
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="2" y="3" width="20" height="14" rx="2"></rect>
                         </svg>
-                    </div>
+                    </button>
                     )}
 
                     {/* Large Display */}
                     {isUnlocked('display', 'large') && (
-                    <div 
+                    <button type="button" aria-label={language === 'zh' ? "大型显示器（8×8）" : "Large Display (8x8)"} aria-pressed={isActive('large')}
                         id="tool-display-large"
                         onClick={() => handleSelect('display', 'large', 8, 8)}
                         className={`w-14 h-14 flex justify-center items-center cursor-pointer transition-all duration-200 select-none relative
@@ -1282,7 +1357,7 @@ export default function Toolbar({
                             <line x1="8" y1="21" x2="16" y2="21"></line>
                             <line x1="12" y1="17" x2="12" y2="21"></line>
                         </svg>
-                    </div>
+                    </button>
                     )}
                 </div>
             </div>
@@ -1311,13 +1386,15 @@ export default function Toolbar({
                 </nav>
             )}
         </div>
-        {showTheoremLibrary && theoremInventoryOrdered.length > 0 && (
-            <div className="fixed inset-0 z-[90] bg-slate-950/95 text-white backdrop-blur-sm">
-                <div className="absolute top-4 left-4">
-                    <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">{t('theoremBar')}</div>
-                    <div className="text-2xl font-bold">{t('theoremLibrary')}</div>
-                </div>
-                <div className="absolute top-4 right-4 flex items-center gap-2">
+        {showTheoremLibrary && (
+            <ArchiveDialog label={t('theoremLibrary')} onClose={() => setShowTheoremLibrary(false)}>
+                <header className="theorem-archive-header">
+                    <div className="theorem-archive-brand">
+                        <GameIcon name="book" />
+                        <div><div className="theorem-archive-eyebrow">{language === 'zh' ? '学宫档案馆 · 已证明的记忆' : 'ACADEMY ARCHIVE · PROVEN MEMORIES'}</div>
+                            <h2 className="theorem-archive-title">{t('theoremLibrary')}</h2></div>
+                    </div>
+                <div className="theorem-archive-actions">
                     <button
                         type="button"
                         onClick={() => {
@@ -1331,6 +1408,7 @@ export default function Toolbar({
                         }}
                         className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
                     >
+                        <GameIcon name={theoremLibraryMode === 'browse' ? 'folder' : 'book'} size={16} />
                         {theoremLibraryMode === 'browse' ? t('manageMode') : t('browseMode')}
                     </button>
                     <button
@@ -1338,14 +1416,15 @@ export default function Toolbar({
                         onClick={() => setShowTheoremLibrary(false)}
                         className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
                     >
-                        {t('returnToGame')}
+                        <GameIcon name="arrow-left" size={16} />{t('returnToGame')}
                     </button>
                 </div>
+                </header>
 
-                <div className="h-full w-full px-6 pb-6 pt-20">
-                    <div className="flex h-full gap-4">
+                <div className="theorem-archive-body">
+                    <div className="theorem-archive-layout">
                         {theoremLibraryMode === 'browse' ? (
-                            <div className="w-72 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/60">
+                            <div className="theorem-archive-list">
                                 <div className="flex items-center justify-between gap-3 border-b border-slate-700 p-3">
                                     <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
                                         {t('theoremLibrary')}
@@ -1358,8 +1437,9 @@ export default function Toolbar({
                                         {t('newFolder')}
                                     </button>
                                 </div>
-                                <div className="max-h-full overflow-y-auto p-3">
+                                <div className="theorem-archive-list-scroll">
                                     <input
+                                        aria-label={language === 'zh' ? '搜索定理名称、公式或前提' : 'Search theorem name, formula or premise'}
                                         value={theoremSearch}
                                         onChange={(event) => setTheoremSearch(event.target.value)}
                                         className="mb-3 w-full rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-400/60"
@@ -1393,7 +1473,7 @@ export default function Toolbar({
                             </div>
                         ) : (
                             <div
-                                className="shrink-0 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/60"
+                                className="theorem-archive-manage"
                                 style={{ width: managePanelWidthCss }}
                             >
                                 <div className="flex h-full flex-col">
@@ -1601,19 +1681,23 @@ export default function Toolbar({
                             </div>
                         )}
 
-                        <div className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/60">
+                        <div className="theorem-archive-detail">
                             {selectedTheorem && selectedTheoremDetails ? (
                                 <div className="flex h-full flex-col">
-                                    <div className="flex items-start justify-between gap-4 border-b border-slate-700 p-4">
+                                    <div className="theorem-archive-detail-header">
                                         <div className="min-w-0">
-                                            <div className="text-xl font-bold text-white">{selectedTheorem.name}</div>
-                                            <div className="mt-1 break-words text-sm text-slate-300">{selectedTheorem.formula}</div>
+                                            <h3 className="theorem-archive-record-name">{selectedTheorem.name}</h3>
+                                            <div className="theorem-archive-formula">{selectedTheorem.formula}</div>
+                                            <a className="theorem-archive-source" href={`https://us.metamath.org/mpeuni/${encodeURIComponent(selectedTheorem.theoremId)}.html`} target="_blank" rel="noreferrer">
+                                                {language === 'zh' ? '查看 set.mm 定理原文' : 'Read the original set.mm theorem'} <GameIcon name="arrow-right" size={13} />
+                                            </a>
                                             {theoremLibraryMode === 'browse' && (
                                                 <div className="mt-3 flex items-center gap-3">
                                                     <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
                                                         {t('moveToFolder')}
                                                     </div>
                                                     <select
+                                                        aria-label={t('moveToFolder')}
                                                         value={selectedTheoremFolderId}
                                                         onChange={(e) => setTheoremFolder(selectedTheorem.theoremId, e.target.value)}
                                                         className="min-w-0 max-w-[18rem] flex-1 rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400/60"
@@ -1626,7 +1710,7 @@ export default function Toolbar({
                                                     </select>
                                                 </div>
                                             )}
-                                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
+                                            <div className="theorem-archive-usage">
                                                 <span>
                                                     {t('freeUsesRemaining')}: {selectedTheorem.freeUsesRemaining}
                                                 </span>
@@ -1640,7 +1724,7 @@ export default function Toolbar({
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="flex shrink-0 flex-col gap-2">
+                                        <div className="theorem-archive-select-actions">
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -1654,7 +1738,7 @@ export default function Toolbar({
                                                         : 'cursor-not-allowed bg-slate-800 text-slate-500'
                                                 }`}
                                             >
-                                                {t('selectTheoremChip')}
+                                                {language === 'zh' ? '选择标准芯片' : 'Select standard chip'}
                                             </button>
                                             {canSimplifyTheoremChip(selectedTheorem) && (
                                                 <button
@@ -1676,7 +1760,28 @@ export default function Toolbar({
                                         </div>
                                     </div>
 
-                                    <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                                    <div className="theorem-archive-detail-scroll">
+                                        <div className="theorem-archive-pin">
+                                            <label htmlFor="theorem-archive-pin-slot">{language === 'zh' ? '固定至器件匣' : 'Pin to tool tray'}</label>
+                                            <select id="theorem-archive-pin-slot" value="" onChange={(event) => {
+                                                if (event.target.value !== '') handleReplacePinnedTheorem(Number(event.target.value), selectedTheorem.theoremId);
+                                            }}>
+                                                <option value="">{language === 'zh' ? '选择一个槽位…' : 'Choose a slot…'}</option>
+                                                {normalizedPinnedTheoremIds.map((id, index) => <option key={index} value={index}>
+                                                    {index + 1} · {theoremInventoryOrdered.find((entry) => entry.theoremId === id)?.name ?? (language === 'zh' ? '空槽位' : 'Empty')}
+                                                </option>)}
+                                            </select>
+                                            <small role="status">{normalizedPinnedTheoremIds.includes(selectedTheorem.theoremId)
+                                                ? (language === 'zh' ? `已固定在槽位 ${normalizedPinnedTheoremIds.indexOf(selectedTheorem.theoremId) + 1}` : `Pinned in slot ${normalizedPinnedTheoremIds.indexOf(selectedTheorem.theoremId) + 1}`)
+                                                : (language === 'zh' ? '选择槽位后可直接从器件匣取用，也可拖拽替换。' : 'Choose a slot for quick access, or drag to replace a pinned chip.')}</small>
+                                        </div>
+                                        <div className="theorem-archive-previews">
+                                            {selectedTheoremPreviews.map((node) => <section className="theorem-archive-preview" key={node.id}>
+                                                <h4>{node.theoremSimplified ? (language === 'zh' ? '纯黄口简化版' : 'Yellow-only version') : (language === 'zh' ? '标准芯片' : 'Standard chip')} <span>{node.w} × {node.h}</span></h4>
+                                                <CircuitThumbnail nodes={[node]} language={language} height={190} label={language === 'zh' ? `${selectedTheorem.name} ${node.theoremSimplified ? '简化版' : '标准版'}真实端口预览` : `${selectedTheorem.name} ${node.theoremSimplified ? 'simplified' : 'standard'} port preview`} />
+                                                <p>{node.theoremSimplified ? (language === 'zh' ? '自动匹配变量；仍逐条检查有序的可证前提。' : 'Matches variables automatically and checks every ordered provable premise.') : (language === 'zh' ? '蓝口传入公式变量，黄口传入可证前提。' : 'Blue ports carry formula variables; yellow ports carry provable premises.')}</p>
+                                            </section>)}
+                                        </div>
                                         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                                             <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
                                                 <div className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('theoremInputs')}</div>
@@ -1745,7 +1850,7 @@ export default function Toolbar({
                     </div>
                 </div>
                 {isCreateFolderOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <ArchiveDialog compact label={t('newFolder')} onClose={() => setIsCreateFolderOpen(false)}>
                         <div className="w-[28rem] max-w-[92vw] rounded-2xl border border-cyan-500/30 bg-slate-900/95 p-6 shadow-2xl">
                             <div className="flex items-center justify-between gap-4">
                                 <div>
@@ -1765,10 +1870,11 @@ export default function Toolbar({
                                 <div className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('folderName')}</div>
                                 <input
                                     ref={createFolderInputRef}
+                                    aria-label={t('folderName')}
                                     value={createFolderName}
                                     onChange={(e) => setCreateFolderName(e.target.value)}
                                     onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
+                                        if (e.key === 'Enter' && createFolderName.trim()) {
                                             addFolder(createFolderParentId, createFolderName);
                                             setIsCreateFolderOpen(false);
                                         } else if (e.key === 'Escape') {
@@ -1794,16 +1900,17 @@ export default function Toolbar({
                                         addFolder(createFolderParentId, createFolderName);
                                         setIsCreateFolderOpen(false);
                                     }}
-                                    className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-cyan-500"
+                                    disabled={!createFolderName.trim()}
+                                    className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-cyan-500 disabled:opacity-40"
                                 >
                                     {t('create')}
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </ArchiveDialog>
                 )}
                 {deleteFolderCandidateId != null && (
-                    <div className="fixed inset-0 z-[105] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <ArchiveDialog compact label={t('deleteFolder')} onClose={() => setDeleteFolderCandidateId(null)}>
                         <div className="w-[32rem] max-w-[92vw] rounded-2xl border border-rose-500/30 bg-slate-900/95 p-6 shadow-2xl">
                             <div className="flex items-center justify-between gap-4">
                                 <div>
@@ -1846,9 +1953,9 @@ export default function Toolbar({
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </ArchiveDialog>
                 )}
-            </div>
+            </ArchiveDialog>
         )}
         </>
     );

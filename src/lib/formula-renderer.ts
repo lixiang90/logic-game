@@ -1,29 +1,33 @@
-import { Formula, Atom, Not, Implies, And, Or, Equiv, Provable } from './logic-engine';
+import { Formula, Atom, Not, Implies, And, Or, Equiv, Provable, parseGoal } from './logic-engine';
+import { ART_THEME, ATOM_ART } from './art-theme';
 
 type AtomConfig = { color: string; shape: 'circle' | 'square' | 'triangle' | 'diamond' };
 
 export const THEME = {
     colors: {
-        blue: '#3b82f6',
-        purple: '#a855f7',
-        green: '#22c55e',
-        yellow: '#eab308',
-        red: '#ef4444',
-        slate: '#1e293b',
-        slateDark: '#0f172a',
-        text: '#f8fafc'
+        blue: ART_THEME.formula,
+        purple: ART_THEME.any,
+        green: '#8FAE85',
+        yellow: ART_THEME.provable,
+        red: '#DF9584',
+        slate: ART_THEME.panel,
+        slateDark: ART_THEME.panelDeep,
+        text: ART_THEME.ivory
     },
-    atoms: {
-        'P': { color: '#3b82f6', shape: 'circle' as const },
-        'Q': { color: '#a855f7', shape: 'square' as const },
-        'R': { color: '#ffaa00', shape: 'triangle' as const },
-        'S': { color: '#f97316', shape: 'diamond' as const },
-        'T': { color: '#22c55e', shape: 'circle' as const }
-    } as Record<string, AtomConfig>
+    atoms: ATOM_ART as Record<string, AtomConfig>
 };
 
 export class FormulaRenderer {
     private minScreenSize = 6;
+    private parsed = new Map<string, ReturnType<typeof parseGoal>>();
+
+    parse(text: string) {
+        if (this.parsed.has(text)) return this.parsed.get(text)!;
+        const value = parseGoal(text);
+        if (this.parsed.size > 512) this.parsed.clear();
+        this.parsed.set(text, value);
+        return value;
+    }
     
     render(ctx: CanvasRenderingContext2D, formula: Formula | Provable, x: number, y: number, size: number, scale: number = 1) {
         const screenSize = size * scale;
@@ -57,13 +61,15 @@ export class FormulaRenderer {
         const screenSize = size * scale;
         if (screenSize < 2) return;
         const r = Math.max(1, size * 0.35);
-        ctx.fillStyle = '#6366f1';
+        ctx.save();
+        ctx.fillStyle = formula instanceof Atom ? (THEME.atoms[formula.name]?.color ?? ART_THEME.ivory) : formula instanceof Provable ? ART_THEME.provable : ART_THEME.formula;
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#a5b4fc';
+        ctx.strokeStyle = ART_THEME.ivory;
         ctx.lineWidth = Math.max(0.5, screenSize * 0.1 / scale);
         ctx.stroke();
+        ctx.restore();
     }
     
     private scaleValue(screenSize: number, scale: number, fraction: number, minVal: number = 0): number {
@@ -80,8 +86,8 @@ export class FormulaRenderer {
         ctx.strokeStyle = 'rgba(255,255,255,0.8)';
         ctx.lineWidth = this.scaleValue(screenSize, scale, 0.04, 1);
 
-        ctx.shadowColor = config.color;
-        ctx.shadowBlur = this.scaleValue(screenSize, scale, 0.15, 2);
+        // Small formulas are frequent; clear silhouettes are cheaper and clearer than stacked blur.
+        ctx.shadowBlur = 0;
 
         const r = size * 0.35;
 
@@ -114,7 +120,7 @@ export class FormulaRenderer {
         const fontSize = this.scaleValue(screenSize, scale, 0.35, 6);
         if (fontSize * scale >= 6) {
             ctx.fillStyle = '#ffffff';
-            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.font = `600 ${Math.min(fontSize, size * .7 / Math.max(1, formula.name.length * .6))}px ${ART_THEME.mathFont}`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(formula.name, x, y + size * 0.02);
@@ -196,15 +202,15 @@ export class FormulaRenderer {
         ctx.save();
         ctx.clip();
 
-        ctx.fillStyle = '#14532d';
+        ctx.fillStyle = '#263845';
         ctx.fillRect(x - w/2, y - h/2, w, h/2);
 
-        ctx.fillStyle = '#166534';
+        ctx.fillStyle = '#304653';
         ctx.fillRect(x - w/2, y, w, h/2);
 
         ctx.restore();
 
-        ctx.strokeStyle = '#22c55e';
+        ctx.strokeStyle = ART_THEME.formula;
         ctx.lineWidth = this.scaleValue(screenSize, scale, 0.03, 1);
         ctx.stroke();
 
@@ -289,8 +295,7 @@ export class FormulaRenderer {
     private renderProvable(ctx: CanvasRenderingContext2D, formula: Provable, x: number, y: number, size: number, scale: number) {
         const screenSize = size * scale;
         
-        ctx.shadowColor = THEME.colors.yellow;
-        ctx.shadowBlur = this.scaleValue(screenSize, scale, 0.1, 2);
+        ctx.shadowBlur = 0;
 
         ctx.strokeStyle = THEME.colors.yellow;
         ctx.lineWidth = this.scaleValue(screenSize, scale, 0.03, 1);

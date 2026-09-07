@@ -1,19 +1,34 @@
 'use client';
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Tool, NodeData, NodeType, Wire, Port } from '@/types/game';
-import { boundsOverlap, getNodeBounds, getNodePorts, getAbsolutePortPosition, findWirePath } from '@/lib/gameUtils';
+import { Tool, NodeData, Wire } from '@/types/game';
+import { boundsOverlap, getNodeBounds, getNodePorts, getAbsolutePortPosition } from '@/lib/gameUtils';
 import { getGoalPortsForRect, solveCircuit, solveCircuitGoals } from '@/lib/circuit-solver';
-import { parseGoal, parseFormula, Provable } from '@/lib/logic-engine';
+import { Provable } from '@/lib/logic-engine';
 import { formulaRenderer } from '@/lib/formula-renderer';
 import { useTutorial } from '@/contexts/TutorialContext';
 import { SelectMode } from '@/components/Toolbar';
 import { Stage2IslandDefinition, Stage2LevelConfig, Stage2MetaProgress } from '@/types/stage2';
 import { getTheoremChipHeight } from '@/lib/theorem-chips';
+import { useVisualSettings } from '@/contexts/VisualSettingsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { ART_THEME } from '@/lib/art-theme';
+import { drawCircuitItem, fitLabel, resolveDisplayValues } from '@/lib/render/circuit-art';
+import { CHAPTER_LANDMARKS, drawIslandGround, drawLandmark, drawStarWorkshop, worldLod } from '@/lib/render/world-art';
 
 interface Point {
     x: number;
     y: number;
+}
+
+// A modal owns the keyboard even before its focus effect runs. Nonmodal readers
+// and form controls own shortcuts while focus is inside them.
+function isCanvasKeyboardBlocked(target: EventTarget | null): boolean {
+    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return true;
+    const element = target instanceof HTMLElement ? target : null;
+    return Boolean(element?.closest('[role="dialog"], [data-formula-reader]')
+        || element?.isContentEditable
+        || element?.matches('input, textarea, select'));
 }
 
 interface InfiniteCanvasProps {
@@ -71,6 +86,16 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     selectedStage2IslandId,
 }, ref) => {
     const { dispatchAction, currentStep } = useTutorial();
+    const { quality, reducedMotion } = useVisualSettings();
+    const { language } = useLanguage();
+    const animationTimeRef = useRef(0);
+    const pixelRatioRef = useRef(1);
+    const drawRef = useRef<() => void>(() => {});
+    const backdropRef = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
+    const visualEventsRef = useRef<Array<{ x: number; y: number; w: number; h: number; at: number; removed: boolean; proof?: boolean }>>([]);
+    const previousVisualNodesRef = useRef<NodeData[] | null>(null);
+    const previousSolvedVisualRef = useRef<Set<string> | null>(null);
+    const animatedWiresRef = useRef(false);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const stage2IslandRenderCacheRef = useRef<
         Map<
@@ -160,17 +185,47 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             goalErrorsById: new Map<string, Set<string>>()
         };
         return solveCircuit(nodes, goalFormula);
-    }, [nodes, wires, goalFormula, stage2Config, stage2UnlockedIslandIdSet]);
+    }, [nodes, goalFormula, stage2Config, stage2UnlockedIslandIdSet]);
 
-    const [flashPhase, setFlashPhase] = useState<number>(0);
+    const displayValues = React.useMemo(() => resolveDisplayValues(nodes, wireValues), [nodes, wireValues]);
     const [hoveredWireValue, setHoveredWireValue] = useState<{ x: number, y: number, value: string } | null>(null);
+    const [inspectedFormula, setInspectedFormula] = useState<string | null>(null);
+
+    useEffect(() => {
+        animatedWiresRef.current = nodes.some(node => node.type === 'wire' && activeNodeIds.has(node.id) && !errorWireIds.has(node.id));
+    }, [nodes, activeNodeIds, errorWireIds]);
+    useEffect(() => {
+        const previous = previousVisualNodesRef.current;
+        previousVisualNodesRef.current = nodes;
+        if (!previous || reducedMotion || quality === 'low') return;
+        const before = new Set(previous.map(node => node.id)), after = new Set(nodes.map(node => node.id));
+        const at = performance.now();
+        const added = nodes.filter(node => !before.has(node.id) && !node.locked).slice(-12);
+        const removed = previous.filter(node => !after.has(node.id) && !node.locked).slice(-12);
+        visualEventsRef.current = [
+            ...added.map(node => ({ ...getNodeBounds(node), at, removed: false })),
+            ...removed.map(node => ({ ...getNodeBounds(node), at, removed: true })),
+        ];
+    }, [nodes, reducedMotion, quality]);
+    useEffect(() => {
+        const solved = stage2Config ? completedGoalIds : new Set(isSolved ? [goalFormula ?? 'goal'] : []);
+        const previous = previousSolvedVisualRef.current;
+        previousSolvedVisualRef.current = new Set(solved);
+        if (!previous || reducedMotion || quality === 'low') return;
+        const at = performance.now();
+        solved.forEach(id => {
+            if (previous.has(id)) return;
+            const bounds = stage2Config ? stage2Config.world.getIslandById(id)?.goalBounds : { x: -4, y: -4, w: 8, h: 8 };
+            if (bounds) visualEventsRef.current.push({ ...bounds, at, removed: false, proof: true });
+        });
+    }, [completedGoalIds, isSolved, goalFormula, stage2Config, reducedMotion, quality]);
     
     // Box selection state
     const [isBoxSelecting, setIsBoxSelecting] = useState<boolean>(false);
     const [boxSelectStart, setBoxSelectStart] = useState<Point | null>(null);
     const [boxSelectEnd, setBoxSelectEnd] = useState<Point | null>(null);
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
-    const [selectedWireIds, setSelectedWireIds] = useState<Set<string>>(new Set());
+    const [, setSelectedWireIds] = useState<Set<string>>(new Set());
     const [focusMode, setFocusMode] = useState(false);
     const clipboardRef = useRef<{ nodes: NodeData[], wires: Wire[] } | null>(null);
     const historyRef = useRef<{
@@ -183,12 +238,6 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     });
     const restoringHistoryRef = useRef(false);
 
-    const displayGoalFormula = React.useMemo(() => {
-        if (!goalFormula) return '';
-        const parsed = parseGoal(goalFormula);
-        return parsed ? parsed.toString() : goalFormula;
-    }, [goalFormula]);
-
     const STAGE2_MARKER_SCALE_THRESHOLD = 0.38;
     const STAGE2_DETAIL_SCALE_THRESHOLD = 0.95;
 
@@ -198,8 +247,34 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         return stage2Config.world.getIslandById(islandId);
     }, [selectedStage2IslandId, stage2Config]);
 
-    const showStage2InteriorDetails = scale >= STAGE2_DETAIL_SCALE_THRESHOLD;
     const showStage2IslandOverlayDetails = stage2Config ? scale >= STAGE2_MARKER_SCALE_THRESHOLD : false;
+    const previewBuildTiles = React.useMemo(() => {
+        if (!stage2Config) return null;
+        const tiles = new Set<string>();
+        stage2UnlockedIslandIdSet.forEach(id => stage2Config.world.getIslandById(id)?.buildTiles.forEach(tile => tiles.add(`${tile.x},${tile.y}`)));
+        return tiles;
+    }, [stage2Config, stage2UnlockedIslandIdSet]);
+    // This is a read-only preview. The existing placement handler remains authoritative.
+    const previewBlocked = React.useMemo(() => {
+        if (!activeTool || !mouseGridPos) return false;
+        const candidate = { ...activeTool, ...mouseGridPos, id: 'preview' } as NodeData;
+        const bounds = getNodeBounds(candidate);
+        if (previewBuildTiles) {
+            for (let x = Math.floor(bounds.x); x < Math.ceil(bounds.x + bounds.w); x++) {
+                for (let y = Math.floor(bounds.y); y < Math.ceil(bounds.y + bounds.h); y++) {
+                    if (!previewBuildTiles.has(`${x},${y}`)) return true;
+                }
+            }
+        }
+        const goals = stage2Config ? stage2DisplayedGoalIslandIds.filter(id => stage2UnlockedIslandIdSet.has(id)).map(id => stage2Config.world.getIslandById(id)?.goalBounds).filter((item): item is { x: number; y: number; w: number; h: number } => Boolean(item)) : [];
+        if ((goals.length ? goals : [{ x: -4, y: -4, w: 8, h: 8 }]).some(goal => boundsOverlap(bounds, goal))) return true;
+        return nodes.some(node => {
+            if (!boundsOverlap(bounds, getNodeBounds(node))) return false;
+            if (candidate.type === 'wire' && node.type === 'wire') return false;
+            if (candidate.type === 'bridge' && node.type === 'wire') return false;
+            return true;
+        });
+    }, [activeTool, mouseGridPos, nodes, previewBuildTiles, stage2Config, stage2DisplayedGoalIslandIds, stage2UnlockedIslandIdSet]);
 
     useEffect(() => {
         const current = { nodes, wires };
@@ -285,20 +360,6 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         return () => cancelAnimationFrame(raf);
     }, [initialState]);
 
-    // Animation Loop for Flashing and Flow
-    useEffect(() => {
-        let animationFrameId: number;
-        const animate = () => {
-            const now = Date.now();
-            // Flash Cycle 0 -> 1 -> 0 every ~1000ms
-            const phase = (Math.sin(now / 150) + 1) / 2; 
-            setFlashPhase(phase);
-            animationFrameId = requestAnimationFrame(animate);
-        };
-        animate();
-        return () => cancelAnimationFrame(animationFrameId);
-    }, []);
-    
     // Handle Level Completion
     useEffect(() => {
         if (isSolved) {
@@ -306,7 +367,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         }
     }, [isSolved, onLevelComplete]);
     
-    const makeSelectionState = () => {
+    const makeSelectionState = useCallback(() => {
         const selected = nodes.filter((node) => selectedNodeIds.has(node.id) && !node.locked);
         if (selected.length === 0) return { nodes: [], wires: [] };
         const minX = Math.min(...selected.map((node) => node.x));
@@ -321,7 +382,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     path: wire.path.map((point) => ({ x: point.x - minX, y: point.y - minY })),
                 })),
         };
-    };
+    }, [nodes, wires, selectedNodeIds]);
 
     const restoreHistoryState = (state: { nodes: NodeData[], wires: Wire[] }) => {
         restoringHistoryRef.current = true;
@@ -608,16 +669,15 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             setSelectedNodeIds(new Set(pastedNodes.map((node) => node.id)));
             return pastedNodes.length;
         },
-    }), [GRID_SIZE, nodes, scale, wires, initialState, stage2Config, selectedNodeIds, activeNodeIds, focusMode, offset]);
+    }), [GRID_SIZE, nodes, scale, wires, initialState, stage2Config, selectedNodeIds, activeNodeIds, focusMode, offset, makeSelectionState]);
 
     useEffect(() => {
         if (!stage2Config) {
             stage2InitialViewKeyRef.current = null;
             return;
         }
-        const key = stage2Config.levelId;
+        const key = `${stage2Config.levelId}:${stage2Progress?.mapSeed ?? 0}`;
         if (stage2InitialViewKeyRef.current === key) return;
-        stage2InitialViewKeyRef.current = key;
 
         const focusIsland = stage2Config.world.getIslandById(stage2Config.focusIslandId);
         if (!focusIsland) return;
@@ -626,6 +686,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         const islandCenterX = (focusIsland.mapBounds.x + focusIsland.mapBounds.w / 2) * GRID_SIZE;
         const islandCenterY = (focusIsland.mapBounds.y + focusIsland.mapBounds.h / 2) * GRID_SIZE;
         const raf = requestAnimationFrame(() => {
+            // Commit only when the frame runs. StrictMode may cancel the first scheduled frame.
+            stage2InitialViewKeyRef.current = key;
             setScale(targetScale);
             setOffset({
                 x: window.innerWidth / 2 - islandCenterX * targetScale,
@@ -633,7 +695,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             });
         });
         return () => cancelAnimationFrame(raf);
-    }, [GRID_SIZE, stage2Config]);
+    }, [GRID_SIZE, stage2Config, stage2Progress?.mapSeed]);
 
     useEffect(() => {
         if (!stage2Config || !stage2Progress) return;
@@ -646,21 +708,6 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     }, [completedGoalIds, onStage2IslandComplete, stage2Config, stage2Progress]);
 
     // Removed wire dragging state as requested
-
-    // Helper: Draw Rounded Rectangle
-    const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
-        ctx.beginPath();
-        ctx.moveTo(x + r, y);
-        ctx.lineTo(x + w - r, y);
-        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-        ctx.lineTo(x + w, y + h - r);
-        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-        ctx.lineTo(x + r, y + h);
-        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-        ctx.lineTo(x, y + r);
-        ctx.quadraticCurveTo(x, y, x + r, y);
-        ctx.closePath();
-    };
 
     // Helper: Find Port at Position
     const findPortAt = (wx: number, wy: number) => {
@@ -677,802 +724,23 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         return null;
     };
 
-    // Helper: Draw Pentagon (for MP)
-    const drawPentagon = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) => {
-        ctx.beginPath();
-        // Shape: 
-        // 1. Top-Left (0, 0)
-        // 2. Top-Right-ish (60%, 0)
-        // 3. Right Tip (100%, 50%)
-        // 4. Bottom-Right-ish (60%, 100%)
-        // 5. Bottom-Left (0, 100%)
-        
-        const pts = [
-            { x: x, y: y },
-            { x: x + w * 0.6, y: y },
-            { x: x + w, y: y + h * 0.5 },
-            { x: x + w * 0.6, y: y + h },
-            { x: x, y: y + h }
-        ];
-        
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.closePath();
-    };
-
-    const drawNode = useCallback((ctx: CanvasRenderingContext2D, node: NodeData | Tool, x: number, y: number, isGhost: boolean = false) => {
-        const w = node.w * GRID_SIZE;
-        const h = node.h * GRID_SIZE;
-        const rotation = node.rotation || 0;
-        
-        ctx.save();
-        
-        // Glow Effect
-        const shouldGlow = isGhost 
-            ? (node.type === 'atom' && ('isActive' in node ? (node.isActive ?? true) : true))
-            : ('id' in node && activeNodeIds.has(node.id));
-
-        if (shouldGlow) {
-             ctx.shadowBlur = 20;
-             ctx.shadowColor = 'rgba(255, 255, 100, 0.6)';
-        }
-
-        if (isGhost) {
-            ctx.globalAlpha = 0.5;
-        }
-
-        // --- Rotation Transform ---
-        const cx = x + w / 2;
-        const cy = y + h / 2;
-        ctx.translate(cx, cy);
-        
-        // Fix: Wires use CCW logic (1=Left), while Gates use CW logic (1=Bottom/Right-Down)
-        // We invert rotation for wires to match their logic definition.
-        const rotationDir = node.type === 'wire' ? -1 : 1;
-        ctx.rotate(rotation * rotationDir * 90 * (Math.PI / 180));
-        
-        // Visual dimensions
-        const drawW = w;
-        const drawH = h;
-        
-        ctx.translate(-drawW / 2, -drawH / 2);
-        
-        // Local coordinates
-        const dx = 0;
-        const dy = 0;
-
-        // Styles based on type
-        let bgColor = '#fff';
-        let borderColor = '#fff';
-        let textColor = '#fff';
-        
-        const COLOR_FORMULA_PORT = '#38bdf8'; // Sky Blue
-        const COLOR_PROVABLE_PORT = '#facc15'; // Yellow
-        const COLOR_ANY_PORT = '#a855f7'; // Purple for any type
-
-        // Helper to draw a port circle
-        const drawPortCircle = (px: number, py: number, type: 'formula' | 'provable' | 'any', portId?: string) => {
-            ctx.beginPath();
-            ctx.arc(px, py, 5, 0, Math.PI * 2);
-            
-            let fillStyle = type === 'formula' ? COLOR_FORMULA_PORT : (type === 'provable' ? COLOR_PROVABLE_PORT : COLOR_ANY_PORT);
-            
-            // Check error
-            if (!isGhost && portId && 'id' in node && errorNodePorts.get(node.id)?.has(portId)) {
-                // Flash Red
-                if (flashPhase > 0.5) {
-                    fillStyle = '#ef4444'; // Red
-                }
-            }
-
-            ctx.fillStyle = fillStyle;
-            ctx.fill();
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-        };
-
-        if (node.type === 'atom') {
-            if (node.subType === 'P') { bgColor = '#0a1a2a'; borderColor = '#00d0ff'; textColor = '#00d0ff'; }
-            else if (node.subType === 'Q') { bgColor = '#1a0a2a'; borderColor = '#d000ff'; textColor = '#d000ff'; }
-            else if (node.subType === 'R') { bgColor = '#2a1a0a'; borderColor = '#ffaa00'; textColor = '#ffaa00'; }
-            else if (node.subType === 'S') { bgColor = '#2a150a'; borderColor = '#f97316'; textColor = '#f97316'; }
-            else if (node.subType === 'T') { bgColor = '#0a2a1c'; borderColor = '#22c55e'; textColor = '#22c55e'; }
-            else { bgColor = '#0f172a'; borderColor = '#94a3b8'; textColor = '#e2e8f0'; }
-            
-            drawRoundedRect(ctx, dx + 2, dy + 2, drawW - 4, drawH - 4, 10);
-            ctx.fillStyle = bgColor;
-            ctx.fill();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-
-            // Text
-            ctx.fillStyle = textColor;
-            ctx.font = 'bold 24px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(node.subType, dx + drawW/2, dy + drawH/2);
-
-            // Output Port (Right) - Formula
-            if (!isGhost) {
-                drawPortCircle(dx + drawW, dy + drawH/2, 'formula', 'out');
-            }
-
-        } else if (node.type === 'wire') {
-            // Wire Segment Rendering
-            // Wires are lines on the edges of the block:
-            // rotation 0: Top Edge (y), horizontal from x to x+w
-            // rotation 1: Left Edge (x), vertical from y to y+h
-            // rotation 2: Bottom Edge (y+h), horizontal from x to x+w
-            // rotation 3: Right Edge (x+w), vertical from y to y+h
-            
-            // Restore transform since we're drawing directly
-            ctx.restore();
-            ctx.save();
-            
-            if (isGhost) {
-                ctx.globalAlpha = 0.5;
-            }
-            
-            // Glow effect for active wires
-            const shouldGlowWire = isGhost 
-                ? false 
-                : ('id' in node && activeNodeIds.has(node.id));
-            if (shouldGlowWire) {
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = 'rgba(255, 255, 100, 0.6)';
-            }
-            
-            let strokeStyle = node.subType === 'formula' ? '#38bdf8' : '#facc15';
-            
-            // Check Error
-            if (!isGhost && 'id' in node && errorWireIds.has(node.id)) {
-                strokeStyle = node.subType === 'formula' ? '#d946ef' : '#f97316';
-            }
-            
-            ctx.strokeStyle = strokeStyle;
-            ctx.lineWidth = 4;
-            ctx.lineCap = 'round';
-            ctx.setLineDash([]);
-            
-            // Calculate line position based on rotation
-            let lineX1: number, lineY1: number, lineX2: number, lineY2: number;
-            
-            if (rotation === 0) {
-                // Top Edge: horizontal line at y
-                lineX1 = x; lineY1 = y;
-                lineX2 = x + w; lineY2 = y;
-            } else if (rotation === 1) {
-                // Left Edge: vertical line at x
-                lineX1 = x; lineY1 = y;
-                lineX2 = x; lineY2 = y + h;
-            } else if (rotation === 2) {
-                // Bottom Edge: horizontal line at y+h
-                lineX1 = x; lineY1 = y + h;
-                lineX2 = x + w; lineY2 = y + h;
-            } else {
-                // rotation === 3: Right Edge: vertical line at x+w
-                lineX1 = x + w; lineY1 = y;
-                lineX2 = x + w; lineY2 = y + h;
-            }
-            
-            ctx.beginPath();
-            ctx.moveTo(lineX1, lineY1);
-            ctx.lineTo(lineX2, lineY2);
-            ctx.stroke();
-            
-            // Flow Animation Overlay for Active Wires
-            if (!isGhost && 'id' in node && activeNodeIds.has(node.id) && !errorWireIds.has(node.id)) {
-                ctx.save();
-                const spacing = 15;
-                const speed = 0.04;
-                const time = Date.now();
-                const offset = (time * speed) % spacing;
-                ctx.shadowBlur = 8;
-                ctx.shadowColor = strokeStyle;
-                const particleColor = node.subType === 'formula' 
-                    ? 'rgba(240, 171, 252, 0.8)'
-                    : 'rgba(253, 186, 116, 0.8)';
-                ctx.fillStyle = particleColor;
-                
-                const lineLen = Math.sqrt((lineX2 - lineX1) ** 2 + (lineY2 - lineY1) ** 2);
-                const maxI = Math.ceil(lineLen / spacing) + 1;
-                
-                const dx = (lineX2 - lineX1) / lineLen;
-                const dy = (lineY2 - lineY1) / lineLen;
-                
-                for (let i = -1; i <= maxI; i++) {
-                    const pos1 = i * spacing + offset;
-                    if (pos1 >= 0 && pos1 <= lineLen) {
-                        ctx.beginPath();
-                        ctx.arc(lineX1 + dx * pos1, lineY1 + dy * pos1, 1.5, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                    const pos2 = i * spacing + (spacing / 2) - offset;
-                    if (pos2 >= 0 && pos2 <= lineLen) {
-                        ctx.beginPath();
-                        ctx.arc(lineX1 + dx * pos2, lineY1 + dy * pos2, 1.5, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                }
-                ctx.restore();
-            }
-            
-            // Draw connector dots at ends
-            ctx.fillStyle = '#fff';
-            ctx.beginPath();
-            ctx.arc(lineX1, lineY1, 2, 0, Math.PI * 2);
-            ctx.arc(lineX2, lineY2, 2, 0, Math.PI * 2);
-            ctx.fill();
-
-        } else if (node.type === 'gate') {
-            if (node.subType === 'implies') {
-                bgColor = '#1a1a1a'; borderColor = '#ff0055'; textColor = '#ff0055';
-                // D-shape
-                ctx.beginPath();
-                ctx.moveTo(dx, dy);
-                ctx.lineTo(dx + drawW * 0.6, dy);
-                const cpX = dx + drawW * 1.135;
-                ctx.bezierCurveTo(cpX, dy, cpX, dy + drawH, dx + drawW * 0.6, dy + drawH);
-                ctx.lineTo(dx, dy + drawH);
-                ctx.closePath();
-            } else if (node.subType === 'not') {
-                bgColor = 'rgba(255,68,0,0.1)'; borderColor = '#ff4400'; textColor = '#ff4400';
-                // Triangle
-                ctx.beginPath();
-                ctx.moveTo(dx, dy);
-                ctx.lineTo(dx + drawW, dy + drawH/2);
-                ctx.lineTo(dx, dy + drawH);
-                ctx.closePath();
-            } else if (node.subType === 'and') {
-                bgColor = 'rgba(168,85,247,0.12)'; borderColor = '#c084fc'; textColor = '#d8b4fe';
-                ctx.beginPath();
-                ctx.moveTo(dx, dy);
-                ctx.lineTo(dx + drawW * 0.5, dy);
-                ctx.bezierCurveTo(dx + drawW * 1.1, dy, dx + drawW * 1.1, dy + drawH, dx + drawW * 0.5, dy + drawH);
-                ctx.lineTo(dx, dy + drawH);
-                ctx.closePath();
-            }
-
-            ctx.fillStyle = bgColor;
-            ctx.fill();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-
-            // Text
-            ctx.fillStyle = textColor;
-            ctx.font = 'bold 32px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            const label = node.subType === 'implies' ? '→' : node.subType === 'and' ? '∧' : '¬';
-            ctx.fillText(label, dx + drawW/2 - (node.subType === 'not' ? 10 : 0), dy + drawH/2);
-
-            // Ports
-            if (!isGhost) {
-                // Output (Right) - Formula
-                const outX = node.subType === 'implies' ? dx + drawW : dx + drawW;
-                drawPortCircle(outX, dy + drawH/2, 'formula', 'out');
-
-                // Inputs (Left) - Formula
-                if (node.subType === 'implies' || node.subType === 'and') {
-                    // in0 (top), in1 (bottom)
-                    drawPortCircle(dx, dy + drawH * 0.25, 'formula', 'in0');
-                    drawPortCircle(dx, dy + drawH * 0.75, 'formula', 'in1');
-                } else {
-                    // in0
-                    drawPortCircle(dx, dy + drawH * 0.5, 'formula', 'in0');
-                }
-            }
-
-        } else if (node.type === 'axiom') {
-            bgColor = '#0a1a15'; borderColor = '#00ffaa'; textColor = '#00ffaa';
-            
-            drawRoundedRect(ctx, dx, dy, drawW, drawH, 8);
-            ctx.fillStyle = bgColor;
-            ctx.fill();
-            ctx.lineWidth = 3; 
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-            
-            ctx.lineWidth = 1;
-            drawRoundedRect(ctx, dx + 4, dy + 4, drawW - 8, drawH - 8, 4);
-            ctx.stroke();
-
-            // Text
-            ctx.fillStyle = textColor;
-            ctx.font = 'italic bold 32px serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            let label = 'I';
-            if (node.subType === '2') label = 'II';
-            if (node.subType === '3') label = 'III';
-            ctx.fillText(label, dx + drawW/2, dy + drawH/2);
-
-            // Ports
-            if (!isGhost) {
-                // Output (Right) - Provable
-                drawPortCircle(dx + drawW, dy + drawH/2, 'provable', 'out');
-
-                // Inputs (Left) - Formula
-                if (node.subType === '2') {
-                    // in0, in1, in2
-                    drawPortCircle(dx, dy + drawH * (0.5/3), 'formula', 'in0');
-                    drawPortCircle(dx, dy + drawH * (1.5/3), 'formula', 'in1');
-                    drawPortCircle(dx, dy + drawH * (2.5/3), 'formula', 'in2');
-                } else {
-                    // in0, in1
-                    drawPortCircle(dx, dy + drawH * 0.25, 'formula', 'in0');
-                    drawPortCircle(dx, dy + drawH * 0.75, 'formula', 'in1');
-                }
-            }
-
-        } else if (node.type === 'mp' || node.type === 'quick-mp') {
-            const isQuickMp = node.type === 'quick-mp';
-            bgColor = '#1a1a00'; borderColor = '#ffff00'; textColor = '#ffff00';
-            
-            drawPentagon(ctx, dx, dy, drawW, drawH);
-            ctx.fillStyle = bgColor;
-            ctx.fill();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-
-            // Text
-            ctx.fillStyle = textColor;
-            ctx.font = 'bold 24px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(isQuickMp ? "MP+" : "MP", dx + drawW * 0.4, dy + drawH/2);
-
-            // Ports
-            if (!isGhost) {
-                // Inputs: Left edge (0.5, 1.0, 2.0, 2.5) -> in0, in1, in2, in3
-                const inputs = isQuickMp
-                    ? [
-                          { y: dy + drawH * 0.32, type: 'provable' as const, id: 'in0' },
-                          { y: dy + drawH * 0.68, type: 'provable' as const, id: 'in1' },
-                      ]
-                    : [
-                          { y: dy + drawH * (0.5/3), type: 'formula' as const, id: 'in0' },
-                          { y: dy + drawH * (1.0/3), type: 'formula' as const, id: 'in1' },
-                          { y: dy + drawH * (2.0/3), type: 'provable' as const, id: 'in2' },
-                          { y: dy + drawH * (2.5/3), type: 'provable' as const, id: 'in3' }
-                      ];
-                
-                inputs.forEach(p => {
-                    drawPortCircle(dx, p.y, p.type, p.id);
-                });
-
-                // Output: Rightmost vertex
-                drawPortCircle(dx + drawW, dy + drawH/2, 'provable', 'out');
-            }
-        } else if (node.type === 'theorem') {
-            bgColor = '#1a1226';
-            borderColor = '#fbbf24';
-            textColor = '#fde68a';
-
-            drawRoundedRect(ctx, dx, dy, drawW, drawH, 10);
-            ctx.fillStyle = bgColor;
-            ctx.fill();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-
-            ctx.lineWidth = 1;
-            ctx.strokeStyle = 'rgba(251, 191, 36, 0.45)';
-            drawRoundedRect(ctx, dx + 4, dy + 4, drawW - 8, drawH - 8, 6);
-            ctx.stroke();
-
-            const name = `${node.theoremName || node.subType || 'THM'}${node.theoremSimplified ? '+' : ''}`;
-            ctx.fillStyle = textColor;
-            ctx.font = 'bold 18px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            ctx.fillText(name.toUpperCase(), dx + drawW / 2, dy + 8);
-
-            const normalize = (text: string) => text.replace(/^\s*(\|-|⊢)\s*/, '').trim();
-            const premises = node.theoremPremises ?? [];
-            const conclusion = node.theoremConclusion ? normalize(node.theoremConclusion) : normalize(node.customLabel ?? '');
-
-            const contentX = dx + 10;
-            const contentY = dy + 36;
-            const contentW = drawW - 20;
-            const contentH = drawH - 48;
-            const leftW = contentW * 0.44;
-            const midW = contentW * 0.14;
-            const rightW = contentW - leftW - midW;
-
-            ctx.save();
-            ctx.globalAlpha = 0.9;
-            drawRoundedRect(ctx, contentX, contentY, contentW, contentH, 10);
-            ctx.fillStyle = 'rgba(2, 6, 23, 0.35)';
-            ctx.fill();
-            ctx.restore();
-
-            const renderFormulaOrProvable = (formulaText: string, cx: number, cy: number, w: number, h: number, sizeScale: number, forceFormula: boolean = false) => {
-                const prefix = forceFormula ? '' : '|-';
-                const parsed = parseGoal(`${prefix}${normalize(formulaText)}`);
-                if (!parsed) return;
-                const renderSize = Math.min(w, h) * sizeScale;
-                formulaRenderer.render(ctx, parsed, cx, cy, renderSize, scale);
-            };
-
-            const renderPremiseCount = Math.min(2, premises.length);
-            if (renderPremiseCount > 0) {
-                const slotGap = 8;
-                const slotH = (contentH - slotGap * (renderPremiseCount - 1)) / renderPremiseCount;
-                for (let i = 0; i < renderPremiseCount; i += 1) {
-                    const sx = contentX + 6;
-                    const sy = contentY + i * (slotH + slotGap) + 6;
-                    const sw = leftW - 12;
-                    const sh = slotH - 12;
-                    drawRoundedRect(ctx, sx, sy, sw, sh, 8);
-                    ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
-                    ctx.fill();
-                    ctx.lineWidth = 1;
-                    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
-                    ctx.stroke();
-                    renderFormulaOrProvable(premises[i], sx + sw / 2, sy + sh / 2, sw, sh, 0.9, false);
-                }
-
-                if (premises.length > renderPremiseCount) {
-                    ctx.save();
-                    ctx.textAlign = 'left';
-                    ctx.textBaseline = 'bottom';
-                    ctx.fillStyle = 'rgba(226, 232, 240, 0.7)';
-                    ctx.font = `bold ${Math.max(10, 12 / Math.max(0.12, scale))}px sans-serif`;
-                    ctx.fillText(`+${premises.length - renderPremiseCount}`, contentX + 8, contentY + contentH - 8);
-                    ctx.restore();
-                }
-            }
-
-            ctx.save();
-            ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.font = `bold ${Math.max(18, Math.min(34, 26 / Math.max(0.12, scale)))}px sans-serif`;
-            ctx.fillText('⇒', contentX + leftW + midW / 2, contentY + contentH / 2);
-            ctx.restore();
-
-            const cx = contentX + leftW + midW + rightW / 2;
-            const cy = contentY + contentH / 2;
-            renderFormulaOrProvable(conclusion, cx, cy, rightW, contentH, 0.95, node.theoremIsFormulaOnly === true);
-
-            if (!isGhost) {
-                const nodePorts = getNodePorts(node as NodeData);
-                for (const port of nodePorts) {
-                    drawPortCircle(dx + port.x * GRID_SIZE, dy + port.y * GRID_SIZE, port.type, port.id);
-                }
-            }
-        } else if (node.type === 'premise') {
-            const label = ('customLabel' in node ? node.customLabel : undefined) || node.subType || '?';
-            const isFormulaOnly = !label.trim().startsWith('|-') && !label.trim().startsWith('⊢');
-
-            // Determine colors based on port type (Provable = Yellow/Brown, Formula = Blue/Cyan)
-            if (isFormulaOnly) {
-                bgColor = '#0a1f2a';
-                borderColor = '#00d0ff';
-                textColor = '#00d0ff';
-            } else {
-                bgColor = '#2a1a0a';
-                borderColor = '#ffaa00';
-                textColor = '#ffaa00';
-            }
-            
-            const inset = 4; // Inset for the body to allow pins to stick out
-            const pinWidth = 8; // Width of the visual pin
-            const bodyR = 8; // Corner radius of the chip body
-
-            // 1. Draw Pins (underneath body)
-            if (!isGhost) {
-                const w = node.w;
-                const h = node.h;
-
-                const drawPinShape = (px: number, py: number, side: 't'|'b'|'l'|'r') => {
-                    ctx.fillStyle = borderColor;
-                    if (side === 't') {
-                         ctx.fillRect(px - pinWidth/2, dy, pinWidth, inset + 2); // +2 to overlap slightly with body
-                    } else if (side === 'b') {
-                         ctx.fillRect(px - pinWidth/2, dy + drawH - inset - 2, pinWidth, inset + 2);
-                    } else if (side === 'l') {
-                         ctx.fillRect(dx, py - pinWidth/2, inset + 2, pinWidth);
-                    } else if (side === 'r') {
-                         ctx.fillRect(dx + drawW - inset - 2, py - pinWidth/2, inset + 2, pinWidth);
-                    }
-                };
-
-                // Top (y=0)
-                for (let x = 1; x < w; x++) {
-                    const px = dx + x * GRID_SIZE;
-                    drawPinShape(px, dy, 't');
-                }
-                // Bottom (y=h)
-                for (let x = 1; x < w; x++) {
-                    const px = dx + x * GRID_SIZE;
-                    drawPinShape(px, dy + drawH, 'b');
-                }
-                // Left (x=0)
-                for (let y = 1; y < h; y++) {
-                    const py = dy + y * GRID_SIZE;
-                    drawPinShape(dx, py, 'l');
-                }
-                // Right (x=w)
-                for (let y = 1; y < h; y++) {
-                    const py = dy + y * GRID_SIZE;
-                    drawPinShape(dx + drawW, py, 'r');
-                }
-            }
-
-            // 2. Draw Body (Chip)
-            drawRoundedRect(ctx, dx + inset, dy + inset, drawW - inset*2, drawH - inset*2, bodyR);
-            ctx.fillStyle = bgColor;
-            ctx.fill();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-
-            // Inner chip detail (Decorative Rect)
-            const innerW = drawW * 0.7;
-            const innerH = drawH * 0.7;
-            ctx.lineWidth = 1;
-            drawRoundedRect(ctx, dx + (drawW - innerW)/2, dy + (drawH - innerH)/2, innerW, innerH, 4);
-            ctx.stroke();
-
-            const formulaStr = label
-                .replace(/->/g, '→')
-                .replace(/-\./g, '¬')
-                .replace('|-', '⊢');
-            
-            // Do NOT forcefully prepend ⊢ here. Render it exactly as defined.
-            // If it's a raw formula (like -.P), it will render as a raw formula.
-
-            const parsedFormula = parseGoal(formulaStr);
-            if (parsedFormula) {
-                const renderSize = Math.min(innerW, innerH) * 0.85;
-                formulaRenderer.render(ctx, parsedFormula, dx + drawW/2, dy + drawH/2, renderSize, scale);
-            } else {
-                ctx.fillStyle = textColor;
-                const fontSize = formulaStr.length > 8 ? 16 : 22;
-                ctx.font = `bold ${fontSize}px monospace`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(formulaStr, dx + drawW/2, dy + drawH/2);
-            }
-
-            if (!isGhost) {
-                const nodePorts = getNodePorts(node as NodeData);
-                for (const port of nodePorts) {
-                    drawPortCircle(dx + port.x * GRID_SIZE, dy + port.y * GRID_SIZE, port.type, port.id);
-                }
-            }
-        } else if (node.type === 'display') {
-            // Display Node - renders connected formula/provable
-            bgColor = '#1a1a2e';
-            borderColor = '#6366f1';
-            
-            // Check for errors
-            const hasError = !isGhost && 'id' in node && 
-                Array.from(errorNodePorts.keys()).includes(node.id);
-            if (hasError) {
-                borderColor = '#ef4444';
-                bgColor = '#2a1a1a';
-            }
-            
-            const isLarge = w > 4;
-            const bodyR = isLarge ? 12 : 8;
-            
-            // Draw body
-            drawRoundedRect(ctx, dx, dy, drawW, drawH, bodyR);
-            ctx.fillStyle = bgColor;
-            ctx.fill();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-            
-            // Inner screen area
-            const screenInset = isLarge ? 8 : 4;
-            drawRoundedRect(ctx, dx + screenInset, dy + screenInset, drawW - screenInset * 2, drawH - screenInset * 2, 4);
-            ctx.fillStyle = '#0a0a15';
-            ctx.fill();
-            ctx.strokeStyle = hasError ? '#ef4444' : '#4f46e5';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            
-            // Show error message or connected value
-            if (!isGhost && 'id' in node) {
-                if (hasError) {
-                    // Show error indicator with flashing effect
-                    const errorSize = isLarge ? 48 : 32;
-                    const alpha = 0.5 + flashPhase * 0.5; // Flash between 0.5 and 1.0
-                    
-                    ctx.save();
-                    ctx.globalAlpha = alpha;
-                    ctx.shadowBlur = 20;
-                    ctx.shadowColor = '#ef4444';
-                    ctx.fillStyle = '#ef4444';
-                    ctx.font = `bold ${errorSize}px sans-serif`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText('!', dx + drawW / 2, dy + drawH / 2);
-                    ctx.restore();
-                } else {
-                    // Get connected value and render
-                    const nodePorts = getNodePorts(node as NodeData);
-                    let connectedValue: { formula: ReturnType<typeof parseGoal>, type: string } | null = null;
-                    
-                    for (const port of nodePorts) {
-                        const absPos = getAbsolutePortPosition(node as NodeData, port);
-                        // Check for connected wire
-                        const wireNodes = nodes.filter(n => n.type === 'wire');
-                        for (const wire of wireNodes) {
-                            const s = { 
-                                vertical: (wire.rotation === 1 || wire.rotation === 3), 
-                                c: wire.rotation === 1 ? wire.x : (wire.rotation === 3 ? wire.x + wire.w : (wire.rotation === 0 ? wire.y : wire.y + wire.h)),
-                                min: wire.rotation === 1 || wire.rotation === 3 ? wire.y : wire.x,
-                                max: wire.rotation === 1 || wire.rotation === 3 ? wire.y + wire.h : wire.x + wire.w
-                            };
-                            const EPS = 0.5;
-                            let touch = false;
-                            if (s.vertical) {
-                                touch = Math.abs(absPos.x - s.c) < EPS && absPos.y >= s.min - EPS && absPos.y <= s.max + EPS;
-                            } else {
-                                touch = Math.abs(absPos.y - s.c) < EPS && absPos.x >= s.min - EPS && absPos.x <= s.max + EPS;
-                            }
-                            if (touch) {
-                                const val = wireValues.get(wire.id);
-                                if (val && val !== 'Error') {
-                                    const parsed = parseGoal(val);
-                                    if (parsed) {
-                                        connectedValue = { formula: parsed, type: wire.subType };
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        if (connectedValue) break;
-                    }
-                    
-                    if (connectedValue && connectedValue.formula) {
-                        const renderSize = Math.min(drawW - screenInset * 2, drawH - screenInset * 2) * 0.85;
-                        formulaRenderer.render(ctx, connectedValue.formula, dx + drawW / 2, dy + drawH / 2, renderSize, scale);
-                    }
-                }
-            }
-            
-            // Draw ports
-            if (!isGhost) {
-                const nodePorts = getNodePorts(node as NodeData);
-                for (const port of nodePorts) {
-                    // Use local coordinates like other nodes (port.x, port.y are relative to node)
-                    drawPortCircle(dx + port.x * GRID_SIZE, dy + port.y * GRID_SIZE, 'any', port.id);
-                }
-            }
-        } else if (node.type === 'bridge') {
-            // Wire Bridge - small 2x2 node that allows wires to cross
-            // Visual: One wire appears to go over the other (overpass effect)
-            
-            const bridgeActive = !isGhost && 'id' in node && activeNodeIds.has(node.id);
-            
-            const bridgeColor = '#374151';
-            const activeColor = '#4b5563';
-            const bottomLineColor = bridgeActive ? '#9ca3af' : '#6b7280';
-            const topLineColor = bridgeActive ? '#f3f4f6' : '#d1d5db';
-            
-            ctx.fillStyle = bridgeActive ? activeColor : bridgeColor;
-            ctx.strokeStyle = bridgeActive ? '#9ca3af' : '#4b5563';
-            ctx.lineWidth = 1;
-            
-            // Draw bridge body - rounded rectangle
-            const br = 4;
-            drawRoundedRect(ctx, dx, dy, drawW, drawH, br);
-            ctx.fill();
-            ctx.stroke();
-            
-            const cx = dx + drawW / 2;
-            const cy = dy + drawH / 2;
-            const gapSize = 6;
-            const lineThickness = 3;
-            
-            // First, draw the "bottom" horizontal wire with a gap at intersection
-            ctx.strokeStyle = bottomLineColor;
-            ctx.lineWidth = lineThickness;
-            ctx.lineCap = 'butt';
-            
-            // Horizontal line (left part, up to gap)
-            ctx.beginPath();
-            ctx.moveTo(dx + drawW * 0.15, cy);
-            ctx.lineTo(cx - gapSize / 2, cy);
-            ctx.stroke();
-            
-            // Horizontal line (right part, from gap)
-            ctx.beginPath();
-            ctx.moveTo(cx + gapSize / 2, cy);
-            ctx.lineTo(dx + drawW * 0.85, cy);
-            ctx.stroke();
-            
-            // Draw shadow/depth under the vertical bridge (pillow effect)
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-            ctx.beginPath();
-            ctx.ellipse(cx, cy, gapSize / 2 + 1, gapSize / 2 + 1, 0, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Draw the "top" vertical wire that goes over (the bridge)
-            ctx.strokeStyle = topLineColor;
-            ctx.lineWidth = lineThickness;
-            ctx.lineCap = 'round';
-            
-            ctx.beginPath();
-            ctx.moveTo(cx, dy + drawH * 0.15);
-            ctx.lineTo(cx, dy + drawH * 0.85);
-            ctx.stroke();
-            
-            // Draw highlight on the vertical wire to enhance 3D effect
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(cx - 1, dy + drawH * 0.2);
-            ctx.lineTo(cx - 1, dy + drawH * 0.8);
-            ctx.stroke();
-            
-            // Draw ports
-            if (!isGhost) {
-                const nodePorts = getNodePorts(node as NodeData);
-                for (const port of nodePorts) {
-                    drawPortCircle(dx + port.x * GRID_SIZE, dy + port.y * GRID_SIZE, 'any', port.id);
-                }
-            }
-        }
-
-        ctx.restore();
-    }, [GRID_SIZE, activeNodeIds, errorWireIds, errorNodePorts, flashPhase, wireValues, nodes, scale]);
+    const drawNode = useCallback((ctx: CanvasRenderingContext2D, node: NodeData | Tool, x: number, y: number, isGhost = false) => {
+        const id = 'id' in node ? node.id : '';
+        drawCircuitItem(ctx, node, x, y, {
+            scale, time: animationTimeRef.current, low: quality === 'low', reducedMotion, language,
+            active: !isGhost && activeNodeIds.has(id),
+            error: errorWireIds.has(id) || errorNodePorts.has(id),
+            errorPorts: errorNodePorts.get(id), ghost: isGhost, displayValue: displayValues.get(id),
+        });
+    }, [scale, quality, reducedMotion, language, activeNodeIds, errorWireIds, errorNodePorts, displayValues]);
 
     const drawStage2Backdrop = useCallback((ctx: CanvasRenderingContext2D) => {
         if (!stage2Config) return;
-
-        const selectedIslandId = selectedStage2Island?.id ?? stage2Config.focusIslandId;
-        const focusIsland = stage2Config.world.getIslandById(selectedIslandId);
-
-        const completedIslandIds = new Set(stage2Progress?.completedIslandIds ?? []);
-
-        const getCenter = (island: Stage2IslandDefinition) => ({
-            x: island.mapBounds.x + island.mapBounds.w / 2,
-            y: island.mapBounds.y + island.mapBounds.h / 2,
-        });
-
-        const lod: 'coarse' | 'markers' | 'tiles' =
-            showStage2InteriorDetails ? 'tiles' : scale >= STAGE2_MARKER_SCALE_THRESHOLD ? 'markers' : 'coarse';
-
-        const palette = {
-            main: {
-                fill: 'rgba(12, 18, 34, 0.82)',
-                edge: 'rgba(148, 163, 184, 0.55)',
-            },
-            support: {
-                fill: 'rgba(10, 14, 28, 0.78)',
-                edge: 'rgba(148, 163, 184, 0.45)',
-            },
-            optional: {
-                fill: 'rgba(8, 10, 20, 0.72)',
-                edge: 'rgba(148, 163, 184, 0.35)',
-            },
-            completed: {
-                fill: 'rgba(6, 36, 30, 0.78)',
-                edge: 'rgba(52, 211, 153, 0.55)',
-            },
-            selectedGlow: 'rgba(14, 165, 233, 0.18)',
-            selectedEdge: 'rgba(56, 189, 248, 0.65)',
-            link: 'rgba(56, 189, 248, 0.12)',
-        } as const;
-
-        const getCoarseLabel = (island: Stage2IslandDefinition) => {
-            if (!island.goalFormula) return '';
-            const goalText = parseGoal(island.goalFormula)?.toString() ?? island.goalFormula;
-            const premiseText = (island.premiseNodes ?? []).map((premise) => premise.formula).join(', ');
-            const summary = premiseText.length > 0 ? `${premiseText} ⇒ ${goalText}` : goalText;
-            return summary.length > 64 ? `${summary.slice(0, 64)}...` : summary;
-        };
-
+        const lod = worldLod(scale);
+        const low = quality === 'low';
+        const completed = new Set(stage2Progress?.completedIslandIds ?? []);
+        const getCoarseLabel = (island: Stage2IslandDefinition) =>
+            island.goalFormula ? formulaRenderer.parse(island.goalFormula)?.toString() ?? island.goalFormula : '';
         const buildIslandOutlinePath = (island: Stage2IslandDefinition) => {
             const edgeMap = new Map<string, { ax: number; ay: number; bx: number; by: number }>();
             const addOrToggleEdge = (ax: number, ay: number, bx: number, by: number) => {
@@ -1583,20 +851,6 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             return outline;
         };
 
-        const getIslandColors = (island: Stage2IslandDefinition, completed: boolean, selected: boolean) => {
-            if (completed) {
-                return {
-                    fill: palette.completed.fill,
-                    edge: selected ? palette.selectedEdge : palette.completed.edge,
-                };
-            }
-            const base = island.category === 'main' ? palette.main : island.category === 'support' ? palette.support : palette.optional;
-            return {
-                fill: base.fill,
-                edge: selected ? palette.selectedEdge : base.edge,
-            };
-        };
-
         const getIslandCachedArtifacts = (island: Stage2IslandDefinition) => {
             const cached = stage2IslandRenderCacheRef.current.get(island.id);
             if (cached) return cached;
@@ -1608,247 +862,97 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             const outlinePath = buildIslandOutlinePath(island);
             const coarseLabel = getCoarseLabel(island);
             const result = { tilesPath, outlinePath, coarseLabel };
+            if (stage2IslandRenderCacheRef.current.size >= 96) stage2IslandRenderCacheRef.current.clear();
             stage2IslandRenderCacheRef.current.set(island.id, result);
             return result;
         };
 
-        const drawIslandCoarse = (island: Stage2IslandDefinition, unlocked: boolean, completed: boolean, selected: boolean) => {
-            const { x, y, w } = island.mapBounds;
-            const alpha = unlocked ? 1 : 0.18;
-            const colors = getIslandColors(island, completed, selected);
-            const { outlinePath } = getIslandCachedArtifacts(island);
 
-            ctx.save();
-            ctx.globalAlpha = alpha;
-
-            if (selected && unlocked) {
-                ctx.save();
-                ctx.fillStyle = palette.selectedGlow;
-                ctx.shadowBlur = 24 / Math.max(0.12, scale);
-                ctx.shadowColor = palette.selectedGlow;
-                ctx.fill(outlinePath, 'evenodd');
-                ctx.restore();
-            }
-
-            ctx.fillStyle = colors.fill;
-            ctx.fill(outlinePath, 'evenodd');
-
-            ctx.lineWidth = Math.max(1 / scale, GRID_SIZE * 0.035);
-            ctx.strokeStyle = colors.edge;
-            ctx.lineJoin = 'round';
-            ctx.lineCap = 'round';
-            ctx.stroke(outlinePath);
-
-            if (unlocked && island.name) {
-                const { coarseLabel } = getIslandCachedArtifacts(island);
-                const centerX = (x + w / 2) * GRID_SIZE;
-                const centerY = (island.mapBounds.y + island.mapBounds.h * 0.56) * GRID_SIZE;
-                const titleFontSize = Math.max(22, Math.min(58, 30 / Math.max(0.12, scale)));
-                const labelFontSize = Math.max(18, Math.min(46, 24 / Math.max(0.12, scale)));
-
-                const titleColor = completed
-                    ? 'rgba(110, 231, 183, 0.92)'
-                    : island.category === 'main'
-                      ? 'rgba(165, 243, 252, 0.95)'
-                      : island.category === 'support'
-                        ? 'rgba(196, 181, 253, 0.92)'
-                        : 'rgba(226, 232, 240, 0.85)';
-                const labelColor = completed ? 'rgba(167, 243, 208, 0.9)' : 'rgba(253, 230, 138, 0.92)';
-
-                ctx.save();
-                ctx.globalAlpha = 0.92;
-                ctx.shadowBlur = 10 / Math.max(0.12, scale);
-                ctx.shadowColor = 'rgba(2, 6, 23, 0.8)';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillStyle = 'rgba(2, 6, 23, 0.55)';
-                const padX = 14 / Math.max(0.12, scale);
-                const padY = 10 / Math.max(0.12, scale);
-                const boxW = Math.max(280 / Math.max(0.12, scale), w * GRID_SIZE * 0.78);
-                const boxH = titleFontSize * 2.35 + labelFontSize * 1.4 + padY * 2;
-                drawRoundedRect(ctx, centerX - boxW / 2, centerY - boxH / 2, boxW, boxH, 18 / Math.max(0.12, scale));
-                ctx.fill();
-
-                ctx.fillStyle = titleColor;
-                ctx.font = `bold ${titleFontSize}px sans-serif`;
-                ctx.fillText(island.name, centerX, centerY - titleFontSize * 0.9);
-                if (coarseLabel) {
-                    ctx.fillStyle = labelColor;
-                    ctx.font = `bold ${labelFontSize}px sans-serif`;
-                    ctx.fillText(coarseLabel, centerX, centerY + labelFontSize * 0.3);
-                }
-                ctx.restore();
-            }
-
-            ctx.restore();
+        const width = ctx.canvas.width / pixelRatioRef.current;
+        const height = ctx.canvas.height / pixelRatioRef.current;
+        const view = {
+            x: -offset.x / scale / GRID_SIZE - 14,
+            y: -offset.y / scale / GRID_SIZE - 18,
+            w: width / scale / GRID_SIZE + 28,
+            h: height / scale / GRID_SIZE + 36,
         };
-
-        const canvasW = ctx.canvas.width;
-        const canvasH = ctx.canvas.height;
-        const worldMinX = (-offset.x / scale) / GRID_SIZE;
-        const worldMaxX = ((canvasW - offset.x) / scale) / GRID_SIZE;
-        const worldMinY = (-offset.y / scale) / GRID_SIZE;
-        const worldMaxY = ((canvasH - offset.y) / scale) / GRID_SIZE;
-        const marginTilesX = stage2Config.world.chunkW * 2;
-        const marginTilesY = stage2Config.world.chunkH * 2;
-        const viewBounds = {
-            x: Math.floor(worldMinX - marginTilesX),
-            y: Math.floor(worldMinY - marginTilesY),
-            w: Math.ceil(worldMaxX - worldMinX + marginTilesX * 2),
-            h: Math.ceil(worldMaxY - worldMinY + marginTilesY * 2),
-        };
-
-        const islandsInView = stage2Config.world.getIslandsInBounds(viewBounds);
-        const selectedId = selectedIslandId;
-
-        if (lod !== 'coarse' && focusIsland) {
-            const focusCenter = getCenter(focusIsland);
-            stage2Config.goalIslandIds
-                .filter((id) => id !== focusIsland.id && stage2UnlockedIslandIdSet.has(id))
-                .map((id) => stage2Config.world.getIslandById(id))
-                .filter((item): item is NonNullable<typeof item> => Boolean(item))
-                .forEach((island) => {
-                    const center = getCenter(island);
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.strokeStyle = palette.link;
-                    ctx.lineWidth = 0.25 * GRID_SIZE;
-                    ctx.setLineDash([0.5 * GRID_SIZE, 0.6 * GRID_SIZE]);
-                    const controlY = Math.min(center.y, focusCenter.y) - 4;
-                    ctx.moveTo(center.x * GRID_SIZE, center.y * GRID_SIZE);
-                    ctx.quadraticCurveTo(
-                        ((center.x + focusCenter.x) / 2) * GRID_SIZE,
-                        controlY * GRID_SIZE,
-                        focusCenter.x * GRID_SIZE,
-                        focusCenter.y * GRID_SIZE
-                    );
-                    ctx.stroke();
-                    ctx.restore();
-                });
-        }
-
-        islandsInView.forEach((islandBase) => {
-            const island: Stage2IslandDefinition = {
-                ...islandBase,
-                unlocked: stage2UnlockedIslandIdSet.has(islandBase.id),
-            };
+        stage2Config.world.getIslandsInBounds(view).forEach((island) => {
+            const unlocked = stage2UnlockedIslandIdSet.has(island.id);
+            const solved = completed.has(island.id);
+            const selected = island.id === (selectedStage2Island?.id ?? stage2Config.focusIslandId);
+            const { outlinePath, tilesPath, coarseLabel } = getIslandCachedArtifacts(island);
+            drawIslandGround(ctx, island, outlinePath, tilesPath, scale, lod, low, unlocked, solved, selected);
             const { x, y, w, h } = island.mapBounds;
-            const unlocked = island.unlocked;
-            const completed = completedIslandIds.has(island.id);
-            const selected = island.id === selectedId;
-
-            if (lod === 'tiles') {
-                const colors = getIslandColors(island, completed, selected);
-                const alpha = unlocked ? 1 : 0.22;
-                const { tilesPath } = getIslandCachedArtifacts(island);
-
-                ctx.save();
-                ctx.globalAlpha = alpha;
-                if (selected && unlocked) {
-                    ctx.save();
-                    ctx.shadowBlur = 26 / Math.max(0.12, scale);
-                    ctx.shadowColor = palette.selectedGlow;
-                    ctx.fillStyle = palette.selectedGlow;
-                    ctx.fill(tilesPath);
-                    ctx.restore();
+            const centerX = (x + w / 2) * GRID_SIZE;
+            if (!unlocked) {
+                if (w * GRID_SIZE * scale > 70) {
+                    ctx.save(); ctx.fillStyle = 'rgba(220,223,219,.42)'; ctx.font = `14px ${ART_THEME.font}`;
+                    ctx.translate(centerX, (y + h / 2) * GRID_SIZE); ctx.scale(1 / scale, 1 / scale);
+                    ctx.textAlign = 'center'; ctx.fillText(language === 'zh' ? '未揭示' : 'UNREVEALED', 0, 0); ctx.restore();
                 }
-
-                ctx.fillStyle = colors.fill;
-                ctx.fill(tilesPath);
-                ctx.lineWidth = Math.max(1 / scale, GRID_SIZE * 0.035);
-                ctx.strokeStyle = colors.edge;
-                ctx.lineJoin = 'round';
-                ctx.lineCap = 'round';
-                ctx.stroke(tilesPath);
-                ctx.restore();
-            } else {
-                drawIslandCoarse(island, unlocked, completed, selected);
+                return;
             }
-
-            if (unlocked && island.name && scale >= 0.26 && lod !== 'coarse') {
-                ctx.save();
-                ctx.globalAlpha = 1;
-                ctx.fillStyle = completed ? 'rgba(110, 231, 183, 0.7)' : 'rgba(226, 232, 240, 0.62)';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.font = `bold ${Math.max(11, Math.min(18, w * GRID_SIZE * 0.06))}px sans-serif`;
-                ctx.fillText(island.name, (x + w / 2) * GRID_SIZE, (y - 0.8) * GRID_SIZE);
-                ctx.restore();
+            const chapter = island.category === 'main' ? CHAPTER_LANDMARKS[island.name ?? ''] : undefined;
+            if (chapter) {
+                const size = (lod === 'coarse' ? 72 : lod === 'markers' ? 58 : 34) / scale;
+                drawLandmark(ctx, chapter, centerX, y * GRID_SIZE - size * .55 - 22 / scale, size, solved, low);
             }
+            if (!island.name) return;
+            ctx.save();
+            const font = lod === 'tiles' ? 12 : 14;
+            const labelY = lod === 'coarse' ? (y + h * .52) * GRID_SIZE : (y - .6) * GRID_SIZE;
+            ctx.translate(centerX, labelY); ctx.scale(1 / scale, 1 / scale);
+            const boxW = Math.max(100, Math.min(240, w * GRID_SIZE * scale * .84));
+            const boxH = lod === 'coarse' ? 72 : 34;
+            ctx.fillStyle = 'rgba(10,21,36,.88)'; ctx.strokeStyle = selected ? ART_THEME.provable : 'rgba(182,154,102,.45)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.roundRect(-boxW / 2, -boxH / 2, boxW, boxH, 8); ctx.fill(); ctx.stroke();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `600 ${font}px ${ART_THEME.font}`;
+            ctx.fillStyle = ART_THEME.ivory;
+            ctx.fillText(fitLabel(ctx, `${solved ? '✓ ' : selected ? '◇ ' : ''}${island.name}`, boxW - 22), 0, lod === 'coarse' ? -18 : 0);
+            if (lod === 'coarse') {
+                ctx.font = `11px ${ART_THEME.mathFont}`; ctx.fillStyle = ART_THEME.provable;
+                ctx.fillText(fitLabel(ctx, coarseLabel, boxW - 20), 0, 3);
+                ctx.font = `9px ${ART_THEME.font}`; ctx.fillStyle = ART_THEME.muted;
+                const kind = language === 'zh' ? island.category === 'main' ? '主岛' : island.category === 'support' ? '辅助岛' : '探索岛' : island.category === 'main' ? 'MAIN ISLAND' : island.category === 'support' ? 'SUPPORT ISLAND' : 'EXPLORATION';
+                ctx.fillText(`${chapter ? String(chapter).padStart(2, '0') + ' · ' : ''}${kind}`, 0, 22);
+            }
+            ctx.restore();
         });
-    }, [
-        GRID_SIZE,
-        offset.x,
-        offset.y,
-        scale,
-        selectedStage2Island?.id,
-        showStage2InteriorDetails,
-        stage2Config,
-        stage2Progress?.completedIslandIds,
-        stage2UnlockedIslandIdSet,
-    ]);
+    }, [stage2Config, scale, quality, language, offset.x, offset.y, stage2Progress?.completedIslandIds, stage2UnlockedIslandIdSet, selectedStage2Island?.id]);
 
     const drawGoalBlock = useCallback((
         ctx: CanvasRenderingContext2D,
         bounds: { x: number; y: number; w: number; h: number },
-        goalFormulaText: string,
-        solved: boolean,
-        errorPorts: Set<string>
+        goalFormulaText: string, solved: boolean, errorPorts: Set<string>
     ) => {
-        const targetX = bounds.x * GRID_SIZE;
-        const targetY = bounds.y * GRID_SIZE;
-        const targetW = bounds.w * GRID_SIZE;
-        const targetH = bounds.h * GRID_SIZE;
-        const radius = 20;
-
+        const x = bounds.x * GRID_SIZE, y = bounds.y * GRID_SIZE;
+        const w = bounds.w * GRID_SIZE, h = bounds.h * GRID_SIZE;
+        const cx = x + w / 2, cy = y + h / 2;
+        const parsed = formulaRenderer.parse(goalFormulaText);
+        const color = parsed instanceof Provable ? ART_THEME.provable : ART_THEME.formula;
         ctx.save();
-        ctx.shadowBlur = 30;
-        ctx.shadowColor = solved ? 'rgba(0, 255, 100, 0.6)' : 'rgba(255, 255, 255, 0.1)';
-        drawRoundedRect(ctx, targetX, targetY, targetW, targetH, radius);
-        ctx.fillStyle = solved ? '#0d2a1a' : '#0d0d12';
-        ctx.fill();
-        ctx.lineWidth = 3 / scale;
-        ctx.strokeStyle = solved ? '#00ff66' : '#666';
-        ctx.save();
-        ctx.setLineDash([5 / scale, 5 / scale]);
-        ctx.stroke();
-        ctx.restore();
-        ctx.shadowBlur = 0;
-
-        ctx.fillStyle = solved ? '#00ff66' : '#888';
-        ctx.font = 'bold 32px "Segoe UI", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('GOAL', targetX + targetW / 2, targetY + 40);
-
-        const parsedGoalFormula = parseGoal(goalFormulaText);
-        if (parsedGoalFormula) {
-            const renderSize = Math.min(targetW, targetH) * 0.55;
-            formulaRenderer.render(ctx, parsedGoalFormula, targetX + targetW / 2, targetY + targetH / 2 + 25, renderSize, scale);
-        } else {
-            ctx.fillStyle = '#fff';
-            ctx.font = `italic ${goalFormulaText.length > 15 ? 18 : 24}px "Times New Roman", serif`;
-            ctx.fillText(goalFormulaText, targetX + targetW / 2, targetY + targetH / 2 + 20);
+        const fill = ctx.createLinearGradient(x, y, x + w, y + h);
+        fill.addColorStop(0, solved ? '#29403E' : '#273347'); fill.addColorStop(1, '#101D30');
+        ctx.fillStyle = fill; ctx.strokeStyle = solved ? ART_THEME.success : ART_THEME.brass;
+        ctx.lineWidth = 2 / scale; ctx.beginPath(); ctx.roundRect(x+3,y+3,w-6,h-6,18); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = solved ? 'rgba(166,215,177,.38)' : 'rgba(182,154,102,.28)'; ctx.lineWidth = 1 / scale;
+        for (const radius of [w * .33, w * .39]) { ctx.beginPath(); ctx.arc(cx,cy+6,radius,0,Math.PI*2);ctx.stroke(); }
+        if (quality !== 'low') {
+            for (let i=0;i<16;i++) { const angle=i*Math.PI/8;ctx.beginPath();ctx.moveTo(cx+Math.cos(angle)*w*.36,cy+6+Math.sin(angle)*w*.36);ctx.lineTo(cx+Math.cos(angle)*w*.39,cy+6+Math.sin(angle)*w*.39);ctx.stroke(); }
         }
-
-        const portR = 6;
-        getGoalPortsForRect(bounds).forEach((port) => {
-            const cx = port.x * GRID_SIZE;
-            const cy = port.y * GRID_SIZE;
-            let fillStyle = '#444';
-            if (errorPorts.has(`${port.x},${port.y}`) && flashPhase > 0.5) {
-                fillStyle = '#ef4444';
-            }
-            ctx.beginPath();
-            ctx.arc(cx, cy, portR, 0, Math.PI * 2);
-            ctx.fillStyle = fillStyle;
-            ctx.fill();
-            ctx.lineWidth = 2 / scale;
-            ctx.strokeStyle = solved ? '#00ff66' : '#666';
-            ctx.stroke();
+        ctx.font = `600 13px ${ART_THEME.font}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = solved ? ART_THEME.success : ART_THEME.ivory;
+        ctx.fillText(solved ? (parsed instanceof Provable ? language==='zh'?'✓ 已证明':'✓ VERIFIED' : language==='zh'?'✓ 已构造':'✓ CONSTRUCTED') : (language==='zh'?'目标星盘':'PROOF OBSERVATORY'),cx,y+25);
+        if(parsed) formulaRenderer.render(ctx,parsed,cx,cy+10,Math.min(w,h)*.51,scale);
+        else { ctx.font=`16px ${ART_THEME.mathFont}`;ctx.fillText(fitLabel(ctx,goalFormulaText,w-24),cx,cy); }
+        getGoalPortsForRect(bounds).forEach(port=>{
+            const px=port.x*GRID_SIZE,py=port.y*GRID_SIZE;
+            ctx.fillStyle='#0A1323';ctx.strokeStyle=color;ctx.lineWidth=1.5/scale;
+            ctx.beginPath();ctx.arc(px,py,5,0,Math.PI*2);ctx.fill();ctx.stroke();
+            ctx.fillStyle=color;ctx.beginPath();ctx.arc(px,py,2,0,Math.PI*2);ctx.fill();
+            if(errorPorts.has(`${port.x},${port.y}`)) {ctx.strokeStyle=ART_THEME.error;ctx.beginPath();ctx.arc(px,py,9,0,Math.PI*2);ctx.stroke();}
         });
         ctx.restore();
-    }, [GRID_SIZE, flashPhase, scale]);
+    }, [scale, language, quality]);
 
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
@@ -1856,22 +960,27 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const width = canvas.width;
-        const height = canvas.height;
+        const width = canvas.width / pixelRatioRef.current;
+        const height = canvas.height / pixelRatioRef.current;
 
-        // Clear screen
-        ctx.clearRect(0, 0, width, height);
-        
-        // Background
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(0, 0, width, height);
+        const backdropKey = [width, height, pixelRatioRef.current, offset.x, offset.y, scale, quality, language,
+            stage2Config?.levelId, stage2Progress?.mapSeed, selectedStage2Island?.id,
+            stage2Progress?.completedIslandIds.join(','), [...stage2UnlockedIslandIdSet].join(',')].join('|');
+        if (!backdropRef.current || backdropRef.current.key !== backdropKey) {
+            const surface = backdropRef.current?.canvas ?? document.createElement('canvas');
+            surface.width = canvas.width; surface.height = canvas.height;
+            const ctx = surface.getContext('2d');
+            if (ctx) {
+                ctx.setTransform(pixelRatioRef.current, 0, 0, pixelRatioRef.current, 0, 0);
+        drawStarWorkshop(ctx, width, height, Boolean(stage2Config), quality === 'low');
 
         ctx.save();
         ctx.translate(offset.x, offset.y);
         ctx.scale(scale, scale);
 
+        if (!stage2Config || scale >= STAGE2_DETAIL_SCALE_THRESHOLD) {
         // --- Grid Drawing Start ---
-        const margin = GRID_SIZE * SUPER_BLOCK_STRIDE;
+        const margin = GRID_SIZE * 2;
         const startX = Math.floor((-offset.x / scale) / GRID_SIZE) * GRID_SIZE - margin;
         const endX = Math.floor(((width - offset.x) / scale) / GRID_SIZE) * GRID_SIZE + margin;
         const startY = Math.floor((-offset.y / scale) / GRID_SIZE) * GRID_SIZE - margin;
@@ -1928,7 +1037,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         // 1. Small Grid
         if (showSmallGrid && (vLines.small.length > 0 || hLines.small.length > 0)) {
             ctx.beginPath();
-            ctx.strokeStyle = '#1e293b';
+            ctx.strokeStyle = ART_THEME.grid;
             ctx.lineWidth = 1 / scale;
             vLines.small.forEach(x => { ctx.moveTo(x, startY); ctx.lineTo(x, endY); });
             hLines.small.forEach(y => { ctx.moveTo(startX, y); ctx.lineTo(endX, y); });
@@ -1938,7 +1047,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         // 2. Block Grid
         if (showBlockGrid && (vLines.block.length > 0 || hLines.block.length > 0)) {
             ctx.beginPath();
-            ctx.strokeStyle = '#475569';
+            ctx.strokeStyle = 'rgba(182,154,102,.15)';
             ctx.lineWidth = 2 / scale;
             vLines.block.forEach(x => { ctx.moveTo(x, startY); ctx.lineTo(x, endY); });
             hLines.block.forEach(y => { ctx.moveTo(startX, y); ctx.lineTo(endX, y); });
@@ -1948,16 +1057,27 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         // 3. Super Block Grid
         if (vLines.superBlock.length > 0 || hLines.superBlock.length > 0) {
             ctx.beginPath();
-            ctx.strokeStyle = '#94a3b8';
-            ctx.lineWidth = 4 / scale;
+            ctx.strokeStyle = 'rgba(182,154,102,.24)';
+            ctx.lineWidth = 1.5 / scale;
             vLines.superBlock.forEach(x => { ctx.moveTo(x, startY); ctx.lineTo(x, endY); });
             hLines.superBlock.forEach(y => { ctx.moveTo(startX, y); ctx.lineTo(endX, y); });
             ctx.stroke();
         }
         // --- Grid Drawing End ---
+        }
 
         drawStage2Backdrop(ctx);
 
+                ctx.restore();
+                backdropRef.current = { key: backdropKey, canvas: surface };
+            }
+        }
+        ctx.setTransform(pixelRatioRef.current, 0, 0, pixelRatioRef.current, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        if (backdropRef.current) ctx.drawImage(backdropRef.current.canvas, 0, 0, width, height);
+        ctx.save(); ctx.translate(offset.x, offset.y); ctx.scale(scale, scale);
+        const visibleBounds = { x: -offset.x / scale / GRID_SIZE - 3, y: -offset.y / scale / GRID_SIZE - 3,
+            w: width / scale / GRID_SIZE + 6, h: height / scale / GRID_SIZE + 6 };
         if (!stage2Config && goalFormula) {
             drawGoalBlock(ctx, { x: -4, y: -4, w: 8, h: 8 }, goalFormula, isSolved, errorGoalPorts);
         }
@@ -1966,7 +1086,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             stage2DisplayedGoalIslandIds.forEach((islandId) => {
                 if (!stage2UnlockedIslandIdSet.has(islandId)) return;
                 const island = stage2Config.world.getIslandById(islandId);
-                if (!island?.goalBounds || !island.goalFormula) return;
+                if (!island?.goalBounds || !island.goalFormula || !boundsOverlap(island.goalBounds, visibleBounds)) return;
                 drawGoalBlock(
                     ctx,
                     island.goalBounds,
@@ -1979,6 +1099,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
         // --- Nodes ---
         nodes.forEach(node => {
+            if (!boundsOverlap(getNodeBounds(node), visibleBounds)) return;
+            if (stage2Config && scale < STAGE2_MARKER_SCALE_THRESHOLD) return;
             if (stage2Config) {
                 if (node.type === 'premise' && node.locked && node.sourceIslandId) {
                     if (!stage2UnlockedIslandIdSet.has(node.sourceIslandId)) return;
@@ -2013,6 +1135,15 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         // --- Ghost Node (Active Tool) ---
         if (activeTool && mouseGridPos) {
             drawNode(ctx, activeTool, mouseGridPos.x * GRID_SIZE, mouseGridPos.y * GRID_SIZE, true);
+            const bounds = getNodeBounds({ ...activeTool, ...mouseGridPos });
+            ctx.save(); ctx.strokeStyle = previewBlocked ? ART_THEME.error : ART_THEME.ivory;
+            ctx.lineWidth = 1.5 / scale; ctx.setLineDash([5 / scale, 4 / scale]);
+            ctx.strokeRect(bounds.x * GRID_SIZE - 3, bounds.y * GRID_SIZE - 3, bounds.w * GRID_SIZE + 6, bounds.h * GRID_SIZE + 6);
+            if (previewBlocked) {
+                ctx.fillStyle = ART_THEME.error; ctx.textAlign = 'center'; ctx.font = `600 ${12 / scale}px ${ART_THEME.font}`;
+                ctx.fillText(language === 'zh' ? '此处无法放置' : 'PLACEMENT BLOCKED', (bounds.x + bounds.w / 2) * GRID_SIZE, bounds.y * GRID_SIZE - 12 / scale);
+            }
+            ctx.restore();
         }
 
         // --- Box Selection Rectangle ---
@@ -2036,54 +1167,65 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         if (selectedNodeIds.size > 0) {
             nodes.forEach(node => {
                 if (selectedNodeIds.has(node.id)) {
-                    const nx = node.x * GRID_SIZE;
-                    const ny = node.y * GRID_SIZE;
-                    const nw = node.w * GRID_SIZE;
-                    const nh = node.h * GRID_SIZE;
+                    const bounds = getNodeBounds(node);
+                    const nx = bounds.x * GRID_SIZE;
+                    const ny = bounds.y * GRID_SIZE;
+                    const nw = bounds.w * GRID_SIZE;
+                    const nh = bounds.h * GRID_SIZE;
                     
-                    ctx.strokeStyle = '#22c55e';
+                    ctx.strokeStyle = ART_THEME.ivory;
                     ctx.lineWidth = 3 / scale;
                     ctx.setLineDash([]);
-                    ctx.strokeRect(nx - 2, ny - 2, nw + 4, nh + 4);
+                    const corner = Math.min(14 / scale, nw / 3, nh / 3);
+                    for (const [cx, cy, sx, sy] of [[nx-4,ny-4,1,1],[nx+nw+4,ny-4,-1,1],[nx-4,ny+nh+4,1,-1],[nx+nw+4,ny+nh+4,-1,-1]]) {
+                        ctx.beginPath();ctx.moveTo(cx+corner*sx,cy);ctx.lineTo(cx,cy);ctx.lineTo(cx,cy+corner*sy);ctx.stroke();
+                    }
                 }
             });
         }
 
+        if (!reducedMotion && quality !== 'low') {
+            for (const event of visualEventsRef.current) {
+                const progress = Math.min(1, Math.max(0, (animationTimeRef.current - event.at) / 480));
+                ctx.save(); ctx.globalAlpha = 1 - progress; ctx.strokeStyle = event.proof ? ART_THEME.provable : event.removed ? ART_THEME.brass : ART_THEME.formula;
+                ctx.lineWidth = 1.5 / scale; const spread = progress * 15;
+                ctx.beginPath(); ctx.roundRect(event.x * GRID_SIZE - spread, event.y * GRID_SIZE - spread, event.w * GRID_SIZE + spread * 2, event.h * GRID_SIZE + spread * 2, 8); ctx.stroke(); ctx.restore();
+            }
+        }
         ctx.restore();
 
-        // Debug Info
-        ctx.fillStyle = '#fff';
-        ctx.font = '14px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(`Offset: ${Math.round(offset.x)}, ${Math.round(offset.y)}`, 10, 20);
-        ctx.fillText(`Scale: ${scale.toFixed(2)}`, 10, 40);
-        if (mouseGridPos) {
-            ctx.fillText(`Grid: ${mouseGridPos.x}, ${mouseGridPos.y}`, 10, 60);
-        }
-        if (isSolved) {
-            // Level Solved indicator handled by HTML overlay in parent
-        }
+    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, stage2Progress?.completedIslandIds, stage2DisplayedGoalIslandIds, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById, focusMode, activeNodeIds, quality, language, stage2Progress?.mapSeed, selectedStage2Island?.id, previewBlocked, reducedMotion]);
 
-    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, stage2Progress?.completedIslandIds, stage2DisplayedGoalIslandIds, showStage2InteriorDetails, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById, focusMode, activeNodeIds]);
-
-    // Handle Window Resize
+    // Animation is a rendering concern. React updates only when game or interaction state changes.
+    useEffect(() => { drawRef.current = draw; draw(); }, [draw]);
     useEffect(() => {
         const handleResize = () => {
-            if (canvasRef.current) {
-                canvasRef.current.width = window.innerWidth;
-                canvasRef.current.height = window.innerHeight;
-                draw();
-            }
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const dpr = Math.min(window.devicePixelRatio || 1, quality === 'low' ? 1 : 2);
+            pixelRatioRef.current = dpr;
+            const width = Math.round(window.innerWidth * dpr), height = Math.round(window.innerHeight * dpr);
+            if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+            backdropRef.current = null;
+            drawRef.current();
         };
         window.addEventListener('resize', handleResize);
         handleResize();
         return () => window.removeEventListener('resize', handleResize);
-    }, [draw]);
-
-    // Animation Loop
+    }, [quality]);
     useEffect(() => {
-        draw();
-    }, [draw]);
+        if (reducedMotion || quality === 'low') return;
+        let frame = 0;
+        const tick = (time: number) => {
+            animationTimeRef.current = time;
+            const hadEffects = visualEventsRef.current.length > 0;
+            visualEventsRef.current = visualEventsRef.current.filter(event => time - event.at < 480);
+            if (!document.hidden && (animatedWiresRef.current || hadEffects)) drawRef.current();
+            frame = requestAnimationFrame(tick);
+        };
+        frame = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(frame);
+    }, [reducedMotion, quality]);
 
     // Clear selection when tool or mode changes
     useEffect(() => {
@@ -2097,8 +1239,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     // Key handlers
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            const target = e.target as HTMLElement | null;
-            if (target?.isContentEditable || ['input', 'textarea', 'select'].includes(target?.tagName?.toLowerCase() ?? '')) return;
+            if (isCanvasKeyboardBlocked(e.target)) return;
             const key = e.key.toLowerCase();
             if ((e.ctrlKey || e.metaKey) && key === 'z') {
                 e.preventDefault();
@@ -2158,16 +1299,14 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [onToolClear, onToolRotate, onToolToggleType, nodes, wires, selectedNodeIds, offset, scale]);
+    }, [onToolClear, onToolRotate, onToolToggleType, nodes, wires, selectedNodeIds, offset, scale, makeSelectionState]);
 
     useEffect(() => {
-        const isEditableTarget = (target: EventTarget | null) => {
-            const el = target as HTMLElement | null;
-            if (!el) return false;
-            if (el.isContentEditable) return true;
-            const tag = el.tagName?.toLowerCase();
-            if (!tag) return false;
-            return tag === 'input' || tag === 'textarea' || tag === 'select';
+        const clearMovement = () => {
+            if (wasdRafRef.current != null) cancelAnimationFrame(wasdRafRef.current);
+            wasdRafRef.current = null;
+            wasdLastFrameRef.current = 0;
+            wasdStateRef.current = { w: false, a: false, s: false, d: false, shift: false };
         };
 
         const setKey = (key: string, pressed: boolean) => {
@@ -2185,6 +1324,10 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         };
 
         const tick = (now: number) => {
+            if (isCanvasKeyboardBlocked(document.activeElement)) {
+                clearMovement();
+                return;
+            }
             if (!hasMovement()) {
                 wasdRafRef.current = null;
                 wasdLastFrameRef.current = 0;
@@ -2215,7 +1358,10 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         };
 
         const onKeyDown = (e: KeyboardEvent) => {
-            if (isEditableTarget(e.target)) return;
+            if (isCanvasKeyboardBlocked(e.target)) {
+                clearMovement();
+                return;
+            }
             if (e.ctrlKey || e.metaKey || e.altKey) return;
 
             const key = e.key.toLowerCase();
@@ -2234,17 +1380,20 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             setKey(key, false);
         };
 
+        const onFocusIn = (e: FocusEvent) => {
+            if (isCanvasKeyboardBlocked(e.target)) clearMovement();
+        };
+
         window.addEventListener('keydown', onKeyDown);
         window.addEventListener('keyup', onKeyUp);
+        window.addEventListener('focusin', onFocusIn);
+        window.addEventListener('blur', clearMovement);
         return () => {
             window.removeEventListener('keydown', onKeyDown);
             window.removeEventListener('keyup', onKeyUp);
-            if (wasdRafRef.current != null) {
-                cancelAnimationFrame(wasdRafRef.current);
-                wasdRafRef.current = null;
-            }
-            wasdLastFrameRef.current = 0;
-            wasdStateRef.current = { w: false, a: false, s: false, d: false, shift: false };
+            window.removeEventListener('focusin', onFocusIn);
+            window.removeEventListener('blur', clearMovement);
+            clearMovement();
         };
     }, []);
 
@@ -2582,6 +1731,20 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                      }
                  }
                  
+                 if (!foundValue) {
+                     const item = nodes.find(node => node.type !== 'wire' && boundsOverlap(getNodeBounds(node), { x: mouseGx, y: mouseGy, w: .001, h: .001 }));
+                     if (item?.type === 'theorem') {
+                         const premises = (item.theoremPremises ?? []).map((premise, index) => `${index + 1}. ${premise}`).join('\n');
+                         foundValue = `${item.theoremName ?? item.subType}${item.theoremSimplified ? ' +' : ''}\n${premises ? premises + '\n────────\n' : ''}${item.theoremIsFormulaOnly ? '' : '⊢ '}${item.theoremConclusion ?? item.customLabel ?? ''}`;
+                     } else if (item?.type === 'premise') foundValue = item.customLabel ?? item.subType;
+                     else if (item?.type === 'display') foundValue = displayValues.get(item.id) ?? null;
+                     if (!foundValue) {
+                         const goals = stage2Config ? stage2DisplayedGoalIslandIds.filter(id => stage2UnlockedIslandIdSet.has(id)).map(id => stage2Config.world.getIslandById(id)).filter((island): island is Stage2IslandDefinition => Boolean(island?.goalBounds)) : [];
+                         const target = goals.find(island => boundsOverlap(island.goalBounds!, { x: mouseGx, y: mouseGy, w: .001, h: .001 }));
+                         if (target) foundValue = `${target.name ?? ''}\n${target.goalFormula ?? ''}`;
+                         else if (!stage2Config && goalFormula && mouseGx >= -4 && mouseGx <= 4 && mouseGy >= -4 && mouseGy <= 4) foundValue = goalFormula;
+                     }
+                 }
                  if (foundValue) {
                      setHoveredWireValue({ x: e.clientX, y: e.clientY, value: foundValue });
                  } else {
@@ -2734,33 +1897,49 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
+                onMouseLeave={() => { handleMouseUp(); setHoveredWireValue(null); }}
+                onDoubleClick={() => { if (hoveredWireValue) setInspectedFormula(hoveredWireValue.value); }}
+                aria-label={language === 'zh' ? '电路画布；双击公式或定理查看完整详情' : 'Circuit canvas; double-click a formula or theorem for full details'}
                 onContextMenu={handleContextMenu}
                 onWheel={handleWheel}
             />
             {hoveredWireValue && (
                  <div style={{
                      position: 'absolute',
-                     left: hoveredWireValue.x + 15,
-                     top: hoveredWireValue.y + 15,
+                     left: Math.max(12, Math.min(hoveredWireValue.x + 15, window.innerWidth - Math.min(420, window.innerWidth - 24) - 12)),
+                     top: Math.max(12, Math.min(hoveredWireValue.y + 15, window.innerHeight - 260)),
                      backgroundColor: hoveredWireValue.value === 'Error' ? 'rgba(127, 29, 29, 0.95)' : 'rgba(15, 23, 42, 0.95)',
                      border: hoveredWireValue.value === 'Error' ? '1px solid #ef4444' : '1px solid #334155',
                      padding: '6px 10px',
                      borderRadius: '6px',
                      color: hoveredWireValue.value === 'Error' ? '#ef4444' : '#e2e8f0',
                      fontSize: '12px',
-                     fontFamily: hoveredWireValue.value === 'Error' ? 'monospace' : '"Times New Roman", serif',
-                     fontStyle: hoveredWireValue.value === 'Error' ? 'normal' : 'italic',
+                     fontFamily: ART_THEME.mathFont,
+                     fontStyle: 'normal',
                      fontWeight: hoveredWireValue.value === 'Error' ? 'bold' : 'normal',
                      pointerEvents: 'none',
-                     whiteSpace: 'nowrap',
+                     whiteSpace: 'pre-wrap',
+                     overflowWrap: 'anywhere',
+                     maxWidth: 'min(420px, calc(100vw - 24px))',
+                     maxHeight: 240,
+                     overflow: 'hidden',
                      zIndex: 100,
                      boxShadow: hoveredWireValue.value === 'Error' 
                          ? '0 0 10px rgba(239, 68, 68, 0.5)' 
                          : '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
                  }}>
                      {hoveredWireValue.value}
+                     <div style={{ fontFamily: ART_THEME.font, fontSize: 10, color: ART_THEME.brass, marginTop: 8 }}>{language === 'zh' ? '双击打开完整详情' : 'Double-click for full details'}</div>
                  </div>
+            )}
+            {inspectedFormula && (
+                <section data-formula-reader role="dialog" aria-modal="false" onKeyDown={event => { if (event.key === 'Escape') setInspectedFormula(null); }} aria-label={language === 'zh' ? '公式详情' : 'Formula details'} className="absolute right-4 top-24 z-[110] w-[min(460px,calc(100vw-32px))] rounded-2xl border border-[#B69A66]/50 bg-[#101D30]/95 p-5 text-[#EEE8DB] shadow-2xl backdrop-blur-xl">
+                    <div className="mb-3 flex items-center justify-between border-b border-[#B69A66]/20 pb-3">
+                        <strong className="text-sm">{language === 'zh' ? '定理与公式 · 完整文本' : 'THEOREM & FORMULA · FULL TEXT'}</strong>
+                        <button type="button" autoFocus onClick={() => setInspectedFormula(null)} onKeyDown={event => { if (event.key === 'Escape') setInspectedFormula(null); }} className="rounded-lg px-3 py-1 hover:bg-white/10" aria-label={language === 'zh' ? '关闭详情' : 'Close details'}>×</button>
+                    </div>
+                    <pre className="max-h-[55vh] select-text overflow-auto whitespace-pre-wrap break-all text-base leading-relaxed" style={{ fontFamily: ART_THEME.mathFont }}>{inspectedFormula}</pre>
+                </section>
             )}
         </div>
     );

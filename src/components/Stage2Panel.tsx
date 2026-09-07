@@ -1,234 +1,94 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { parseGoal } from '@/lib/logic-engine';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { TranslationKey } from '@/data/translations';
-import { Stage2IslandCategory, Stage2LevelConfig, Stage2MetaProgress } from '@/types/stage2';
+import { Stage2LevelConfig, Stage2MetaProgress } from '@/types/stage2';
+import GameIcon from './GameIcon';
 
 interface Stage2PanelProps {
-    config: Stage2LevelConfig;
-    progress: Stage2MetaProgress;
-    activeTheoremId?: string | null;
-    selectedIslandId?: string | null;
-    onSelectIsland?: (islandId: string) => void;
-    onOpenTheoremLibrary?: () => void;
+    config: Stage2LevelConfig; progress: Stage2MetaProgress; activeTheoremId?: string | null;
+    selectedIslandId?: string | null; onSelectIsland?: (islandId: string) => void; onOpenTheoremLibrary?: () => void;
 }
-
-const categoryOrder: Stage2IslandCategory[] = ['main', 'support', 'optional'];
-const RECENT_THEOREM_LIMIT = 6;
-
-export default function Stage2Panel({
-    config,
-    progress,
-    activeTheoremId,
-    selectedIslandId,
-    onSelectIsland,
-    onOpenTheoremLibrary,
-}: Stage2PanelProps) {
+export default function Stage2Panel({ config, progress, activeTheoremId, selectedIslandId, onSelectIsland, onOpenTheoremLibrary }: Stage2PanelProps) {
     const { t, language } = useLanguage();
-    const unlockedIslandIds = useMemo(() => new Set(progress.unlockedIslandIds), [progress.unlockedIslandIds]);
-    const completedIslandIds = useMemo(() => new Set(progress.completedIslandIds), [progress.completedIslandIds]);
-    const goalIslands = useMemo(() => {
-        return config.goalIslandIds
-            .map((id) => config.world.getIslandById(id))
-            .filter((item): item is NonNullable<typeof item> => Boolean(item))
-            .map((island) => ({ ...island, unlocked: unlockedIslandIds.has(island.id) }));
-    }, [config.goalIslandIds, config.world, unlockedIslandIds]);
-    const groupedIslands = useMemo(() => {
-        return categoryOrder.map((category) => ({
-            category,
-            islands: goalIslands.filter((island) => (island.category ?? 'optional') === category),
-        }));
-    }, [goalIslands]);
-
-    // We want the total count of collected theorems, regardless of which level they were collected in.
-    const theoremCount = Object.values(progress.collectedTheorems).length;
-
-    const recentTheorems = useMemo(
-        () => Object.values(progress.collectedTheorems).slice(-RECENT_THEOREM_LIMIT).reverse(),
-        [progress.collectedTheorems]
-    );
-    const focusIslandName = config.world.getIslandById(config.focusIslandId)?.name ?? '';
-    const unlockedGoalCount = goalIslands.filter((island) => island.unlocked).length;
-    const introText = config.introTextKey ? t(config.introTextKey as TranslationKey) : config.introText;
-
-    return (
-        <>
-            <div
-                id="stage2-hud"
-                className="absolute top-4 left-4 z-40 w-72 rounded-2xl border border-cyan-500/30 bg-slate-900/85 p-4 text-white shadow-2xl backdrop-blur-md"
-            >
-                <div className="flex items-center justify-between">
-                    <div>
-                        <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">{t('stage')} 2</div>
-                        <div className="text-lg font-bold">{t('stage2Map')}</div>
-                    </div>
-                    <div className="rounded-full bg-amber-400/10 px-3 py-1 text-sm font-bold text-amber-300">
-                        {t('coins')}: {progress.coins}
-                    </div>
-                </div>
-
-                <div
-                    id="stage2-intro"
-                    className="mt-4 rounded-xl border border-slate-700 bg-slate-800/90 p-3"
-                >
-                    <div className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('mainIsland')}</div>
-                    <div className="mt-1 text-base font-bold text-cyan-200">{focusIslandName}</div>
-                    <div className="mt-1 text-xs leading-relaxed text-slate-300">{introText}</div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3">
-                        <div className="text-[10px] uppercase tracking-widest text-slate-400">{t('revealedIslands')}</div>
-                        <div className="mt-1 text-xl font-bold text-white">{unlockedGoalCount}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3">
-                        <div className="text-[10px] uppercase tracking-widest text-slate-400">{t('theoremChips')}</div>
-                        <div className="mt-1 text-xl font-bold text-white">{theoremCount}</div>
-                    </div>
-                </div>
-            </div>
-
-            <div
-                id="stage2-island-list"
-                className="absolute right-4 top-[19rem] z-40 flex max-h-[calc(100vh-21rem)] w-80 flex-col rounded-2xl border border-slate-600/70 bg-slate-900/85 p-4 text-white shadow-2xl backdrop-blur-md"
-            >
-                <div className="flex items-center justify-between">
-                    <div>
-                        <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{t('revealedIslands')}</div>
-                        <div className="text-lg font-bold">{t('mainObjective')}</div>
-                    </div>
-                    <div className="text-xs text-slate-400">{t('chapter')} {config.chapterLevel}</div>
-                </div>
-
-                <div className="mt-4 flex flex-1 flex-col gap-3 overflow-y-auto pr-1">
-                    {groupedIslands.map(({ category, islands }) => (
-                        <div key={category} className="rounded-xl border border-slate-700 bg-slate-800/80 p-3">
-                            <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                {category === 'main'
-                                    ? t('mainIsland')
-                                    : category === 'support'
-                                      ? t('supportIslands')
-                                      : t('optionalIslands')}
-                            </div>
-                            <div className="flex flex-col gap-2">
-                                {islands.map((island) => {
-                                    const completed = completedIslandIds.has(island.id);
-                                    const unlocked = unlockedIslandIds.has(island.id);
-                                    const parsedGoal = island.goalFormula ? parseGoal(island.goalFormula) : null;
-                                    const islandDescription = island.descriptionKey
-                                        ? t(island.descriptionKey as TranslationKey)
-                                        : island.description;
-                                    return (
-                                        <div
-                                            key={island.id}
-                                            onClick={() => unlocked && onSelectIsland?.(island.id)}
-                                            className={`rounded-lg border px-3 py-2 ${
-                                                completed
-                                                    ? 'border-emerald-400/40 bg-emerald-500/10'
-                                                    : island.id === selectedIslandId
-                                                      ? 'border-cyan-400/40 bg-cyan-500/10'
-                                                      : 'border-slate-700 bg-slate-900/70'
-                                            } ${unlocked ? 'cursor-pointer transition-colors hover:border-cyan-400/60 hover:bg-cyan-500/8' : ''}`}
-                                        >
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div className="font-bold text-slate-100">{unlocked ? island.name : ''}</div>
-                                                <div className="text-[10px] uppercase tracking-widest text-slate-400">
-                                                    {completed ? t('completedIsland') : unlocked ? t('revealed') : t('hiddenInFog')}
-                                                </div>
-                                            </div>
-                                            {unlocked ? (
-                                                <>
-                                                    {island.goalFormula && (
-                                                        <div className="mt-1 text-sm text-slate-300">
-                                                            {parsedGoal ? parsedGoal.toString() : island.goalFormula}
-                                                        </div>
-                                                    )}
-                                                    {islandDescription && (
-                                                        <div className="mt-1 text-xs leading-relaxed text-slate-400">{islandDescription}</div>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <div className="mt-1 text-xs leading-relaxed text-slate-500">
-                                                    {t('hiddenInFog')}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            <div
-                id="stage2-theorem-list"
-                className="absolute left-4 top-[22rem] bottom-4 z-40 flex w-80 flex-col overflow-hidden rounded-2xl border border-slate-600/70 bg-slate-900/85 p-4 text-white shadow-2xl backdrop-blur-md"
-            >
-                <div className="flex items-center justify-between">
-                    <div>
-                        <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{t('theoremChips')}</div>
-                        <div className="text-lg font-bold">{t('recentlyUnlocked')}</div>
-                    </div>
-                    <div className="text-xs text-slate-400">
-                        {Math.min(theoremCount, RECENT_THEOREM_LIMIT)} / {theoremCount}
-                    </div>
-                </div>
-
-                {theoremCount === 0 ? (
-                    <div className="mt-3 rounded-xl border border-dashed border-slate-700 bg-slate-800/70 p-3 text-sm text-slate-400">
-                        {t('noTheoremsCollected')}
-                    </div>
-                ) : (
-                    <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-                        <div className="flex flex-col gap-2">
-                            {recentTheorems.map((theorem) => {
-                                const levelNumber = Number(theorem.collectedInLevelId?.replace('level-', '') ?? 11);
-                                const chapterNumber = Number.isFinite(levelNumber) ? Math.max(1, levelNumber - 10) : 1;
-                                return (
-                                    <div
-                                        key={theorem.theoremId}
-                                        className={`rounded-xl border bg-slate-800/70 p-3 ${
-                                            theorem.theoremId === activeTheoremId
-                                                ? 'border-cyan-400/70 shadow-[0_0_15px_rgba(34,211,238,0.15)]'
-                                                : 'border-slate-700'
-                                        }`}
-                                    >
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="font-bold text-cyan-200">{theorem.name}</div>
-                                            <div className="flex items-center gap-2 text-xs">
-                                                <span className="rounded-full bg-slate-700/80 px-2 py-0.5 text-slate-300">
-                                                    {t('chapter')} {chapterNumber}
-                                                </span>
-                                                <span className="text-amber-300">
-                                                    {t('theoremCost')}: {theorem.cost}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="mt-1 text-sm text-slate-300">{theorem.formula}</div>
-                                        <div className="mt-1 text-xs text-slate-500">
-                                            {t('freeUsesRemaining')}: {theorem.freeUsesRemaining}
-                                        </div>
-                                        <div className="mt-1 text-xs text-slate-500">
-                                            {theorem.freeUsesRemaining > 0 ? t('firstUseFree') : `${t('theoremCost')}: ${theorem.cost}${language === 'zh' ? '' : ' '}${t('coins')}`}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-
-                <button
-                    type="button"
-                    onClick={onOpenTheoremLibrary}
-                    disabled={theoremCount === 0}
-                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-100 transition-colors hover:border-cyan-400/70 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800/60 disabled:text-slate-500"
-                >
-                    <span>{t('theoremLibrary')}</span>
-                    <span aria-hidden="true">→</span>
-                </button>
-            </div>
-        </>
-    );
+    const zh = language === 'zh';
+    const [objectivesOpen, setObjectivesOpen] = useState(false);
+    const [recentOpen, setRecentOpen] = useState(false);
+    const previousProgress = useRef<{ level: string; theorems: Set<string>; islands: Set<string> } | null>(null);
+    const pendingDiscovery = useRef<{ names: Set<string>; islandCount: number }>({ names: new Set(), islandCount: 0 });
+    const discoveryFrame = useRef<number | null>(null);
+    const [discovery, setDiscovery] = useState<{ level: string; names: string[]; islandCount: number } | null>(null);
+    useEffect(() => () => { if (discoveryFrame.current !== null) cancelAnimationFrame(discoveryFrame.current); }, []);
+    useEffect(() => {
+        const previous = previousProgress.current;
+        const theorems = new Set(Object.keys(progress.collectedTheorems));
+        const islands = new Set(progress.unlockedIslandIds);
+        previousProgress.current = { level: config.levelId, theorems, islands };
+        if (!previous || previous.level !== config.levelId) {
+            if (discoveryFrame.current !== null) cancelAnimationFrame(discoveryFrame.current);
+            discoveryFrame.current = null;
+            pendingDiscovery.current = { names: new Set(), islandCount: 0 };
+            return;
+        }
+        const names = [...theorems].filter(id => !previous.theorems.has(id)).map(id => progress.collectedTheorems[id].name);
+        const islandCount = [...islands].filter(id => !previous.islands.has(id)).length;
+        if (!names.length && !islandCount) return;
+        names.forEach(name => pendingDiscovery.current.names.add(name));
+        pendingDiscovery.current.islandCount += islandCount;
+        if (discoveryFrame.current !== null) return;
+        discoveryFrame.current = requestAnimationFrame(() => {
+            discoveryFrame.current = null;
+            const pending = pendingDiscovery.current;
+            pendingDiscovery.current = { names: new Set(), islandCount: 0 };
+            setDiscovery({ level: config.levelId, names: [...pending.names], islandCount: pending.islandCount });
+        });
+    }, [config.levelId, progress.collectedTheorems, progress.unlockedIslandIds]);
+    useEffect(() => {
+        if (!discovery) return;
+        const timer = window.setTimeout(() => setDiscovery(null), 4200);
+        return () => window.clearTimeout(timer);
+    }, [discovery]);
+    const unlocked = useMemo(() => new Set(progress.unlockedIslandIds.length ? progress.unlockedIslandIds : config.initialUnlockedIslandIds), [progress.unlockedIslandIds, config.initialUnlockedIslandIds]);
+    const completed = new Set(progress.completedIslandIds);
+    const islands = useMemo(() => config.goalIslandIds.map(id => config.world.getIslandById(id)).filter(item => item !== null), [config]);
+    const focus = config.world.getIslandById(config.focusIslandId);
+    const selected = config.world.getIslandById(selectedIslandId ?? config.focusIslandId) ?? focus;
+    const inventory = Object.values(progress.collectedTheorems);
+    const recent = inventory.slice(-6).reverse();
+    const formula = (value: string) => parseGoal(value)?.toString() ?? value;
+    const selectedVisible = selected && unlocked.has(selected.id);
+    return <>
+        {discovery?.level === config.levelId && <div className="art-discovery-notice" role="status"><GameIcon name="sparkles" size={21}/><span>{discovery.names.length ? (zh ? '新定理已归档：' : 'Theorem archived: ') + discovery.names.join(' · ') : (zh ? `${discovery.islandCount} 座岛屿已揭示` : `${discovery.islandCount} islands revealed`)}</span></div>}
+        <header id="stage2-hud" className="art-world-hud game-chrome">
+            <GameIcon name="compass" size={30} />
+            <div><p className="art-eyebrow">{zh ? '第二大关 · 群岛纪行' : 'STAGE II · THE ARCHIPELAGO'}</p><strong>{zh ? '悬浮岛地图' : 'Floating Islands'}</strong></div>
+            <span className="art-chapter-number">{String(config.chapterLevel).padStart(2, '0')}<small> / 10</small></span>
+            <div className="art-world-resources"><span><GameIcon name="coin" size={16} />{progress.coins}</span><span><GameIcon name="insight" size={16} />{progress.insight}</span></div>
+        </header>
+        <aside id="stage2-island-list" className="art-objectives game-chrome">
+            <div className="art-panel-title"><span className="art-eyebrow">{t('mainObjective')}</span><span>{islands.filter(island => completed.has(island.id)).length} / {islands.length}</span></div>
+            <button className="art-focus-island" onClick={() => selectedVisible && onSelectIsland?.(selected.id)} disabled={!selectedVisible}>
+                <GameIcon name={selected && completed.has(selected.id) ? 'check' : 'target'} size={24} />
+                <span><strong>{selectedVisible ? selected.name : t('hiddenInFog')}</strong><small>{selected?.id === config.focusIslandId ? t('mainIsland') : t('supportIslands')}</small></span>
+                <GameIcon name="compass" size={16} />
+            </button>
+            {selectedVisible && selected.goalFormula && <p className="art-formula">{formula(selected.goalFormula)}</p>}
+            <button className="art-disclosure" onClick={() => setObjectivesOpen(!objectivesOpen)} aria-expanded={objectivesOpen} aria-controls="art-island-items"><GameIcon name="map" size={16} />{zh ? '群岛目录' : 'Island index'}<GameIcon name="chevron" size={14} /></button>
+            {objectivesOpen && <div className="art-island-items" id="art-island-items">{(['main', 'support', 'optional'] as const).map(category => <section key={category}>
+                <h3>{category === 'main' ? t('mainIsland') : category === 'support' ? t('supportIslands') : t('optionalIslands')}</h3>
+                {islands.filter(island => (island.category ?? 'optional') === category).map(island => {
+                    const visible = unlocked.has(island.id);
+                    return <button key={island.id} className={'art-island-item ' + (island.id === selected?.id ? 'is-selected' : '')} disabled={!visible} onClick={() => onSelectIsland?.(island.id)}>
+                        <GameIcon name={completed.has(island.id) ? 'check' : visible ? 'compass' : 'lock'} size={16} />
+                        <span><b>{visible ? island.name : t('hiddenInFog')}</b>{visible && island.goalFormula && <small>{formula(island.goalFormula)}</small>}{visible && <small>{island.descriptionKey ? t(island.descriptionKey as TranslationKey) : island.description}</small>}</span>
+                    </button>;
+                })}
+            </section>)}</div>}
+        </aside>
+        <aside id="stage2-theorem-list" className="art-theorem-drawer game-chrome">
+            <button className="art-disclosure" onClick={() => setRecentOpen(!recentOpen)} aria-expanded={recentOpen} aria-controls="art-recent-theorems"><GameIcon name="book" size={20} /><span>{t('recentlyUnlocked')}</span><b>{inventory.length}</b><GameIcon name="chevron" size={14} /></button>
+            {recentOpen && <div className="art-recent-theorems" id="art-recent-theorems">{recent.length ? recent.map(theorem => <article key={theorem.theoremId} className={theorem.theoremId === activeTheoremId ? 'is-selected' : ''}><b>{theorem.name}</b><p className="art-formula">{formula(theorem.formula)}</p><small>{t('freeUsesRemaining')}: {theorem.freeUsesRemaining} · {t('theoremCost')}: {theorem.cost}</small></article>) : <p>{t('noTheoremsCollected')}</p>}</div>}
+            <button className="art-library-link" onClick={onOpenTheoremLibrary} disabled={!inventory.length}>{t('theoremLibrary')}<GameIcon name="arrow-right" size={16} /></button>
+        </aside>
+    </>;
 }

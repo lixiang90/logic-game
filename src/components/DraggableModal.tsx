@@ -1,96 +1,27 @@
-import React, { useState, useRef, useEffect } from 'react';
-
-interface DraggableModalProps {
-    children: React.ReactNode;
-    title?: string;
-    initialX?: number;
-    initialY?: number;
-}
-
-const DraggableModal: React.FC<DraggableModalProps> = ({ children, title, initialX, initialY }) => {
-    // Default position: Centered roughly near top
-    // We'll calculate center dynamically if initialX/Y not provided, but for SSR safety start with defaults
-    const [position, setPosition] = useState({ x: initialX ?? 0, y: initialY ?? 128 });
-    const [isDragging, setIsDragging] = useState(false);
-    const [rel, setRel] = useState({ x: 0, y: 0 }); // Relative position of mouse to top-left of modal
+import React, { useEffect, useRef, useState } from 'react';
+import GameIcon from './GameIcon';
+import { useLanguage } from '@/contexts/LanguageContext';
+interface DraggableModalProps { children: React.ReactNode; title?: string; initialX?: number; initialY?: number; }
+export default function DraggableModal({ children, title, initialX, initialY }: DraggableModalProps) {
+    const { language } = useLanguage();
+    const [position, setPosition] = useState<{ x: number; y: number } | null>(initialX !== undefined ? { x: initialX, y: initialY ?? 128 } : null);
     const modalRef = useRef<HTMLDivElement>(null);
-
-    // Center on mount if no initial pos provided
+    const drag = useRef<{ x: number; y: number } | null>(null);
+    const clamp = (x: number, y: number) => {
+        const box = modalRef.current?.getBoundingClientRect();
+        return { x: Math.max(8, Math.min(x, window.innerWidth - (box?.width ?? 320) - 8)), y: Math.max(65, Math.min(y, window.innerHeight - Math.min(box?.height ?? 250, window.innerHeight - 80) - 8)) };
+    };
     useEffect(() => {
-        if (initialX === undefined && initialY === undefined && modalRef.current) {
-             const rect = modalRef.current.getBoundingClientRect();
-             const winWidth = window.innerWidth;
-             setPosition({
-                 x: (winWidth - rect.width) / 2,
-                 y: 128 // Keep consistent top margin
-             });
-        }
-    }, [initialX, initialY]);
-
-    const handleMouseDown = (e: React.MouseEvent) => {
-        if (e.button !== 0) return; // Only left click
-        setIsDragging(true);
-        const rect = modalRef.current!.getBoundingClientRect();
-        setRel({
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
-        });
-        e.stopPropagation();
-        e.preventDefault();
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-        if (!isDragging) return;
-        setPosition({
-            x: e.clientX - rel.x,
-            y: e.clientY - rel.y
-        });
-        e.stopPropagation();
-        e.preventDefault();
-    };
-
-    const handleMouseUp = () => {
-        setIsDragging(false);
-    };
-
-    // Attach global listeners for drag
-    useEffect(() => {
-        if (isDragging) {
-            window.addEventListener('mousemove', handleMouseMove);
-            window.addEventListener('mouseup', handleMouseUp);
-        } else {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-        }
-        return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-        };
-    }, [isDragging]);
-
-    return (
-        <div 
-            ref={modalRef}
-            className="absolute bg-green-900/90 border-2 border-green-500 rounded-xl p-8 shadow-2xl z-50 backdrop-blur-md select-none"
-            style={{ 
-                left: position.x, 
-                top: position.y,
-                cursor: isDragging ? 'grabbing' : 'auto'
-            }}
-        >
-            {/* Drag Handle Area (Invisible or explicit) */}
-            <div 
-                onMouseDown={handleMouseDown}
-                className="absolute inset-0 cursor-grab active:cursor-grabbing z-0"
-                title="Drag to move"
-            />
-            
-            {/* Content Container - Ensure clicks on buttons work by placing them above drag layer */}
-            <div className="relative z-10 pointer-events-auto">
-                {children}
-            </div>
-        </div>
-    );
-};
-
-export default DraggableModal;
+        const resize = () => setPosition(previous => previous ? clamp(previous.x, previous.y) : previous);
+        window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize);
+    }, []);
+    return <div ref={modalRef} role="dialog" aria-label={title} className="art-draggable" style={position ? { left: position.x, top: position.y } : { left: '50%', top: 'clamp(90px, 20vh, 170px)', transform: 'translateX(-50%)' }}>
+        <button type="button" className="art-drag-handle" aria-label={language === 'zh' ? '拖动面板，或使用方向键移动' : 'Drag panel, or use arrow keys to move'}
+            onPointerDown={event => { const rect = modalRef.current!.getBoundingClientRect(); drag.current = { x: event.clientX - rect.left, y: event.clientY - rect.top }; event.currentTarget.setPointerCapture(event.pointerId); }}
+            onPointerMove={event => { if (drag.current) setPosition(clamp(event.clientX - drag.current.x, event.clientY - drag.current.y)); }}
+            onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}
+            onKeyDown={event => { if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) return; event.preventDefault(); event.stopPropagation(); const rect = modalRef.current!.getBoundingClientRect(); setPosition(clamp(rect.left + (event.key === 'ArrowRight' ? 10 : event.key === 'ArrowLeft' ? -10 : 0), rect.top + (event.key === 'ArrowDown' ? 10 : event.key === 'ArrowUp' ? -10 : 0))); }}>
+            <span>{title ?? (language === 'zh' ? '星图学宫' : 'CELESTIAL ACADEMY')}</span><GameIcon name="layers" size={16} />
+        </button>{children}
+    </div>;
+}

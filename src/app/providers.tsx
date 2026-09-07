@@ -2,13 +2,14 @@
 
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { TutorialProvider } from "@/contexts/TutorialContext";
+import { VisualSettingsProvider } from "@/contexts/VisualSettingsContext";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <LanguageProvider>
-      <TutorialProvider>
+      <VisualSettingsProvider><TutorialProvider>
         {children}
-      </TutorialProvider>
+      </TutorialProvider></VisualSettingsProvider>
     </LanguageProvider>
   );
 }

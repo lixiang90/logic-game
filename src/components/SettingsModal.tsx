@@ -1,71 +1,21 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
-
-interface SettingsModalProps {
-    onClose: () => void;
-    bgmVolume: number;
-    onBgmVolumeChange: (volume: number) => void;
-}
-
+import { useVisualSettings } from '@/contexts/VisualSettingsContext';
+import GameIcon from './GameIcon';
+import { useArtModal } from '@/lib/use-art-modal';
+interface SettingsModalProps { onClose: () => void; bgmVolume: number; onBgmVolumeChange: (volume: number) => void; }
 export default function SettingsModal({ onClose, bgmVolume, onBgmVolumeChange }: SettingsModalProps) {
     const { t, language, setLanguage } = useLanguage();
-
-    return (
-        <div className="absolute inset-0 bg-black/60 z-100 flex items-center justify-center backdrop-blur-sm">
-            <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 shadow-2xl w-96">
-                <h2 className="text-2xl font-bold text-white mb-6 text-center">{t('settings')}</h2>
-                
-                <div className="flex flex-col gap-6">
-                    <div className="flex flex-col gap-2">
-                        <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">{t('language')}</span>
-                        <div className="flex gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700">
-                            <button 
-                                onClick={() => setLanguage('en')}
-                                className={`flex-1 py-2 rounded font-bold transition-all ${
-                                    language === 'en' 
-                                    ? 'bg-blue-600 text-white shadow-md' 
-                                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                                }`}
-                            >
-                                English
-                            </button>
-                            <button 
-                                onClick={() => setLanguage('zh')}
-                                className={`flex-1 py-2 rounded font-bold transition-all ${
-                                    language === 'zh' 
-                                    ? 'bg-blue-600 text-white shadow-md' 
-                                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                                }`}
-                            >
-                                中文
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                            <span className="text-slate-400 text-sm font-bold uppercase tracking-wider">{t('bgmVolume')}</span>
-                            <span className="text-sm text-slate-300">{Math.round(bgmVolume * 100)}%</span>
-                        </div>
-                        <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="1"
-                            value={Math.round(bgmVolume * 100)}
-                            onChange={(event) => onBgmVolumeChange(Number(event.target.value) / 100)}
-                            className="w-full accent-blue-500"
-                        />
-                    </div>
-                </div>
-
-                <button 
-                    onClick={onClose}
-                    className="mt-8 w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg border border-slate-600 hover:border-slate-500 transition-colors"
-                >
-                    {t('back')} 
-                </button>
-            </div>
-        </div>
-    );
+    const { quality, motion, setQuality, setMotion } = useVisualSettings();
+    const zh = language === 'zh';
+    const modalRef = useRef<HTMLElement>(null);
+    useArtModal(modalRef, onClose);
+    return <div className="art-modal-backdrop"><section ref={modalRef} tabIndex={-1} className="art-dialog art-settings" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header className="art-dialog-header"><div><p className="art-eyebrow">PREFERENCES</p><h2 id="settings-title">{t('settings')}</h2></div><button className="art-icon-button" aria-label={t('back')} onClick={onClose} autoFocus><GameIcon name="close" /></button></header>
+        <fieldset className="art-setting-group"><legend>{t('language')}</legend><div className="art-segmented">{(['zh', 'en'] as const).map(value => <button key={value} aria-pressed={language === value} onClick={() => setLanguage(value)}>{value === 'zh' ? '中文' : 'English'}</button>)}</div></fieldset>
+        <div className="art-setting-group"><label htmlFor="music-volume" className="art-setting-label"><span><GameIcon name="sound" size={18} />{t('bgmVolume')}</span><output>{Math.round(bgmVolume * 100)}%</output></label><input id="music-volume" type="range" min="0" max="100" step="1" value={Math.round(bgmVolume * 100)} onChange={event => onBgmVolumeChange(Number(event.target.value) / 100)} /></div>
+        <fieldset className="art-setting-group"><legend>{zh ? '画面质量' : 'Visual quality'}</legend><div className="art-segmented"><button aria-pressed={quality === 'standard'} onClick={() => setQuality('standard')}>{zh ? '精致' : 'Standard'}</button><button aria-pressed={quality === 'low'} onClick={() => setQuality('low')}>{zh ? '轻量' : 'Low'}</button></div><p>{zh ? '轻量模式减少辉光与环境效果，适合较大的电路。' : 'Low quality reduces glow and ambient effects for larger circuits.'}</p></fieldset>
+        <fieldset className="art-setting-group"><legend>{zh ? '动态效果' : 'Motion'}</legend><div className="art-segmented">{(['system', 'reduced', 'full'] as const).map((value, i) => <button key={value} aria-pressed={motion === value} onClick={() => setMotion(value)}>{(zh ? ['跟随系统', '减少动态', '完整效果'] : ['System', 'Reduced', 'Full'])[i]}</button>)}</div><p>{zh ? '减少动态时保留所有状态提示，并直接显示剧情文字。' : 'Reduced motion keeps all status indicators and displays dialogue immediately.'}</p></fieldset>
+        <footer className="art-dialog-footer"><span className="art-muted">{zh ? '偏好自动保存' : 'Preferences saved automatically'}</span><button className="art-button art-button-primary" onClick={onClose}>{t('back')}<GameIcon name="arrow-right" size={16} /></button></footer>
+    </section></div>;
 }

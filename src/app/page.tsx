@@ -13,6 +13,9 @@ import LogicFarmModal from "@/components/LogicFarmModal";
 import LogicExchangeModal from "@/components/LogicExchangeModal";
 import StoryDialog from "@/components/StoryDialog";
 import CircuitWorkbench from "@/components/CircuitWorkbench";
+import GameIcon from "@/components/GameIcon";
+import ChapterGateResponse from "@/components/ChapterGateResponse";
+import ArtModal, { SavedSlotArtwork } from "@/components/ArtModal";
 import levels from "@/data/levels.json";
 import { getStage2LevelConfig, STAGE2_START_LEVEL_INDEX } from "@/data/stage2";
 import { getFarmCrop } from "@/data/farm";
@@ -1181,7 +1184,7 @@ export default function Home() {
   }
 
   return (
-    <main className="w-screen h-screen overflow-hidden relative">
+    <main className={`game-shell ${stage2Config ? 'game-world' : 'game-atelier'} w-screen h-screen overflow-hidden relative`}>
       <InfiniteCanvas 
         key={stage2Config ? `${stage2Config.levelId}-42` : currentLevel.id}
         ref={canvasRef}
@@ -1278,14 +1281,15 @@ export default function Home() {
       />
       
       {/* Save Button */}
-      <div className="absolute top-4 right-4 z-50 flex flex-row items-center gap-2">
+      <nav className="art-game-actions absolute top-4 right-4 z-50 flex flex-row items-center gap-2" aria-label={language === 'zh' ? '游戏工具' : 'Game actions'}>
           {stage2Config && stage2Progress.farm.unlocked && (
             <button
               className="game-tool flex h-10 items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-950/85 px-3 font-bold text-emerald-200 shadow-lg hover:bg-emerald-900"
               onClick={() => setShowLogicFarm(true)}
               title={language === 'zh' ? '逻辑农场' : 'Logic Farm'}
+              aria-label={language === 'zh' ? '逻辑农场' : 'Logic Farm'}
             >
-              <span aria-hidden="true">🌱</span><span className="hidden xl:inline">{language === 'zh' ? '农场' : 'Farm'}</span>
+              <GameIcon name="seed" /><span className="hidden xl:inline">{language === 'zh' ? '农场' : 'Farm'}</span>
             </button>
           )}
           {stage2Config && (
@@ -1293,8 +1297,9 @@ export default function Home() {
               className="game-tool flex h-10 items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-950/85 px-3 font-bold text-violet-200 shadow-lg hover:bg-violet-900"
               onClick={() => setShowLogicExchange(true)}
               title={language === 'zh' ? '证明交易所' : 'Proof Exchange'}
+              aria-label={language === 'zh' ? '证明交易所' : 'Proof Exchange'}
             >
-              <span aria-hidden="true">✦</span><span className="hidden xl:inline">{stage2Progress.insight}</span>
+              <GameIcon name="insight" /><span className="hidden xl:inline">{language === 'zh' ? '工坊' : 'Exchange'}</span>
             </button>
           )}
           <button 
@@ -1306,7 +1311,7 @@ export default function Home() {
               }}
               title={t('mainMenu')}
           >
-              <span role="img" aria-label="Menu">🔙</span>
+              <GameIcon name="arrow-left" />
           </button>
           
           <button 
@@ -1314,7 +1319,7 @@ export default function Home() {
               onClick={() => forceStartTutorial(currentLevelIndex)}
               title="Help / Tutorial"
           >
-              <span role="img" aria-label="Help">❓</span>
+              <GameIcon name="help" />
           </button>
 
           <button 
@@ -1325,7 +1330,7 @@ export default function Home() {
               }}
               title={t('saveGame')}
           >
-              <span role="img" aria-label="Save Game">💾</span>
+              <GameIcon name="save" />
           </button>
           <button 
               className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
@@ -1338,51 +1343,36 @@ export default function Home() {
               }}
               title={t('resetView')}
           >
-              <span role="img" aria-label="Home">🏠</span>
+              <GameIcon name="compass" />
           </button>
           <button 
               className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => setShowResetConfirm(true)}
               title={t('resetLevel')}
           >
-              <span role="img" aria-label="Reset">🔄</span>
+              <GameIcon name="reset" />
           </button>
           <button 
               className="game-tool bg-slate-800/80 text-white p-2 rounded-xl hover:bg-slate-700 shadow-lg border border-slate-700 font-bold flex items-center justify-center w-10 h-10 text-xl"
               onClick={() => setShowSettings(true)}
               title={t('settings')}
           >
-              <span role="img" aria-label="Settings">⚙️</span>
+              <GameIcon name="settings" />
           </button>
-      </div>
+      </nav>
 
       {/* Reset Confirm Modal */}
       {showResetConfirm && (
-        <div className="absolute inset-0 bg-black/60 z-[120] flex items-center justify-center backdrop-blur-sm">
-            <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 shadow-2xl w-96">
-                <div className="mb-4 flex items-center gap-3">
-                    <span className="text-3xl" role="img" aria-label="Warning">⚠️</span>
-                    <h2 className="text-xl font-bold text-white">{t('resetLevel')}</h2>
-                </div>
-                <p className="text-slate-300 mb-8 leading-relaxed">
-                    {t('confirmReset')}
-                </p>
-                <div className="flex gap-3">
-                    <button 
-                        onClick={() => setShowResetConfirm(false)}
-                        className="flex-1 py-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors font-bold border border-slate-700"
-                    >
-                        {t('cancel')}
-                    </button>
-                    <button 
-                        onClick={handleResetLevel}
-                        className="flex-1 py-2 text-white bg-red-600 hover:bg-red-500 rounded transition-colors font-bold border border-red-500"
-                    >
-                        {t('resetLevel')}
-                    </button>
-                </div>
-            </div>
-        </div>
+        <ArtModal
+          title={t('resetLevel')}
+          eyebrow="ACADEMY WORKSHOP"
+          closeLabel={t('cancel')}
+          onClose={() => setShowResetConfirm(false)}
+          footer={<div className="art-common-actions"><button type="button" className="art-button" onClick={() => setShowResetConfirm(false)}>{t('cancel')}</button><button type="button" className="art-button art-button-danger" onClick={handleResetLevel}><GameIcon name="reset" size={16}/>{t('resetLevel')}</button></div>}
+        >
+          <div className="art-common-symbol" aria-hidden="true"><GameIcon name="reset" size={28}/></div>
+          <p className="art-common-description">{t('confirmReset')}</p>
+        </ArtModal>
       )}
 
       {/* Settings Modal */}
@@ -1394,171 +1384,83 @@ export default function Home() {
         />
       )}
 
-      {/* Save Menu Modal */}
+      {/* Save / Load / Data Archives */}
       {showSaveMenu && (
-        <div className="absolute inset-0 bg-black/60 z-100 flex items-center justify-center backdrop-blur-sm">
-            <div className="bg-slate-900 p-8 rounded-xl border border-slate-700 shadow-2xl w-96">
-                <div className="mb-6 flex rounded-lg bg-slate-800 p-1">
+        <ArtModal
+          title={language === 'zh' ? '学宫存档' : 'Academy Archives'}
+          eyebrow="THE ACADEMY · PERSISTENT ARCHIVES"
+          closeLabel={t('cancel')}
+          onClose={() => setShowSaveMenu(false)}
+          wide
+          footer={<><span className="art-muted">{language === 'zh' ? '六个存档位 · 记录每一段证明' : 'Six archive slots · every proof preserved'}</span><button type="button" className="art-button" onClick={() => setShowSaveMenu(false)}><GameIcon name="arrow-left" size={16}/>{t('back')}</button></>}
+        >
+          <nav className="art-save-tabs" aria-label={language === 'zh' ? '存档操作' : 'Archive actions'}>
+            <button type="button" aria-pressed={saveMenuTab === 'save'} onClick={() => setSaveMenuTab('save')}><GameIcon name="save" size={17}/>{t('saveGame')}</button>
+            <button type="button" aria-pressed={saveMenuTab === 'load'} onClick={() => setSaveMenuTab('load')}><GameIcon name="folder" size={17}/>{t('loadGame')}</button>
+            <button type="button" aria-pressed={saveMenuTab === 'data'} onClick={() => setSaveMenuTab('data')}><GameIcon name="download" size={17}/>{t('importExport' as TranslationKey)}</button>
+          </nav>
+          {saveMenuTab !== 'data' ? (
+            <div className="art-game-save-grid">
+              {[1, 2, 3, 4, 5, 6].map((slot) => {
+                const info = saveSlots[slot];
+                const canLoad = Boolean(info);
+                const saveMode = saveMenuTab === 'save';
+                return <article key={slot} className={`art-game-save-card${info ? '' : ' is-empty'}`}>
+                  {info ? <SavedSlotArtwork slot={slot} timestamp={info.timestamp} levelIndex={info.levelIndex} language={language}/> : <div className="art-save-empty-art" aria-hidden="true"><GameIcon name="folder" size={29}/></div>}
+                  <div className="art-game-save-card-content">
+                    <p className="art-eyebrow">{t('slot')} {String(slot).padStart(2, '0')}{slot === 1 ? ` · ${t('autoSave')}` : ''}</p>
+                    <h3>{info ? (language === 'zh' ? `第${info.levelIndex < STAGE2_START_LEVEL_INDEX ? '一' : '二'}大关 · ${info.levelIndex % 10 + 1} / 10` : `Stage ${info.levelIndex < STAGE2_START_LEVEL_INDEX ? 1 : 2} · ${info.levelIndex % 10 + 1} / 10`) : t('emptySlot')}</h3>
+                    {info ? <time>{new Date(info.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</time> : <time>{language === 'zh' ? '等待新的证明记录' : 'Ready for a new proof'}</time>}
                     <button
-                        onClick={() => setSaveMenuTab('save')}
-                        className={`flex-1 rounded-md py-2 text-sm font-bold transition-colors ${
-                            saveMenuTab === 'save' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
-                        }`}
-                    >
-                        {t('saveGame')}
-                    </button>
-                    <button
-                        onClick={() => setSaveMenuTab('load')}
-                        className={`flex-1 rounded-md py-2 text-sm font-bold transition-colors ${
-                            saveMenuTab === 'load' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
-                        }`}
-                    >
-                        {t('loadGame')}
-                    </button>
-                    <button
-                        onClick={() => setSaveMenuTab('data')}
-                        className={`flex-1 rounded-md py-2 text-sm font-bold transition-colors ${
-                            saveMenuTab === 'data' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
-                        }`}
-                    >
-                        {t('importExport' as TranslationKey)}
-                    </button>
-                </div>
-
-                {saveMenuTab === 'save' ? (
-                    <div className="flex flex-col gap-3 overflow-y-auto max-h-[60vh] pr-2">
-                        {[1, 2, 3, 4, 5, 6].map((slot) => (
-                            <button
-                                key={slot}
-                                onClick={() => handleSaveGame(slot)}
-                                className="bg-slate-800 p-4 rounded text-white hover:bg-blue-600 border border-slate-600 transition-colors text-left flex justify-between items-center group"
-                            >
-                                <span className="flex items-center gap-2">
-                                    <span>
-                                        {t('slot')} {slot}
-                                    </span>
-                                    {slot === 1 && <span className="text-xs text-yellow-400">({t('autoSave')})</span>}
-                                </span>
-                                <span className="text-xs text-slate-500 group-hover:text-slate-200">
-                                    {saveSlots[slot]
-                                        ? new Date(saveSlots[slot]!.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')
-                                        : t('emptySlot')}
-                                </span>
-                            </button>
-                        ))}
-                    </div>
-                ) : saveMenuTab === 'load' ? (
-                    <div className="flex flex-col gap-3 overflow-y-auto max-h-[60vh] pr-2">
-                        {[1, 2, 3, 4, 5, 6].map((slot) => {
-                            const info = saveSlots[slot];
-                            const canLoad = Boolean(info);
-                            return (
-                                <button
-                                    key={slot}
-                                    disabled={!canLoad}
-                                    onClick={() => {
-                                        if (!canLoad) return;
-                                        setShowSaveMenu(false);
-                                        handleLoadGame(slot);
-                                    }}
-                                    className={`p-4 rounded border transition-colors text-left flex flex-col gap-1 ${
-                                        canLoad
-                                            ? 'bg-slate-800 text-white hover:bg-green-700/60 border-slate-600'
-                                            : 'bg-slate-900 text-slate-500 border-slate-800 cursor-not-allowed'
-                                    }`}
-                                >
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-2 font-bold">
-                                            <span>
-                                                {t('slot')} {slot}
-                                            </span>
-                                            {slot === 1 && <span className="text-xs text-yellow-400">({t('autoSave')})</span>}
-                                        </div>
-                                        <div className="text-xs text-slate-400">
-                                            {info
-                                                ? new Date(info.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')
-                                                : t('emptySlot')}
-                                        </div>
-                                    </div>
-                                    {info && (
-                                        <div className="text-sm text-slate-300">
-                                            {t('level')} {info.levelIndex + 1}
-                                        </div>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <div className="flex flex-col gap-4">
-                        <div className="bg-slate-800 p-4 rounded border border-slate-600">
-                            <h3 className="text-white font-bold mb-1">{t('exportSave' as TranslationKey)}</h3>
-                            <p className="text-xs text-slate-400 mb-3">{t('downloadSaveDesc' as TranslationKey)}</p>
-                            <button
-                                onClick={handleExportSave}
-                                className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded font-bold transition-colors"
-                            >
-                                {t('exportSave' as TranslationKey)}
-                            </button>
-                        </div>
-                        <div className="bg-slate-800 p-4 rounded border border-slate-600">
-                            <h3 className="text-white font-bold mb-1">{t('importSave' as TranslationKey)}</h3>
-                            <p className="text-xs text-slate-400 mb-3">{t('importSaveDesc' as TranslationKey)}</p>
-                            <label className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded font-bold transition-colors cursor-pointer flex items-center justify-center">
-                                {t('importSave' as TranslationKey)}
-                                <input
-                                    type="file"
-                                    accept=".json"
-                                    className="hidden"
-                                    onChange={handleImportSave}
-                                />
-                            </label>
-                        </div>
-                    </div>
-                )}
-                <button 
-                    onClick={() => setShowSaveMenu(false)}
-                    className="mt-6 w-full py-2 text-slate-400 hover:text-white border border-transparent hover:border-slate-600 rounded transition-colors"
-                >
-                    {t('cancel')}
-                </button>
+                      type="button"
+                      className={`art-button${saveMode ? ' art-button-primary' : ''}`}
+                      disabled={!saveMode && !canLoad}
+                      onClick={() => {
+                        if (saveMode) { handleSaveGame(slot); return; }
+                        if (!canLoad) return;
+                        setShowSaveMenu(false);
+                        handleLoadGame(slot);
+                      }}
+                      aria-label={`${saveMode ? t('saveGame') : t('loadGame')} · ${t('slot')} ${slot}`}
+                    ><GameIcon name={saveMode ? 'save' : 'arrow-right'} size={15}/>{saveMode ? t('saveGame') : t('load')}</button>
+                  </div>
+                </article>;
+              })}
             </div>
-        </div>
+          ) : (
+            <div className="art-save-data-grid">
+              <section className="art-save-data-card">
+                <GameIcon name="download" size={27}/>
+                <h3>{t('exportSave' as TranslationKey)}</h3>
+                <p>{t('downloadSaveDesc' as TranslationKey)}</p>
+                <button type="button" className="art-button art-button-primary" onClick={handleExportSave}><GameIcon name="download" size={17}/>{t('exportSave' as TranslationKey)}</button>
+              </section>
+              <section className="art-save-data-card">
+                <GameIcon name="upload" size={27}/>
+                <h3>{t('importSave' as TranslationKey)}</h3>
+                <p>{t('importSaveDesc' as TranslationKey)}</p>
+                <label className="art-button art-data-import"><GameIcon name="upload" size={17}/>{t('importSave' as TranslationKey)}<input type="file" accept=".json" className="sr-only" onChange={handleImportSave}/></label>
+              </section>
+            </div>
+          )}
+        </ArtModal>
       )}
 
       {saveSuccessSlot != null && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-[26rem] max-w-[92vw] rounded-2xl border border-cyan-500/30 bg-slate-900/95 p-6 shadow-2xl">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">{t('saveGame')}</div>
-                <div className="text-xl font-bold text-white">{t('saveSuccess')}</div>
-              </div>
-              <button
-                onClick={() => setSaveSuccessSlot(null)}
-                className="rounded-lg border border-slate-700 px-3 py-1 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
-              >
-                {t('cancel')}
-              </button>
-            </div>
-            <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-200">
-              {t('slot')} {saveSuccessSlot}
-            </div>
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setSaveSuccessSlot(null)}
-                className="rounded-lg bg-cyan-600 px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-cyan-500"
-              >
-                {t('ok')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ArtModal
+          title={t('saveSuccess')}
+          eyebrow="ARCHIVE UPDATED"
+          closeLabel={t('cancel')}
+          onClose={() => setSaveSuccessSlot(null)}
+          footer={<div className="art-common-actions"><button type="button" className="art-button art-button-primary" onClick={() => setSaveSuccessSlot(null)}>{t('ok')}<GameIcon name="check" size={17}/></button></div>}
+        >
+          <div className="art-save-confirmation" role="status"><GameIcon name="check" size={30}/><div><p>{t('slot')} {String(saveSuccessSlot).padStart(2, '0')}</p><small>{language === 'zh' ? '这一段证明已收进学宫档案。' : 'This proof is now part of the academy archive.'}</small></div></div>
+        </ArtModal>
       )}
-
       {stage2Config && stage2Progress.completedIslandIds.includes(stage2Config.focusIslandId) && (
         <DraggableModal title={t('levelComplete')}>
           <div className="flex flex-col items-center gap-4">
+            {stage2Config.chapterLevel === 10 && <ChapterGateResponse language={language} />}
             <h2 className="text-4xl font-bold text-green-300">{t('levelComplete')}</h2>
             <p className="text-slate-300">{t('greatJob') || 'Great job! You proved the theorem.'}</p>
             <button
@@ -1571,7 +1473,7 @@ export default function Home() {
         </DraggableModal>
       )}
 
-      {showStage2Intro &&
+      {!activeStoryScene && showStage2Intro &&
         stage2Config &&
         !stage2Progress.completedIslandIds.includes(stage2Config.focusIslandId) && (
         <DraggableModal title={`${t('stage')} ${stage2Config.stageNumber}`}>
@@ -1662,7 +1564,7 @@ export default function Home() {
         theoremLibraryOpen={showTheoremLibrary}
         onTheoremLibraryOpenChange={setShowTheoremLibrary}
       />
-      <TutorialOverlay />
+      {!activeStoryScene && !showStage2Intro && !showLogicFarm && !showLogicExchange && !showSettings && <TutorialOverlay />}
     </main>
   );
 }

@@ -1,0 +1,76 @@
+.story-scene { position: fixed; inset: 0; z-index: 200; isolation: isolate; overflow: hidden; background: #0b1425; color: #f5efe3; cursor: default; }
+.story-scene__background { object-fit: cover; z-index: -4; animation: story-background-reveal 1.2s ease-out both; }
+.story-scene__shade { position: absolute; inset: 0; z-index: -3; background: linear-gradient(90deg, #060d1866, transparent 58%), linear-gradient(0deg, #070e1b, #070e1b59 32%, transparent 65%), linear-gradient(180deg, #070e1b8c, transparent 29%); }
+.story-scene__ambience { position: absolute; inset: 0; z-index: -2; pointer-events: none; background: radial-gradient(ellipse at 36% 25%, #64adcf14, transparent 55%); }
+.story-scene[data-atmosphere="sunlight"] .story-scene__ambience, .story-scene[data-atmosphere="lamplight"] .story-scene__ambience { background: radial-gradient(ellipse at 30% 18%, #ecbd641f, transparent 55%); }
+.story-scene__heading { position: absolute; top: clamp(24px, 5vh, 64px); left: clamp(22px, 5vw, 92px); width: 54%; z-index: 3; text-shadow: 0 2px 18px #030813; }
+.story-scene__eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; color: #e1c996; font-size: 12px; font-weight: 600; letter-spacing: .2em; }
+.story-scene__chapter { white-space: nowrap; }
+.story-scene__rule { width: 28px; height: 1px; background: #cfb68180; }
+.story-scene__heading h2 { margin: 18px 0 14px; font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", Georgia, serif; font-size: clamp(27px, 3.15vw, 55px); line-height: 1.35; font-weight: 600; letter-spacing: .06em; text-wrap: balance; }
+.story-scene__heading-ornament { display: flex; align-items: center; gap: 12px; color: #dbc492b0; font-size: 10px; }
+.story-scene__heading-ornament span { width: clamp(90px, 15vw, 220px); height: 1px; background: linear-gradient(90deg, #dbc49290, transparent); }
+.story-scene__portrait-stage { position: absolute; height: min(105vh, 1260px); width: min(70vh, 840px); top: 2vh; right: 3vw; z-index: -1; transition: filter .4s ease; pointer-events: none; }
+/* The source tool returned RGB, not alpha. This soft theatrical matte is explicit;
+   it can be removed locally when genuine RGBA cutouts become available. */
+.story-scene__portrait { width: 100%; height: 100%; object-fit: contain; mask-image: linear-gradient(180deg, transparent, #000 5%, #000 91%, transparent), radial-gradient(ellipse 51% 69% at 51% 43%, #000 52%, #000000f2 65%, transparent 99%); mask-composite: intersect; animation: story-portrait-reveal .45s ease-out both; }
+.story-scene__portrait-stage.is-listening { filter: brightness(.9) saturate(.9); }
+.story-scene__halo { position: absolute; width: 48%; height: auto; left: 29%; top: -1%; opacity: .8; filter: drop-shadow(0 0 8px #5cb6d93b); transition: opacity .4s ease; pointer-events: none; }
+.story-scene__portrait-stage[data-expression="surprise"] .story-scene__halo { left: 35%; top: 1%; }
+.story-scene__portrait-stage[data-halo="cracked"] .story-scene__halo { filter: drop-shadow(0 0 8px #aacaf565); }
+.story-dialogue { position: absolute; left: 50%; bottom: max(26px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 5; width: min(1120px, calc(100% - 72px)); padding: 23px 32px 20px; border: 1px solid #d1b78180; border-radius: 3px 20px 3px 20px; background: linear-gradient(112deg, #111e31fa, #0a1425f7); box-shadow: 0 14px 60px #02050e85, inset 0 0 0 5px #bb9f6020; backdrop-filter: blur(12px); }
+.story-dialogue::before, .story-dialogue::after { content: ""; position: absolute; width: 22px; height: 22px; pointer-events: none; border-color: #dcc494; border-style: solid; }
+.story-dialogue::before { left: -3px; top: -3px; border-width: 2px 0 0 2px; }
+.story-dialogue::after { right: -3px; bottom: -3px; border-width: 0 2px 2px 0; }
+.story-dialogue__topline { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.story-dialogue__speaker { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 16px; letter-spacing: .14em; color: #f0d6a1; font-weight: 650; }
+.story-dialogue__speaker-mark { color: #83bdd4; font-size: 20px; }
+.story-dialogue__speaker-role { margin-left: 7px; font-size: 10px; color: #a3b4c8; font-weight: 400; letter-spacing: .15em; }
+.story-dialogue__page { flex-shrink: 0; font-family: ui-monospace, monospace; color: #e2cb9b; font-size: 13px; }
+.story-dialogue__page span { color: #9daec5; }
+.story-dialogue__text { margin: 16px 0 18px; min-height: 3.5em; font-size: clamp(17px, 1.35vw, 21px); line-height: 1.85; letter-spacing: .04em; color: #f4efe7; overflow-wrap: anywhere; }
+.story-dialogue__cursor { display: inline-block; margin-left: 4px; width: 3px; height: .95em; vertical-align: -.05em; background: #d8bc7d; animation: story-cursor-blink .8s steps(2, start) infinite; }
+.story-dialogue__cursor.is-hidden { visibility: hidden; }
+.story-dialogue__footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.story-dialogue__hint { font-size: 11px; letter-spacing: .07em; color: #adbacb; }
+.story-dialogue__continue { display: inline-flex; align-items: center; justify-content: space-between; gap: 32px; min-width: 154px; padding: 11px 21px; border: 1px solid #c9ac72; border-radius: 3px; background: linear-gradient(110deg, #ead8af, #c4a76c); color: #182235; font-size: 14px; font-weight: 700; letter-spacing: .07em; box-shadow: 0 2px 12px #0003; cursor: pointer; transition: filter .18s, transform .18s; }
+.story-dialogue__continue:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.story-dialogue__continue:focus-visible { outline: 2px solid #95daef; outline-offset: 4px; }
+.story-dialogue__accessible { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.story-scene[data-quality="low"] .story-dialogue { backdrop-filter: none; }
+.story-scene[data-quality="low"] .story-scene__halo { filter: none; }
+.story-scene[data-reduced-motion="true"] *, .story-scene[data-reduced-motion="true"] *::before, .story-scene[data-reduced-motion="true"] *::after { animation: none !important; transition: none !important; }
+@keyframes story-background-reveal { from { opacity: .4; } to { opacity: 1; } }
+@keyframes story-portrait-reveal { from { opacity: .55; } to { opacity: 1; } }
+@keyframes story-cursor-blink { to { opacity: 0; } }
+@media (max-width: 1100px) {
+ .story-scene__heading { left: 30px; width: 56%; }
+ .story-scene__eyebrow { font-size: 11px; gap: 9px; }
+ .story-scene__portrait-stage { right: -5vw; }
+ .story-dialogue { padding: 20px 26px 17px; width: calc(100% - 48px); }
+ .story-dialogue__speaker-role { display: none; }
+}
+@media (max-width: 600px) {
+ .story-scene__heading { top: max(22px, env(safe-area-inset-top)); left: 20px; width: calc(100% - 40px); }
+ .story-scene__eyebrow { font-size: 9px; letter-spacing: .1em; gap: 8px; }
+ .story-scene__rule { width: 14px; }
+ .story-scene__heading h2 { font-size: 27px; margin: 12px 0 8px; }
+ .story-scene__heading-ornament { display: none; }
+ .story-scene__portrait-stage { height: 78vh; width: 52vh; top: 15vh; right: calc(50% - 26vh); }
+ .story-dialogue { bottom: max(15px, env(safe-area-inset-bottom)); width: calc(100% - 28px); padding: 17px 18px 15px; border-radius: 3px 14px 3px 14px; }
+ .story-dialogue__speaker { font-size: 14px; gap: 8px; }
+ .story-dialogue__page { font-size: 11px; }
+ .story-dialogue__text { font-size: 16px; line-height: 1.75; min-height: 5.25em; margin: 13px 0 15px; letter-spacing: .015em; }
+ .story-dialogue__hint { max-width: 125px; font-size: 9px; line-height: 1.6; }
+ .story-dialogue__continue { min-width: 132px; padding: 10px 15px; gap: 14px; font-size: 13px; }
+}
+@media (max-height: 600px) and (min-width: 601px) {
+ .story-scene__heading { top: 18px; }
+ .story-scene__heading h2 { font-size: 25px; margin: 10px 0; }
+ .story-scene__heading-ornament { display: none; }
+ .story-dialogue { bottom: 14px; padding: 14px 23px; }
+ .story-dialogue__text { font-size: 15px; min-height: 2.8em; line-height: 1.55; margin: 9px 0; }
+ .story-dialogue__continue { padding: 8px 16px; }
+ .story-scene__portrait-stage { height: 120vh; width: 80vh; top: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .story-scene__background, .story-scene__portrait, .story-dialogue__cursor { animation: none; } }
