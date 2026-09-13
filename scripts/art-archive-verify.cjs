@@ -92,7 +92,7 @@ async function inViewport(locator, page, message) {
                 await page.locator('.art-save-tabs button').first().click();
                 await page.getByRole('button', { name: '存档 · 存档 5', exact: true }).click();
                 await page.waitForFunction(() => Boolean(localStorage.getItem('logic_game_save_5')));
-                const before = await page.evaluate(() => JSON.parse(localStorage.getItem('logic_game_save_5')).levelStates[10]);
+                const before = await page.evaluate(() => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(localStorage.getItem('logic_game_save_5')), char => char.charCodeAt(0)))).levelStates[10]);
                 if (await page.getByRole('dialog').count()) await page.keyboard.press('Escape');
 
                 phase = 'theorem archive';
@@ -137,7 +137,7 @@ async function inViewport(locator, page, message) {
                 await page.locator('.art-save-tabs button').first().click();
                 await page.getByRole('button', { name: '存档 · 存档 4', exact: true }).click();
                 await page.waitForFunction(() => Boolean(localStorage.getItem('logic_game_save_4')));
-                const after = await page.evaluate(() => JSON.parse(localStorage.getItem('logic_game_save_4')).levelStates[10]);
+                const after = await page.evaluate(() => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(localStorage.getItem('logic_game_save_4')), char => char.charCodeAt(0)))).levelStates[10]);
                 const newNodes = after.nodes.filter(node => !before.nodes.some(old => old.id === node.id));
                 assert.equal(newNodes.length, 2); assert.ok(newNodes.some(node => node.type === 'gate' && node.rotation === 1));
                 assert.equal(after.wires.length, before.wires.length + 1);

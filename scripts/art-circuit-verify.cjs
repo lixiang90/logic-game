@@ -33,7 +33,7 @@ assert.equal(solveCircuit([...initial,{id:'final',type:'wire',subType:'formula',
  await page.keyboard.press('Escape');
  await page.locator('.art-game-actions button[title="存档"]').click();
  await page.getByRole('button',{name:'存档 · 存档 3',exact:true}).click();
- const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('logic_game_save_3')));
+ const stored=await page.evaluate(()=>JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(localStorage.getItem('logic_game_save_3')), char => char.charCodeAt(0)))));
  assert.equal(stored.levelIndex,1);
  assert.equal(stored.levelStates[1].nodes.length,1);
  assert.equal(stored.levelStates[1].nodes[0].subType,'P');

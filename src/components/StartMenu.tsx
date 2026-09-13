@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { SaveSystem, type LevelState } from '@/lib/saveSystem';
+import { SaveSystem, decodeSave, LegacyStage2SaveError, type LevelState } from '@/lib/saveSystem';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { TranslationKey } from '@/data/translations';
 import { assetUrl, chapterArtwork } from '@/lib/art-assets';
@@ -49,10 +49,10 @@ export default function StartMenu({ onNewGame, onContinue, onLoadGame, bgmVolume
         const file = event.target.files?.[0];
         if (!file) return;
         try {
-            const save = SaveSystem.normalizeSaveData(JSON.parse(await file.text()));
+            const save = decodeSave(await file.text());
             if (!save) throw new Error('Invalid save');
             SaveSystem.autoSave(save); setShowLoad(false); onContinue();
-        } catch { setImportMessage(t('importFailed' as TranslationKey)); }
+        } catch (error) { setImportMessage(error instanceof LegacyStage2SaveError ? (zh ? '群岛地图已更新，旧版第二大关存档无法导入。旧版第一大关存档仍可使用。' : error.message) : t('importFailed' as TranslationKey)); }
         event.target.value = '';
     };
     const chapter = (index: number) => zh ? '第' + (index < 10 ? '一' : '二') + '大关 · ' + (index % 10 + 1) + ' / 10' : 'Stage ' + (index < 10 ? 1 : 2) + ' · ' + (index % 10 + 1) + ' / 10';
@@ -83,7 +83,7 @@ export default function StartMenu({ onNewGame, onContinue, onLoadGame, bgmVolume
                     {slot ? <><h3>{chapter(slot.levelIndex)}</h3><time>{new Date(slot.timestamp).toLocaleString(zh ? 'zh-CN' : 'en-US')}</time><button className="art-button" onClick={() => onLoadGame(i + 1)}>{t('load')}<GameIcon name="arrow-right" size={16} /></button></> : <p>{t('emptySlot')}</p>}
                 </div>
             </article>)}</div>
-            <footer className="art-dialog-footer"><label className="art-button"><GameIcon name="upload" size={16} />{t('importSave' as TranslationKey)}<input type="file" accept=".json" onChange={importSave} className="sr-only" /></label><button className="art-button" onClick={() => setShowLoad(false)}>{t('back')}</button></footer>
+            <footer className="art-dialog-footer"><label className="art-button"><GameIcon name="upload" size={16} />{t('importSave' as TranslationKey)}<input type="file" accept=".logic,.txt,.json" onChange={importSave} className="sr-only" /></label><button className="art-button" onClick={() => setShowLoad(false)}>{t('back')}</button></footer>
             {importMessage && <p role="alert" className="art-error">{importMessage}</p>}
         </section></div>}
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} bgmVolume={bgmVolume} onBgmVolumeChange={onBgmVolumeChange} />}

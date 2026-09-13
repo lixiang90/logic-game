@@ -4,6 +4,10 @@ import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperat
 import { Tool, NodeData, Wire } from '@/types/game';
 import { boundsOverlap, getNodeBounds, getNodePorts, getAbsolutePortPosition } from '@/lib/gameUtils';
 import { getGoalPortsForRect, solveCircuit, solveCircuitGoals } from '@/lib/circuit-solver';
+import { buildShippingRoutes, shippingIslands, knownTheorems, type ShippingRoute } from '@/lib/shipping';
+import { drawShipping, shippingPanels } from '@/lib/render/shipping-art';
+import { islandHarbors, harborBounds, harborAnchor, harborSites, validateHarborSite } from '@/lib/harbors';
+import { drawTheoremRibbon, islandPremises, theoremText } from '@/lib/render/theorem-ribbon';
 import { Provable } from '@/lib/logic-engine';
 import { formulaRenderer } from '@/lib/formula-renderer';
 import { useTutorial } from '@/contexts/TutorialContext';
@@ -43,7 +47,13 @@ interface InfiniteCanvasProps {
     initialState?: { nodes: NodeData[], wires: Wire[] };
     canPlaceNode?: (node: NodeData) => boolean;
     onNodePlaced?: (node: NodeData) => void;
-    onStage2IslandComplete?: (islandId: string) => void;
+    onDuplicateNodes?: (nodes: NodeData[]) => boolean;
+    onStage2IslandComplete?: (islandId: string, dependencies: string[]) => void;
+    onOpenPort?: (islandId: string, theoremId?: string, portId?: string) => void;
+    portBuild?: { islandId: string; portId?: string } | null;
+    onPlacePort?: (x: number, y: number) => void;
+    onCancelPortBuild?: () => void;
+    onShippingChange?: (routes: ShippingRoute[], pending: string[]) => void;
     stage2Config?: Stage2LevelConfig;
     stage2Progress?: Stage2MetaProgress;
     selectedStage2IslandId?: string | null;
@@ -54,6 +64,8 @@ export interface InfiniteCanvasHandle {
     getState: () => { nodes: NodeData[], wires: Wire[] };
     loadState: (state: { nodes: NodeData[], wires: Wire[] }) => void;
     jumpToStage2Island: (islandId: string) => void;
+    showShippingOverview: () => void;
+    jumpToHarbor: (islandId: string, portId?: string) => void;
     undo: () => boolean;
     redo: () => boolean;
     copySelection: () => number;
@@ -80,7 +92,11 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     initialState,
     canPlaceNode,
     onNodePlaced,
+    onDuplicateNodes,
     onStage2IslandComplete,
+    onOpenPort,
+    portBuild, onPlacePort, onCancelPortBuild,
+    onShippingChange,
     stage2Config,
     stage2Progress,
     selectedStage2IslandId,
@@ -159,9 +175,9 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     }, [stage2Config, stage2Progress?.completedIslandIds]);
 
     // Memoize circuit solution to avoid useEffect/setState cycle
-    const { isSolved, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues, completedGoalIds, goalErrorsById } = React.useMemo(() => {
+    const { isSolved, activeNodeIds, errorWireIds, errorNodePorts, errorGoalPorts, wireValues, completedGoalIds, goalErrorsById, goalTheoremIds, pendingGoalIds } = React.useMemo(() => {
         if (stage2Config) {
-            const goals = stage2Config.goalIslandIds
+            const goals = [...new Set([...stage2Config.goalIslandIds, ...(unlockedStage2IslandIds ?? [])])]
                 .filter((id) => stage2UnlockedIslandIdSet.has(id))
                 .map((id) => stage2Config.world.getIslandById(id))
                 .filter((item): item is NonNullable<typeof item> => Boolean(item))
@@ -172,7 +188,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     bounds: island.goalBounds!,
                 }));
 
-            return solveCircuitGoals(nodes, goals);
+            return solveCircuitGoals(nodes, goals, stage2Progress ? knownTheorems(stage2Progress) : new Set());
         }
 
         if (!goalFormula) return {
@@ -183,10 +199,24 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             errorGoalPorts: new Set<string>(),
             wireValues: new Map<string, string>(),
             completedGoalIds: new Set<string>(),
-            goalErrorsById: new Map<string, Set<string>>()
+            goalErrorsById: new Map<string, Set<string>>(),
+            goalTheoremIds: new Map<string, Set<string>>(),
+            pendingGoalIds: new Set<string>()
         };
         return solveCircuit(nodes, goalFormula);
-    }, [nodes, goalFormula, stage2Config, stage2UnlockedIslandIdSet]);
+    }, [nodes, goalFormula, stage2Config, stage2UnlockedIslandIdSet, stage2Progress, unlockedStage2IslandIds]);
+
+    const harborIslands = React.useMemo(() => stage2Config && stage2Progress ? shippingIslands(stage2Config, stage2Progress) : [], [stage2Config, stage2Progress]);
+    const reservedHarbors = React.useMemo(() => stage2Progress ? harborIslands.flatMap(island => islandHarbors(island, stage2Progress).map(harborBounds)) : [], [harborIslands, stage2Progress]);
+    const applyNodeLayout = useCallback((transform: (previous: NodeData[]) => NodeData[]) => {
+        setNodes(previous => {
+            const next = transform(previous);
+            return next.some(node => reservedHarbors.some(port => boundsOverlap(getNodeBounds(node), port))) ? previous : next;
+        });
+    }, [reservedHarbors]);
+    const shippingRoutes = React.useMemo(() => stage2Config && stage2Progress ? buildShippingRoutes(stage2Config, stage2Progress, nodes, goalTheoremIds) : [], [stage2Config, stage2Progress, nodes, goalTheoremIds]);
+    const shippingPanelRects = React.useMemo(() => stage2Progress ? shippingPanels(harborIslands,shippingRoutes,stage2Progress,scale) : new Map(), [harborIslands,shippingRoutes,stage2Progress,scale]);
+    useEffect(() => { onShippingChange?.(shippingRoutes, [...pendingGoalIds]); }, [shippingRoutes, pendingGoalIds, onShippingChange]);
 
     const displayValues = React.useMemo(() => resolveDisplayValues(nodes, wireValues), [nodes, wireValues]);
     const [hoveredWireValue, setHoveredWireValue] = useState<{ x: number, y: number, value: string } | null>(null);
@@ -273,13 +303,14 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         }
         const goals = stage2Config ? stage2DisplayedGoalIslandIds.filter(id => stage2UnlockedIslandIdSet.has(id)).map(id => stage2Config.world.getIslandById(id)?.goalBounds).filter((item): item is { x: number; y: number; w: number; h: number } => Boolean(item)) : [];
         if ((goals.length ? goals : [{ x: -4, y: -4, w: 8, h: 8 }]).some(goal => boundsOverlap(bounds, goal))) return true;
+        if (stage2Progress && harborIslands.some(island => islandHarbors(island, stage2Progress).some(p => boundsOverlap(bounds, harborBounds(p))))) return true;
         return nodes.some(node => {
             if (!boundsOverlap(bounds, getNodeBounds(node))) return false;
             if (candidate.type === 'wire' && node.type === 'wire') return false;
             if (candidate.type === 'bridge' && node.type === 'wire') return false;
             return true;
         });
-    }, [activeTool, mouseGridPos, nodes, previewBuildTiles, stage2Config, stage2DisplayedGoalIslandIds, stage2UnlockedIslandIdSet]);
+    }, [activeTool, mouseGridPos, nodes, previewBuildTiles, stage2Config, stage2DisplayedGoalIslandIds, stage2UnlockedIslandIdSet, stage2Progress, harborIslands]);
 
     useEffect(() => {
         const current = { nodes, wires };
@@ -389,14 +420,22 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         };
     }, [nodes, wires, selectedNodeIds]);
 
-    const restoreHistoryState = (state: { nodes: NodeData[], wires: Wire[] }) => {
+    const restoreHistoryState = useCallback((state: { nodes: NodeData[], wires: Wire[] }) => {
+        if (state.nodes.some(node => reservedHarbors.some(port => boundsOverlap(getNodeBounds(node),port)))) return false;
         restoringHistoryRef.current = true;
         lastHistoryStateRef.current = state;
         setNodes(structuredClone(state.nodes));
         setWires(structuredClone(state.wires));
         setSelectedNodeIds(new Set());
         setSelectedWireIds(new Set());
-    };
+        return true;
+    }, [reservedHarbors]);
+    const stepHistory = useCallback((direction: 'undo' | 'redo') => {
+        const from=historyRef.current[direction],to=historyRef.current[direction==='undo'?'redo':'undo'];
+        const state=from.at(-1);
+        if (!state || !restoreHistoryState(state)) return false;
+        from.pop();to.push(structuredClone({nodes,wires}));return true;
+    }, [nodes,wires,restoreHistoryState]);
 
     // Expose methods to parent
     useImperativeHandle(ref, () => ({
@@ -537,6 +576,28 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             historyRef.current = { undo: [], redo: [] };
             lastHistoryStateRef.current = { nodes: newNodes, wires: state.wires };
         },
+        showShippingOverview: () => {
+            if (!stage2Config) return;
+            const islands = stage2Config.goalIslandIds.map(id => stage2Config.world.getIslandById(id)).filter((island): island is Stage2IslandDefinition => Boolean(island));
+            if (!islands.length) return;
+            const left = Math.min(...islands.map(island => island.mapBounds.x * GRID_SIZE));
+            const right = Math.max(...islands.map(island => (island.mapBounds.x + island.mapBounds.w) * GRID_SIZE));
+            const top = Math.min(...islands.map(island => island.mapBounds.y * GRID_SIZE));
+            const bottom = Math.max(...islands.map(island => (island.mapBounds.y + island.mapBounds.h) * GRID_SIZE + 800));
+            const targetScale = Math.max(.1, Math.min(.5, (window.innerWidth - 100) / (right - left), (window.innerHeight - 310) / (bottom - top)));
+            setScale(targetScale);
+            setOffset({ x: window.innerWidth / 2 - (left + right) / 2 * targetScale, y: 150 - top * targetScale });
+        },
+        jumpToHarbor: (islandId: string, portId?: string) => {
+            const island = stage2Config?.world.getIslandById(islandId);
+            if (!island || !stage2Progress) return;
+            const ports = islandHarbors(island, stage2Progress);
+            const port = ports.find(p => p.id === portId) ?? ports[0];
+            if (!port) return;
+            const p = harborAnchor(port);
+            setScale(1);
+            setOffset({ x: window.innerWidth * .55 - p.x, y: window.innerHeight * .48 - p.y });
+        },
         jumpToStage2Island: (islandId: string) => {
             if (!stage2Config) return;
             const island = stage2Config.world.getIslandById(islandId);
@@ -553,18 +614,10 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             });
         },
         undo: () => {
-            const previous = historyRef.current.undo.pop();
-            if (!previous) return false;
-            historyRef.current.redo.push(structuredClone({ nodes, wires }));
-            restoreHistoryState(previous);
-            return true;
+            return stepHistory('undo');
         },
         redo: () => {
-            const next = historyRef.current.redo.pop();
-            if (!next) return false;
-            historyRef.current.undo.push(structuredClone({ nodes, wires }));
-            restoreHistoryState(next);
-            return true;
+            return stepHistory('redo');
         },
         copySelection: () => {
             const state = makeSelectionState();
@@ -592,6 +645,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 endNodeId: idMap.get(wire.endNodeId) ?? wire.endNodeId,
                 path: wire.path.map((point) => ({ x: centerX + point.x + 2, y: centerY + point.y + 2 })),
             }));
+            if (onDuplicateNodes && !onDuplicateNodes(pastedNodes)) return 0;
             setNodes((previous) => [...previous, ...pastedNodes]);
             setWires((previous) => [...previous, ...pastedWires]);
             setSelectedNodeIds(new Set(pastedNodes.map((node) => node.id)));
@@ -607,7 +661,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 x: startX + (index % 3) * 14,
                 y: startY + Math.floor(index / 3) * 11,
             }]));
-            setNodes((previous) => previous.map((node) => positions.has(node.id) ? { ...node, ...positions.get(node.id)! } : node));
+            applyNodeLayout((previous) => previous.map((node) => positions.has(node.id) ? { ...node, ...positions.get(node.id)! } : node));
             return selected.length;
         },
         alignSelection: (axis) => {
@@ -618,7 +672,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             const centerX = selected.reduce((sum, node) => sum + node.x + node.w / 2, 0) / selected.length;
             const centerY = selected.reduce((sum, node) => sum + node.y + node.h / 2, 0) / selected.length;
             const selectedIds = new Set(selected.map((node) => node.id));
-            setNodes((previous) => previous.map((node) => {
+            applyNodeLayout((previous) => previous.map((node) => {
                 if (!selectedIds.has(node.id)) return node;
                 if (axis === 'left') return { ...node, x: left };
                 if (axis === 'top') return { ...node, y: top };
@@ -635,7 +689,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             const last = axis === 'horizontal' ? ordered.at(-1)!.x : ordered.at(-1)!.y;
             const step = (last - first) / (ordered.length - 1);
             const positions = new Map(ordered.map((node, index) => [node.id, Math.round(first + step * index)]));
-            setNodes((previous) => previous.map((node) => {
+            applyNodeLayout((previous) => previous.map((node) => {
                 const value = positions.get(node.id);
                 if (value == null) return node;
                 return axis === 'horizontal' ? { ...node, x: value } : { ...node, y: value };
@@ -669,12 +723,13 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             const centerY = Math.round(((window.innerHeight / 2 - offset.y) / scale) / GRID_SIZE);
             const pastedNodes = source.nodes.map((node) => ({ ...structuredClone(node), id: idMap.get(node.id)!, x: centerX + node.x, y: centerY + node.y, locked: false }));
             const pastedWires = source.wires.map((wire) => ({ ...structuredClone(wire), id: crypto.randomUUID(), startNodeId: idMap.get(wire.startNodeId) ?? wire.startNodeId, endNodeId: idMap.get(wire.endNodeId) ?? wire.endNodeId, path: wire.path.map((point) => ({ x: centerX + point.x, y: centerY + point.y })) }));
+            if (onDuplicateNodes && !onDuplicateNodes(pastedNodes)) return 0;
             setNodes((previous) => [...previous, ...pastedNodes]);
             setWires((previous) => [...previous, ...pastedWires]);
             setSelectedNodeIds(new Set(pastedNodes.map((node) => node.id)));
             return pastedNodes.length;
         },
-    }), [GRID_SIZE, nodes, scale, wires, initialState, stage2Config, selectedNodeIds, activeNodeIds, focusMode, offset, makeSelectionState]);
+    }), [GRID_SIZE, nodes, scale, wires, initialState, stage2Config, stage2Progress, selectedNodeIds, activeNodeIds, focusMode, offset, makeSelectionState, onDuplicateNodes, applyNodeLayout, stepHistory]);
 
     useEffect(() => {
         if (!stage2Config) {
@@ -705,12 +760,9 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     useEffect(() => {
         if (!stage2Config || !stage2Progress) return;
 
-        completedGoalIds.forEach((goalId) => {
-            if (!stage2Progress.completedIslandIds.includes(goalId)) {
-                onStage2IslandComplete?.(goalId);
-            }
-        });
-    }, [completedGoalIds, onStage2IslandComplete, stage2Config, stage2Progress]);
+        const goalId = [...completedGoalIds].find(id => !stage2Progress.completedIslandIds.includes(id));
+        if (goalId) onStage2IslandComplete?.(goalId, [...(goalTheoremIds.get(goalId) ?? [])]);
+    }, [completedGoalIds, goalTheoremIds, onStage2IslandComplete, stage2Config, stage2Progress]);
 
     // Removed wire dragging state as requested
 
@@ -731,13 +783,24 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
     const drawNode = useCallback((ctx: CanvasRenderingContext2D, node: NodeData | Tool, x: number, y: number, isGhost = false) => {
         const id = 'id' in node ? node.id : '';
+        const virtual = Boolean(node.theoremId && stage2Progress?.collectedTheorems[node.theoremId]?.virtual);
+        ctx.save();
+        if (virtual) ctx.globalAlpha *= .48;
         drawCircuitItem(ctx, node, x, y, {
             scale, time: animationTimeRef.current, low: quality === 'low', reducedMotion, language,
             active: !isGhost && activeNodeIds.has(id),
             error: errorWireIds.has(id) || errorNodePorts.has(id),
             errorPorts: errorNodePorts.get(id), ghost: isGhost, displayValue: displayValues.get(id),
         });
-    }, [scale, quality, reducedMotion, language, activeNodeIds, errorWireIds, errorNodePorts, displayValues]);
+        ctx.restore();
+        if (virtual) {
+            const bounds = getNodeBounds({ ...node, x: x / GRID_SIZE, y: y / GRID_SIZE });
+            ctx.save();ctx.strokeStyle='#c3a5ff';ctx.lineWidth=2/scale;ctx.setLineDash([7/scale,5/scale]);
+            ctx.strokeRect(bounds.x*GRID_SIZE-3,bounds.y*GRID_SIZE-3,bounds.w*GRID_SIZE+6,bounds.h*GRID_SIZE+6);
+            ctx.setLineDash([]);ctx.fillStyle='#dfcfff';ctx.font='600 12px sans-serif';
+            ctx.fillText(language === 'zh' ? '虚 · 待源定理证明' : 'VIRTUAL · awaiting proof',bounds.x*GRID_SIZE+5,bounds.y*GRID_SIZE-9);ctx.restore();
+        }
+    }, [scale, quality, reducedMotion, language, activeNodeIds, errorWireIds, errorNodePorts, displayValues, stage2Progress]);
 
     const drawStage2Backdrop = useCallback((ctx: CanvasRenderingContext2D) => {
         if (!stage2Config) return;
@@ -885,7 +948,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             const unlocked = stage2UnlockedIslandIdSet.has(island.id);
             const solved = completed.has(island.id);
             const selected = island.id === (selectedStage2Island?.id ?? stage2Config.focusIslandId);
-            const { outlinePath, tilesPath, coarseLabel } = getIslandCachedArtifacts(island);
+            const { outlinePath, tilesPath } = getIslandCachedArtifacts(island);
             drawIslandGround(ctx, island, outlinePath, tilesPath, scale, lod, low, unlocked, solved, selected);
             const { x, y, w, h } = island.mapBounds;
             const centerX = (x + w / 2) * GRID_SIZE;
@@ -908,18 +971,17 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             const labelY = lod === 'coarse' ? (y + h * .52) * GRID_SIZE : (y - .6) * GRID_SIZE;
             ctx.translate(centerX, labelY); ctx.scale(1 / scale, 1 / scale);
             const boxW = Math.max(100, Math.min(240, w * GRID_SIZE * scale * .84));
-            const boxH = lod === 'coarse' ? 72 : 34;
+            const boxH = lod === 'coarse' ? 140 : 34;
             ctx.fillStyle = 'rgba(10,21,36,.88)'; ctx.strokeStyle = selected ? ART_THEME.provable : 'rgba(182,154,102,.45)'; ctx.lineWidth = 1;
             ctx.beginPath(); ctx.roundRect(-boxW / 2, -boxH / 2, boxW, boxH, 8); ctx.fill(); ctx.stroke();
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `600 ${font}px ${ART_THEME.font}`;
             ctx.fillStyle = ART_THEME.ivory;
-            ctx.fillText(fitLabel(ctx, `${solved ? '✓ ' : selected ? '◇ ' : ''}${island.name}`, boxW - 22), 0, lod === 'coarse' ? -18 : 0);
+            ctx.fillText(fitLabel(ctx, `${solved ? '✓ ' : selected ? '◇ ' : ''}${island.name}`, boxW - 22), 0, lod === 'coarse' ? -53 : 0);
             if (lod === 'coarse') {
-                ctx.font = `11px ${ART_THEME.mathFont}`; ctx.fillStyle = ART_THEME.provable;
-                ctx.fillText(fitLabel(ctx, coarseLabel, boxW - 20), 0, 3);
+                drawTheoremRibbon(ctx, islandPremises(island), island.goalFormula ?? '', -boxW/2+8, -37, boxW-16, 85, 1, language === 'zh');
                 ctx.font = `9px ${ART_THEME.font}`; ctx.fillStyle = ART_THEME.muted;
                 const kind = language === 'zh' ? island.category === 'main' ? '主岛' : island.category === 'support' ? '辅助岛' : '探索岛' : island.category === 'main' ? 'MAIN ISLAND' : island.category === 'support' ? 'SUPPORT ISLAND' : 'EXPLORATION';
-                ctx.fillText(`${chapter ? String(chapter).padStart(2, '0') + ' · ' : ''}${kind}`, 0, 22);
+                ctx.fillText(`${chapter ? String(chapter).padStart(2, '0') + ' · ' : ''}${kind}`, 0, 57);
             }
             ctx.restore();
         });
@@ -928,7 +990,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     const drawGoalBlock = useCallback((
         ctx: CanvasRenderingContext2D,
         bounds: { x: number; y: number; w: number; h: number },
-        goalFormulaText: string, solved: boolean, errorPorts: Set<string>
+        goalFormulaText: string, solved: boolean, errorPorts: Set<string>, premises?: string[]
     ) => {
         const x = bounds.x * GRID_SIZE, y = bounds.y * GRID_SIZE;
         const w = bounds.w * GRID_SIZE, h = bounds.h * GRID_SIZE;
@@ -941,13 +1003,14 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         ctx.fillStyle = fill; ctx.strokeStyle = solved ? ART_THEME.success : ART_THEME.brass;
         ctx.lineWidth = 2 / scale; ctx.beginPath(); ctx.roundRect(x+3,y+3,w-6,h-6,18); ctx.fill(); ctx.stroke();
         ctx.strokeStyle = solved ? 'rgba(166,215,177,.38)' : 'rgba(182,154,102,.28)'; ctx.lineWidth = 1 / scale;
-        for (const radius of [w * .33, w * .39]) { ctx.beginPath(); ctx.arc(cx,cy+6,radius,0,Math.PI*2);ctx.stroke(); }
-        if (quality !== 'low') {
+        if (!premises) for (const radius of [w * .33, w * .39]) { ctx.beginPath(); ctx.arc(cx,cy+6,radius,0,Math.PI*2);ctx.stroke(); }
+        if (!premises && quality !== 'low') {
             for (let i=0;i<16;i++) { const angle=i*Math.PI/8;ctx.beginPath();ctx.moveTo(cx+Math.cos(angle)*w*.36,cy+6+Math.sin(angle)*w*.36);ctx.lineTo(cx+Math.cos(angle)*w*.39,cy+6+Math.sin(angle)*w*.39);ctx.stroke(); }
         }
         ctx.font = `600 13px ${ART_THEME.font}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = solved ? ART_THEME.success : ART_THEME.ivory;
         ctx.fillText(solved ? (parsed instanceof Provable ? language==='zh'?'✓ 已证明':'✓ VERIFIED' : language==='zh'?'✓ 已构造':'✓ CONSTRUCTED') : (language==='zh'?'目标星盘':'PROOF OBSERVATORY'),cx,y+25);
-        if(parsed) formulaRenderer.render(ctx,parsed,cx,cy+10,Math.min(w,h)*.51,scale);
+        if (premises) drawTheoremRibbon(ctx,premises,goalFormulaText,x+12,y+43,w-24,h-58,scale,language==='zh');
+        else if(parsed) formulaRenderer.render(ctx,parsed,cx,cy+10,Math.min(w,h)*.51,scale);
         else { ctx.font=`16px ${ART_THEME.mathFont}`;ctx.fillText(fitLabel(ctx,goalFormulaText,w-24),cx,cy); }
         getGoalPortsForRect(bounds).forEach(port=>{
             const px=port.x*GRID_SIZE,py=port.y*GRID_SIZE;
@@ -1081,6 +1144,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         ctx.clearRect(0, 0, width, height);
         if (backdropRef.current) ctx.drawImage(backdropRef.current.canvas, 0, 0, width, height);
         ctx.save(); ctx.translate(offset.x, offset.y); ctx.scale(scale, scale);
+        if (stage2Config && stage2Progress) drawShipping(ctx, stage2Config, harborIslands, shippingRoutes, stage2Progress, scale, animationTimeRef.current, !reducedMotion && quality !== 'low', language === 'zh', !portBuild, shippingPanelRects);
         const visibleBounds = { x: -offset.x / scale / GRID_SIZE - 3, y: -offset.y / scale / GRID_SIZE - 3,
             w: width / scale / GRID_SIZE + 6, h: height / scale / GRID_SIZE + 6 };
         if (!stage2Config && goalFormula) {
@@ -1097,7 +1161,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     island.goalBounds,
                     island.goalFormula,
                     completedGoalIds.has(island.id) || Boolean(stage2Progress?.completedIslandIds.includes(island.id)),
-                    goalErrorsById.get(island.id) ?? new Set<string>()
+                    goalErrorsById.get(island.id) ?? new Set<string>(), islandPremises(island)
                 );
             });
         }
@@ -1151,6 +1215,25 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             ctx.restore();
         }
 
+        if (portBuild && stage2Config && stage2Progress) {
+            const island = stage2Config.world.getIslandById(portBuild.islandId);
+            if (island) {
+                ctx.save(); ctx.strokeStyle='#88dec6aa'; ctx.lineWidth=1/scale;
+                for (const site of harborSites(island)) {
+                    if (!boundsOverlap(harborBounds(site),visibleBounds)) continue;
+                    ctx.strokeRect(site.x*GRID_SIZE,site.y*GRID_SIZE,4*GRID_SIZE,3*GRID_SIZE);
+                }
+                if (mouseGridPos) {
+                    const valid=validateHarborSite(island,stage2Progress,nodes,mouseGridPos.x,mouseGridPos.y,portBuild.portId);
+                    ctx.fillStyle=valid?'#78ddb64d':'#e774704d';ctx.strokeStyle=valid?'#a2f5cd':'#ffaaa5';ctx.lineWidth=2/scale;
+                    ctx.fillRect(mouseGridPos.x*GRID_SIZE,mouseGridPos.y*GRID_SIZE,4*GRID_SIZE,3*GRID_SIZE);
+                    ctx.strokeRect(mouseGridPos.x*GRID_SIZE,mouseGridPos.y*GRID_SIZE,4*GRID_SIZE,3*GRID_SIZE);
+                    ctx.fillStyle=valid?'#b2ffdb':'#ffb8b3';ctx.font=`${12/scale}px sans-serif`;ctx.textAlign='left';
+                    ctx.fillText(language==='zh'?(valid?'点击安置港口':'需空闲的岛岸 4 × 3 格'):(valid?'Click to place harbor':'Choose a free 4 × 3 shore site'),mouseGridPos.x*GRID_SIZE,mouseGridPos.y*GRID_SIZE-12/scale);
+                }
+                ctx.restore();
+            }
+        }
         // --- Box Selection Rectangle ---
         if (isBoxSelecting && boxSelectStart && boxSelectEnd) {
             const x = Math.min(boxSelectStart.x, boxSelectEnd.x);
@@ -1199,7 +1282,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         }
         ctx.restore();
 
-    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, stage2Progress?.completedIslandIds, stage2DisplayedGoalIslandIds, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById, focusMode, activeNodeIds, quality, language, stage2Progress?.mapSeed, selectedStage2Island?.id, previewBlocked, reducedMotion, awaitingNextPlacement]);
+    }, [offset, scale, nodes, activeTool, mouseGridPos, drawNode, drawGoalBlock, drawStage2Backdrop, goalFormula, isSolved, errorGoalPorts, currentStep, isBoxSelecting, boxSelectStart, boxSelectEnd, selectedNodeIds, stage2Config, stage2Progress, stage2DisplayedGoalIslandIds, showStage2IslandOverlayDetails, stage2UnlockedIslandIdSet, completedGoalIds, goalErrorsById, focusMode, activeNodeIds, quality, language, selectedStage2Island?.id, previewBlocked, reducedMotion, awaitingNextPlacement, harborIslands, shippingRoutes, portBuild, shippingPanelRects]);
 
     // Animation is a rendering concern. React updates only when game or interaction state changes.
     useEffect(() => { drawRef.current = draw; draw(); }, [draw]);
@@ -1225,12 +1308,12 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             animationTimeRef.current = time;
             const hadEffects = visualEventsRef.current.length > 0;
             visualEventsRef.current = visualEventsRef.current.filter(event => time - event.at < 480);
-            if (!document.hidden && (animatedWiresRef.current || hadEffects)) drawRef.current();
+            if (!document.hidden && (animatedWiresRef.current || hadEffects || shippingRoutes.length > 0)) drawRef.current();
             frame = requestAnimationFrame(tick);
         };
         frame = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(frame);
-    }, [reducedMotion, quality]);
+    }, [reducedMotion, quality, shippingRoutes.length]);
 
     // Clear selection when tool or mode changes
     useEffect(() => {
@@ -1246,19 +1329,13 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         const handleKeyDown = (e: KeyboardEvent) => {
             if (isCanvasKeyboardBlocked(e.target)) return;
             const key = e.key.toLowerCase();
+            if (portBuild) { if (key === 'escape') { e.preventDefault(); onCancelPortBuild?.(); } return; }
             if ((e.ctrlKey || e.metaKey) && key === 'z') {
                 e.preventDefault();
-                const state = e.shiftKey ? historyRef.current.redo.pop() : historyRef.current.undo.pop();
-                if (!state) return;
-                if (e.shiftKey) historyRef.current.undo.push(structuredClone({ nodes, wires }));
-                else historyRef.current.redo.push(structuredClone({ nodes, wires }));
-                restoreHistoryState(state);
+                stepHistory(e.shiftKey ? 'redo' : 'undo');
             } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
                 e.preventDefault();
-                const state = historyRef.current.redo.pop();
-                if (!state) return;
-                historyRef.current.undo.push(structuredClone({ nodes, wires }));
-                restoreHistoryState(state);
+                stepHistory('redo');
             } else if ((e.ctrlKey || e.metaKey) && key === 'c') {
                 e.preventDefault();
                 const state = makeSelectionState();
@@ -1285,6 +1362,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                     endNodeId: idMap.get(wire.endNodeId) ?? wire.endNodeId,
                     path: wire.path.map((point) => ({ x: centerX + point.x + 2, y: centerY + point.y + 2 })),
                 }));
+                if (onDuplicateNodes && !onDuplicateNodes(pastedNodes)) return;
                 setNodes((previous) => [...previous, ...pastedNodes]);
                 setWires((previous) => [...previous, ...pastedWires]);
                 setSelectedNodeIds(new Set(pastedNodes.map((node) => node.id)));
@@ -1293,7 +1371,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 const amount = e.shiftKey ? 4 : 1;
                 const deltaX = key === 'arrowleft' ? -amount : key === 'arrowright' ? amount : 0;
                 const deltaY = key === 'arrowup' ? -amount : key === 'arrowdown' ? amount : 0;
-                setNodes((previous) => previous.map((node) => selectedNodeIds.has(node.id) && !node.locked ? { ...node, x: node.x + deltaX, y: node.y + deltaY } : node));
+                applyNodeLayout((previous) => previous.map((node) => selectedNodeIds.has(node.id) && !node.locked ? { ...node, x: node.x + deltaX, y: node.y + deltaY } : node));
             } else if (key === 'q') {
                 onToolClear();
             } else if (key === 'r') {
@@ -1304,7 +1382,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [onToolClear, onToolRotate, onToolToggleType, nodes, wires, selectedNodeIds, offset, scale, makeSelectionState]);
+    }, [onToolClear, onToolRotate, onToolToggleType, nodes, wires, selectedNodeIds, offset, scale, makeSelectionState, onDuplicateNodes, portBuild, onCancelPortBuild, applyNodeLayout, stepHistory]);
 
     useEffect(() => {
         const clearMovement = () => {
@@ -1409,6 +1487,23 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             // Calculate grid pos immediately to ensure accuracy
             const worldX = (e.clientX - offset.x) / scale;
             const worldY = (e.clientY - offset.y) / scale;
+            if (portBuild) { onPlacePort?.(Math.round(worldX/GRID_SIZE), Math.round(worldY/GRID_SIZE)); return; }
+            if (!activeTool && stage2Progress) for (const island of harborIslands) {
+                for (const port of islandHarbors(island, stage2Progress)) {
+                    const arrivals = shippingRoutes.filter(r => r.targetIslandId === island.id && r.targetPortId === port.id);
+                    const panel = (shippingPanelRects.get(port.id) ?? []).findIndex((b: {x:number;y:number;w:number;h:number}) => worldX >= b.x && worldX <= b.x+b.w && worldY >= b.y && worldY <= b.y+b.h);
+                    const b = harborBounds(port);
+                    if (panel >= 0 || boundsOverlap(b, {x:worldX/GRID_SIZE,y:worldY/GRID_SIZE,w:.001,h:.001})) {
+                        onOpenPort?.(island.id, panel >= 0 ? arrivals[panel]?.theoremId : undefined, port.id); return;
+                    }
+                }
+                const map=island.mapBounds;
+                const labelWidth=Math.max(100,Math.min(240,map.w*GRID_SIZE*scale*.84));
+                const labelHit=worldLod(scale)==='coarse' && Math.abs(worldX-(map.x+map.w/2)*GRID_SIZE)<=labelWidth/(2*scale) && Math.abs(worldY-(map.y+map.h*.52)*GRID_SIZE)<=70/scale;
+                if (labelHit || (island.goalBounds && boundsOverlap(island.goalBounds, {x:worldX/GRID_SIZE,y:worldY/GRID_SIZE,w:.001,h:.001}))) {
+                    onOpenPort?.(island.id, island.rewardTheorem?.theoremId); return;
+                }
+            }
             const snap = 1;
             const gx = Math.round((worldX / GRID_SIZE) / snap) * snap;
             const gy = Math.round((worldY / GRID_SIZE) / snap) * snap;
@@ -1751,7 +1846,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                      if (!foundValue) {
                          const goals = stage2Config ? stage2DisplayedGoalIslandIds.filter(id => stage2UnlockedIslandIdSet.has(id)).map(id => stage2Config.world.getIslandById(id)).filter((island): island is Stage2IslandDefinition => Boolean(island?.goalBounds)) : [];
                          const target = goals.find(island => boundsOverlap(island.goalBounds!, { x: mouseGx, y: mouseGy, w: .001, h: .001 }));
-                         if (target) foundValue = `${target.name ?? ''}\n${target.goalFormula ?? ''}`;
+                         if (target) foundValue = `${target.name ?? ''}\n${theoremText(islandPremises(target), target.goalFormula ?? '', language === 'zh')}`;
                          else if (!stage2Config && goalFormula && mouseGx >= -4 && mouseGx <= 4 && mouseGy >= -4 && mouseGy <= 4) foundValue = goalFormula;
                      }
                  }
@@ -1913,6 +2008,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 onContextMenu={handleContextMenu}
                 onWheel={handleWheel}
             />
+            {portBuild && <div className="harbor-build-banner" role="status"><strong>{language === 'zh' ? (portBuild.portId ? '迁移港口' : '兴建港口') : 'Place harbor'}</strong><span>{language === 'zh' ? '选择岛岸上高亮的 4 × 3 格；右键拖动或 WASD 平移，滚轮缩放。' : 'Choose a highlighted 4 × 3 shore site. Right-drag or WASD to pan; scroll to zoom.'}</span><button className="art-button" onClick={onCancelPortBuild}>{language === 'zh' ? '取消 / Esc' : 'Cancel / Esc'}</button></div>}
             {hoveredWireValue && (
                  <div style={{
                      position: 'absolute',

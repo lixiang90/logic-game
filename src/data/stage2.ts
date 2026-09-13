@@ -129,8 +129,16 @@ type IslandMeta = {
 };
 
 const createStage2World = (mapSeed: number, metaById: Map<string, IslandMeta>): Stage2WorldConfig => {
-    const chunkW = 160;
-    const chunkH = 112;
+    const chunkW = 124;
+    const chunkH = 90;
+    // Stable chapter clusters: moving between chapters never relocates old circuits.
+    const clusterCell = (cx: number, cy: number) => {
+        if (cy === 0 && Math.abs(cx) === 3) return { x: Math.sign(cx), y: 0 };
+        if (cx === 0 && cy === 3) return { x: 0, y: 1 };
+        if (cy === -3 && Math.abs(cx) <= 2) return { x: cx / 2, y: -4 };
+        if (cy <= -8) return { x: cx / 2, y: cy % 4 === -2 ? cy + 1 : cy };
+        return { x: cx, y: cy };
+    };
     const cache = new Map<string, Stage2IslandDefinition>();
 
     const buildIslandGeometry = (cx: number, cy: number) => {
@@ -139,17 +147,18 @@ const createStage2World = (mapSeed: number, metaById: Map<string, IslandMeta>): 
         if (cached) return cached;
 
         const rng = mulberry32(hash2D(mapSeed, cx, cy));
-        const originX = cx * chunkW;
-        const originY = cy * chunkH;
+        const cell = metaById.has(id) ? clusterCell(cx, cy) : { x: cx, y: cy };
+        const originX = cell.x * chunkW;
+        const originY = cell.y * chunkH;
         const margin = 18;
 
-        const maxW = Math.max(60, chunkW - margin * 2);
-        const maxH = Math.max(48, chunkH - margin * 2);
+        const maxW = 160 - margin * 2;
+        const maxH = 112 - margin * 2;
         const w = Math.round(maxW * (0.62 + rng() * 0.28));
         const h = Math.round(maxH * (0.62 + rng() * 0.28));
 
-        const centerX = originX + chunkW / 2 + (rng() - 0.5) * chunkW * 0.18;
-        const centerY = originY + chunkH / 2 + (rng() - 0.5) * chunkH * 0.18;
+        const centerX = originX + chunkW / 2 + (rng() - 0.5) * chunkW * 0.06;
+        const centerY = originY + chunkH / 2 + (rng() - 0.5) * chunkH * 0.06;
         const x = Math.round(centerX - w / 2);
         const y = Math.round(centerY - h / 2);
 
@@ -231,10 +240,18 @@ const createStage2World = (mapSeed: number, metaById: Map<string, IslandMeta>): 
         const maxCx = Math.floor((bounds.x + bounds.w + chunkW) / chunkW);
         const minCy = Math.floor((bounds.y - chunkH) / chunkH);
         const maxCy = Math.floor((bounds.y + bounds.h + chunkH) / chunkH);
-        const islands: Stage2IslandDefinition[] = [];
+        const named = [...metaById.keys()].map(id => {
+            const cell = parseIslandId(id)!;
+            return buildIslandGeometry(cell.cx, cell.cy);
+        });
+        const overlaps = (a: Stage2MapBounds, b: Stage2MapBounds) =>
+            a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+        const islands = named.filter(island => overlaps(island.mapBounds, bounds));
         for (let cy = minCy; cy <= maxCy; cy += 1) {
             for (let cx = minCx; cx <= maxCx; cx += 1) {
-                islands.push(buildIslandGeometry(cx, cy));
+                if (metaById.has(makeIslandId(cx, cy))) continue;
+                const island = buildIslandGeometry(cx, cy);
+                if (!named.some(other => overlaps(island.mapBounds, other.mapBounds))) islands.push(island);
             }
         }
         return islands;

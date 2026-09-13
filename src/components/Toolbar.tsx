@@ -382,7 +382,7 @@ export default function Toolbar({
     }, [showMoreAtomsMenu, showTheoremMenu, showTheoremLibrary]);
 
     const canAffordTheorem = React.useCallback((theorem: TheoremChipInventoryEntry) =>
-        theorem.freeUsesRemaining > 0 || coins >= theorem.cost, [coins]);
+        theorem.freeUsesRemaining > 0 || (!theorem.virtual && coins >= theorem.cost), [coins]);
 
     const handleTheoremSelect = React.useCallback((theorem: TheoremChipInventoryEntry, simplified = false) => {
         if (simplified) {
@@ -804,7 +804,7 @@ export default function Toolbar({
                                         style={{ marginLeft: (depth + 1) * 10, width: `calc(100% - ${(depth + 1) * 10}px)` }}
                                     >
                                         <div className="flex items-center justify-between gap-2">
-                                            <div className="font-bold text-slate-100">{theorem.name}</div>
+                                            <div className="font-bold text-slate-100">{theorem.name}{theorem.virtual ? (language === 'zh' ? ' · 虚' : ' · Virtual') : ''}</div>
                                             <div className="text-[10px] text-slate-400">{statusLabel}</div>
                                         </div>
                                         <div className="mt-1 text-xs text-slate-400">{theorem.formula}</div>
@@ -1459,7 +1459,7 @@ export default function Toolbar({
                                                         onClick={() => setTheoremLibrarySelectedId(theorem.theoremId)}
                                                         className={`rounded-xl border p-3 text-left transition ${theorem.theoremId === theoremLibrarySelectedId ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-slate-800 bg-slate-950/30 hover:border-slate-600'}`}
                                                     >
-                                                        <div className="font-bold text-cyan-100">{theorem.name}</div>
+                                                        <div className="font-bold text-cyan-100">{theorem.name}{theorem.virtual ? (language === 'zh' ? ' · 虚' : ' · Virtual') : ''}</div>
                                                         <div className="mt-1 break-all text-[10px] text-slate-400">{theorem.formula}</div>
                                                     </button>
                                                 ))}
@@ -1664,7 +1664,7 @@ export default function Toolbar({
                                                                             }`}
                                                                         >
                                                                             <div className="flex items-center justify-between gap-2">
-                                                                                <div className="font-bold text-slate-100">{theorem.name}</div>
+                                                                                <div className="font-bold text-slate-100">{theorem.name}{theorem.virtual ? (language === 'zh' ? ' · 虚' : ' · Virtual') : ''}</div>
                                                                                 <div className="text-[10px] text-slate-400">{statusLabel}</div>
                                                                             </div>
                                                                             <div className="mt-1 text-xs text-slate-400">{theorem.formula}</div>

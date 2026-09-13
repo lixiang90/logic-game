@@ -33,7 +33,7 @@ const getWireSegment = (node: NodeData) => {
 
 // --- Main Solver Function ---
 
-export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTargets: GoalTargetDefinition[] = []): { 
+export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTargets: GoalTargetDefinition[] = [], knownTheoremIds?: ReadonlySet<string>): {
     isSolved: boolean, 
     activeNodeIds: Set<string>,
     errorWireIds: Set<string>,
@@ -41,7 +41,9 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTar
     errorGoalPorts: Set<string>,
     wireValues: Map<string, string>,
     completedGoalIds: Set<string>,
-    goalErrorsById: Map<string, Set<string>>
+    goalErrorsById: Map<string, Set<string>>,
+    goalTheoremIds: Map<string, Set<string>>,
+    pendingGoalIds: Set<string>
 } {
     // console.log("Solving circuit for goal:", goalFormulaStr);
     
@@ -57,7 +59,9 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTar
             errorGoalPorts: new Set(),
             wireValues: new Map(),
             completedGoalIds: new Set(),
-            goalErrorsById: new Map()
+            goalErrorsById: new Map(),
+            goalTheoremIds: new Map(),
+            pendingGoalIds: new Set()
         };
     }
     // console.log("Parsed goal object:", goalObject.toString());
@@ -151,6 +155,19 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTar
         vp: Provable | null 
     }>();
 
+    // Bridge channels forward the same value objects, preserving provenance across
+    // each independent track. Record only inputs actually read by the evaluator.
+    const provenance = new WeakMap<Formula | Provable, Set<string>>();
+    const evaluate = (node: NodeData) => {
+        const dependencies = new Set<string>();
+        if (node.theoremId) dependencies.add(node.theoremId);
+        const value = computeNodeOutput(node, nodes, state, netState, nodeToNetIdx, bridgeChannels, input => {
+            provenance.get(input)?.forEach(id => dependencies.add(id));
+        });
+        if (value) provenance.set(value, dependencies);
+        return value;
+    };
+
     let changed = true;
     let iterations = 0;
     const MAX_ITERATIONS = 50;
@@ -182,7 +199,7 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTar
             if (node.type !== 'atom' && node.type !== 'premise') continue;
 
             const oldVal = state.get(node.id);
-            const newVal = computeNodeOutput(node, nodes, state, netState, nodeToNetIdx, bridgeChannels);
+            const newVal = evaluate(node);
 
             if (!isEqual(oldVal, newVal)) {
                 state.set(node.id, newVal);
@@ -383,7 +400,7 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTar
             if (node.type === 'atom' || node.type === 'premise') continue; // Already processed
 
             const oldVal = state.get(node.id);
-            const newVal = computeNodeOutput(node, nodes, state, netState, nodeToNetIdx, bridgeChannels);
+            const newVal = evaluate(node);
 
             if (!isEqual(oldVal, newVal)) {
                 state.set(node.id, newVal);
@@ -612,6 +629,20 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTar
     // Goal Block at [-4, -4] w=8 h=8
     // const goalPorts = getGoalPorts(); // Already computed
     const completedGoalIds = new Set<string>();
+    const pendingGoalIds = new Set<string>();
+    const goalTheoremIds = new Map<string, Set<string>>();
+    const recordGoal = (id: string, value: Formula | Provable) => {
+        const dependencies = new Set(provenance.get(value) ?? []);
+        const pending = knownTheoremIds && [...dependencies].some(theorem => !knownTheoremIds.has(theorem));
+        // Prefer a fully established proof when several goal inputs match.
+        if (!goalTheoremIds.has(id) || !pending) goalTheoremIds.set(id, dependencies);
+        if (pending) {
+            if (!completedGoalIds.has(id)) pendingGoalIds.add(id);
+        } else {
+            completedGoalIds.add(id);
+            pendingGoalIds.delete(id);
+        }
+    };
     allGoalTargets.forEach((target) => {
         const expectedType = target.goalObject instanceof Provable ? 'provable' : 'formula';
 
@@ -622,9 +653,9 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTar
                 const netIdx = nodeToNetIdx.get(wire.id);
                 if (netIdx !== undefined) {
                     const val = netState[netIdx];
-                    if (checkGoalValue(val, target.goalObject)) {
-                        completedGoalIds.add(target.id);
-                        return;
+                    if (!conflictNetIndices.has(netIdx) && checkGoalValue(val, target.goalObject)) {
+                        recordGoal(target.id, val!);
+                        if (completedGoalIds.has(target.id)) return;
                     }
                 }
             }
@@ -641,8 +672,8 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTar
                     if (Math.abs(absPos.x - gp.x) < EPS && Math.abs(absPos.y - gp.y) < EPS) {
                         const val = state.get(node.id);
                         if (checkGoalValue(val, target.goalObject)) {
-                            completedGoalIds.add(target.id);
-                            return;
+                            recordGoal(target.id, val!);
+                            if (completedGoalIds.has(target.id)) return;
                         }
                     }
                 }
@@ -658,12 +689,14 @@ export function solveCircuit(nodes: NodeData[], goalFormulaStr?: string, goalTar
         errorGoalPorts,
         wireValues,
         completedGoalIds,
-        goalErrorsById
+        goalErrorsById,
+        goalTheoremIds,
+        pendingGoalIds
     };
 }
 
-export function solveCircuitGoals(nodes: NodeData[], goals: GoalTargetDefinition[]) {
-    return solveCircuit(nodes, undefined, goals);
+export function solveCircuitGoals(nodes: NodeData[], goals: GoalTargetDefinition[], knownTheoremIds?: ReadonlySet<string>) {
+    return solveCircuit(nodes, undefined, goals, knownTheoremIds);
 }
 
 function checkGoalValue(val: Formula | Provable | null | undefined, goalObject: Formula | Provable): boolean {
@@ -691,11 +724,12 @@ function computeNodeOutput(
     state: CircuitState, 
     netState: (Formula | Provable | null)[],
     nodeToNetIdx: Map<string, number>,
-    bridgeChannels: Map<string, { hf: Formula | null; hp: Provable | null; vf: Formula | null; vp: Provable | null }>
+    bridgeChannels: Map<string, { hf: Formula | null; hp: Provable | null; vf: Formula | null; vp: Provable | null }>,
+    onInput?: (value: Formula | Provable) => void
 ): Formula | Provable | null {
 
     // Helper to get input value
-    const getInput = (portId: string): Formula | Provable | null => {
+    const readInput = (portId: string): Formula | Provable | null => {
         const ports = getNodePorts(node);
         const port = ports.find(p => p.id === portId);
         if (!port) return null;
@@ -769,6 +803,12 @@ function computeNodeOutput(
         }
 
         return null;
+    };
+
+    const getInput = (portId: string) => {
+        const value = readInput(portId);
+        if (value) onInput?.(value);
+        return value;
     };
 
     if (node.type === 'atom') {

@@ -25,7 +25,7 @@ const {solveCircuitGoals}=require('../src/lib/circuit-solver.ts');
   assert.ok((await page.locator('.art-discovery-notice').innerText()).includes('新定理已归档'));
   await page.locator('.art-game-actions button[title="存档"]').click();
   await page.getByRole('button',{name:'存档 · 存档 4',exact:true}).click();
-  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('logic_game_save_4')));
+  const saved=await page.evaluate(()=>JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(localStorage.getItem('logic_game_save_4')), char => char.charCodeAt(0)))));
   assert.ok(saved.metaProgress.completedIslandIds.includes(island.id));
   if(index===13) assert.equal(saved.metaProgress.farm.unlocked,true);
   else {assert.equal(saved.metaProgress.quickMpUnlocked,true);assert.equal(saved.metaProgress.quickMpUses,3);}

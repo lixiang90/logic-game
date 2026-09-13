@@ -28,6 +28,6 @@ function fixture(levelIndex = 10, story = false) {
             if (island?.rewardTheorem) meta.collectedTheorems[island.rewardTheorem.theoremId] = { ...island.rewardTheorem, freeUsesRemaining: 1, useCount: 0, sourceIslandId: id, collectedInLevelId: config.levelId };
         }
     }
-    return { version: 2, timestamp: now, levelIndex, levelStates: {}, metaProgress: meta, blueprints: [] };
+    return { version: 3, timestamp: now, levelIndex, levelStates: {}, metaProgress: meta, blueprints: [] };
 }
 module.exports = { fixture };

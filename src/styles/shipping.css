@@ -1,0 +1,46 @@
+.shipping-content { padding: 20px 24px 28px; overflow: auto; }
+.shipping-quays { margin-top: 18px; padding: 14px; border: 1px solid #566653; border-radius: 10px; background: #55785612; }
+.shipping-quays p { color: #b6c6be; font-size: 12px; line-height: 1.7; margin-top: 10px; }
+.shipping-bindings { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 9px 0 18px; }
+.shipping-bindings label { min-width: 0; }
+.shipping-bindings select { min-width: 0; width: 100%; }
+.shipping-arrivals .shipping-chip { width: 100%; min-width: 0; }
+.shipping-columns > section { min-width: 0; }
+.theorem-ribbon-button { width: 100%; display: block; border-radius: 8px; background: #11213966; color: #b6c7d8; cursor: pointer; padding: 4px; }
+.theorem-ribbon-button > small { display: block; font-size: 10px; padding: 0 0 6px; }
+.theorem-ribbon-button:focus-visible { outline: 2px solid #e3c88f; }
+.art-island-item > span { min-width: 0; flex: 1; }
+.harbor-build-banner { position: absolute; z-index: 25; left: 50%; transform: translateX(-50%); top: 110px; width: min(580px,90vw); padding: 13px 16px; background: #102b30ed; border: 1px solid #a4d6ad; border-radius: 12px; color: #d5f4df; display: flex; gap: 12px; align-items: center; box-shadow: 0 8px 28px #0006; }
+.harbor-build-banner strong { white-space: nowrap; }
+.harbor-build-banner span { font-size: 12px; line-height: 1.6; }
+.harbor-build-banner button { white-space: nowrap; }
+@media(max-width:680px) { .harbor-build-banner { top: 150px; flex-wrap: wrap; } }
+.shipping-content h3 { margin: 22px 0 12px; color: #f0d7a6; font-size: 16px; }
+.shipping-content h3:first-child { margin-top: 0; }
+.shipping-content label { display: grid; gap: 7px; color: #a7b8d6; font-size: 12px; }
+.shipping-content select { border: 1px solid #405171; background: #111f36; color: #ecf0ff; border-radius: 8px; padding: 9px 12px; min-width: 110px; max-width: 100%; }
+.shipping-port-switch,.shipping-plan,.shipping-planned,.shipping-departures { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.shipping-port-switch > span { margin-left: auto; color: #f3cf80; }
+.shipping-explanation { color: #a7b8d6; font-size: 13px; line-height: 1.8; margin: 16px 0; }
+.shipping-pending { padding: 12px; color: #dec7ff; background: #a276eb20; border: 1px dashed #a276eb; border-radius: 9px; font-size: 13px; }
+.shipping-columns { display: grid; grid-template-columns: 1.2fr 1fr; gap: 26px; }
+.shipping-arrivals { display: grid; gap: 9px; }
+.shipping-arrivals > p { color: #8c9cb9; font-size: 13px; line-height: 1.8; }
+.shipping-chip { display: grid; gap: 10px; text-align: left; border: 1px solid #477589; border-radius: 10px; background: linear-gradient(120deg,#183148,#121e34); padding: 13px; }
+.shipping-chip > span { display: flex; justify-content: space-between; gap: 10px; color: #aee7eb; }
+.shipping-chip small { color: #a4b2cb; font-size: 11px; }
+.shipping-chip code,.shipping-formula code { white-space: pre-wrap; overflow-wrap: anywhere; color: #f2e9d4; font-size: 14px; line-height: 1.7; }
+.shipping-chip.is-planned { border-style: dashed; opacity: .75; }
+.shipping-chip.is-pending { border: 1px dashed #ba99e8; background: #61418320; }
+.shipping-chip.is-proved { border-color: #ac8b53; }
+.shipping-chip[aria-pressed=true] { outline: 2px solid #e3c88f; outline-offset: 2px; }
+.shipping-planned { justify-content: space-between; margin-top: 9px; color: #b3bfd8; font-size: 12px; }
+.shipping-details { padding: 18px; background: #07132680; border: 1px solid #304363; border-radius: 14px; }
+.shipping-details h4 { display: flex; justify-content: space-between; margin: 20px 0; font-size: 20px; color: #efe3bd; }
+.shipping-details h4 span { font-size: 12px; color: #c1a3ee; }
+.shipping-formula { display: grid; gap: 7px; margin: 14px 0; }
+.shipping-formula small { color: #91a4c7; font-size: 11px; }
+.shipping-details > .art-button { margin: 10px 8px 0 0; }
+.shipping-content button:disabled { opacity: .4; cursor: not-allowed; }
+.shipping-content :focus-visible { outline: 2px solid #e3c88f; outline-offset: 3px; }
+@media(max-width: 680px) { .shipping-columns { grid-template-columns: 1fr; gap: 18px; } .shipping-content { padding: 14px; } .shipping-port-switch { gap: 8px; } }

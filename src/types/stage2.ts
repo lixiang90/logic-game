@@ -36,6 +36,7 @@ export interface TheoremChipInventoryEntry extends TheoremChipDefinition {
     freeUsesRemaining: number;
     useCount: number;
     simplifiedUsesRemaining?: number;
+    virtual?: boolean;
 }
 
 export interface Stage2IslandDefinition {
@@ -108,6 +109,18 @@ export interface Stage2MetaProgress {
     quickMpUnlocked: boolean;
     quickMpUses: number;
     seenStoryIds: string[];
+    plannedRoutes: Array<{ sourceIslandId: string; targetIslandId: string }>;
+    proofDependencies: Record<string, string[]>;
+    harbors: Record<string, IslandHarbor[]>;
+    routePorts: Record<string, { sourcePortId?: string; targetPortId?: string }>;
+}
+
+export interface IslandHarbor {
+    id: string;
+    x: number;
+    y: number;
+    facing: 'north' | 'east' | 'south' | 'west';
+    name: string;
 }
 
 export const createDefaultStage2MetaProgress = (seed?: number): Stage2MetaProgress => ({
@@ -125,4 +138,8 @@ export const createDefaultStage2MetaProgress = (seed?: number): Stage2MetaProgre
     quickMpUnlocked: false,
     quickMpUses: 0,
     seenStoryIds: [],
+    plannedRoutes: [],
+    proofDependencies: {},
+    harbors: {},
+    routePorts: {},
 });

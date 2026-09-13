@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { parseGoal } from '@/lib/logic-engine';
+import TheoremRibbon from './TheoremRibbon';
+import { islandPremises } from '@/lib/render/theorem-ribbon';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { TranslationKey } from '@/data/translations';
 import { Stage2LevelConfig, Stage2MetaProgress } from '@/types/stage2';
@@ -8,8 +9,9 @@ import GameIcon from './GameIcon';
 interface Stage2PanelProps {
     config: Stage2LevelConfig; progress: Stage2MetaProgress; activeTheoremId?: string | null;
     selectedIslandId?: string | null; onSelectIsland?: (islandId: string) => void; onOpenTheoremLibrary?: () => void;
+    onTheoremDetails?: (islandId: string) => void;
 }
-export default function Stage2Panel({ config, progress, activeTheoremId, selectedIslandId, onSelectIsland, onOpenTheoremLibrary }: Stage2PanelProps) {
+export default function Stage2Panel({ config, progress, activeTheoremId, selectedIslandId, onSelectIsland, onOpenTheoremLibrary, onTheoremDetails }: Stage2PanelProps) {
     const { t, language } = useLanguage();
     const zh = language === 'zh';
     const [objectivesOpen, setObjectivesOpen] = useState(false);
@@ -21,7 +23,7 @@ export default function Stage2Panel({ config, progress, activeTheoremId, selecte
     useEffect(() => () => { if (discoveryFrame.current !== null) cancelAnimationFrame(discoveryFrame.current); }, []);
     useEffect(() => {
         const previous = previousProgress.current;
-        const theorems = new Set(Object.keys(progress.collectedTheorems));
+        const theorems = new Set(Object.values(progress.collectedTheorems).filter(chip => !chip.virtual).map(chip => chip.theoremId));
         const islands = new Set(progress.unlockedIslandIds);
         previousProgress.current = { level: config.levelId, theorems, islands };
         if (!previous || previous.level !== config.levelId) {
@@ -55,7 +57,6 @@ export default function Stage2Panel({ config, progress, activeTheoremId, selecte
     const selected = config.world.getIslandById(selectedIslandId ?? config.focusIslandId) ?? focus;
     const inventory = Object.values(progress.collectedTheorems);
     const recent = inventory.slice(-6).reverse();
-    const formula = (value: string) => parseGoal(value)?.toString() ?? value;
     const selectedVisible = selected && unlocked.has(selected.id);
     return <>
         {discovery?.level === config.levelId && <div className="art-discovery-notice" role="status"><GameIcon name="sparkles" size={21}/><span>{discovery.names.length ? (zh ? '新定理已归档：' : 'Theorem archived: ') + discovery.names.join(' · ') : (zh ? `${discovery.islandCount} 座岛屿已揭示` : `${discovery.islandCount} islands revealed`)}</span></div>}
@@ -72,7 +73,7 @@ export default function Stage2Panel({ config, progress, activeTheoremId, selecte
                 <span><strong>{selectedVisible ? selected.name : t('hiddenInFog')}</strong><small>{selected?.id === config.focusIslandId ? t('mainIsland') : t('supportIslands')}</small></span>
                 <GameIcon name="compass" size={16} />
             </button>
-            {selectedVisible && selected.goalFormula && <p className="art-formula">{formula(selected.goalFormula)}</p>}
+            {selectedVisible && selected.goalFormula && <button className="theorem-ribbon-button" aria-label={zh?'查看岛屿定理详情':'Theorem details'} onClick={()=>onTheoremDetails?.(selected.id)}><TheoremRibbon premises={islandPremises(selected)} conclusion={selected.goalFormula} language={language}/><small>{zh?'前提组 → 结论 · 查看详情':'Premises → conclusion · Details'}</small></button>}
             <button className="art-disclosure" onClick={() => setObjectivesOpen(!objectivesOpen)} aria-expanded={objectivesOpen} aria-controls="art-island-items"><GameIcon name="map" size={16} />{zh ? '群岛目录' : 'Island index'}<GameIcon name="chevron" size={14} /></button>
             {objectivesOpen && <div className="art-island-items" id="art-island-items">{(['main', 'support', 'optional'] as const).map(category => <section key={category}>
                 <h3>{category === 'main' ? t('mainIsland') : category === 'support' ? t('supportIslands') : t('optionalIslands')}</h3>
@@ -80,14 +81,14 @@ export default function Stage2Panel({ config, progress, activeTheoremId, selecte
                     const visible = unlocked.has(island.id);
                     return <button key={island.id} className={'art-island-item ' + (island.id === selected?.id ? 'is-selected' : '')} disabled={!visible} onClick={() => onSelectIsland?.(island.id)}>
                         <GameIcon name={completed.has(island.id) ? 'check' : visible ? 'compass' : 'lock'} size={16} />
-                        <span><b>{visible ? island.name : t('hiddenInFog')}</b>{visible && island.goalFormula && <small>{formula(island.goalFormula)}</small>}{visible && <small>{island.descriptionKey ? t(island.descriptionKey as TranslationKey) : island.description}</small>}</span>
+                        <span><b>{visible ? island.name : t('hiddenInFog')}</b>{visible && island.goalFormula && <TheoremRibbon premises={islandPremises(island)} conclusion={island.goalFormula} language={language} height={100}/ >}{visible && <small>{island.descriptionKey ? t(island.descriptionKey as TranslationKey) : island.description}</small>}</span>
                     </button>;
                 })}
             </section>)}</div>}
         </aside>
         <aside id="stage2-theorem-list" className="art-theorem-drawer game-chrome">
             <button className="art-disclosure" onClick={() => setRecentOpen(!recentOpen)} aria-expanded={recentOpen} aria-controls="art-recent-theorems"><GameIcon name="book" size={20} /><span>{t('recentlyUnlocked')}</span><b>{inventory.length}</b><GameIcon name="chevron" size={14} /></button>
-            {recentOpen && <div className="art-recent-theorems" id="art-recent-theorems">{recent.length ? recent.map(theorem => <article key={theorem.theoremId} className={theorem.theoremId === activeTheoremId ? 'is-selected' : ''}><b>{theorem.name}</b><p className="art-formula">{formula(theorem.formula)}</p><small>{t('freeUsesRemaining')}: {theorem.freeUsesRemaining} · {t('theoremCost')}: {theorem.cost}</small></article>) : <p>{t('noTheoremsCollected')}</p>}</div>}
+            {recentOpen && <div className="art-recent-theorems" id="art-recent-theorems">{recent.length ? recent.map(theorem => <article key={theorem.theoremId} className={theorem.theoremId === activeTheoremId ? 'is-selected' : ''}><b>{theorem.name}{theorem.virtual ? (zh ? ' · 虚芯片' : ' · Virtual') : ''}</b><button className="theorem-ribbon-button" onClick={()=>onTheoremDetails?.(theorem.sourceIslandId)}><TheoremRibbon premises={theorem.premises ?? []} conclusion={theorem.formula} language={language} height={115}/></button><small>{t('freeUsesRemaining')}: {theorem.freeUsesRemaining} · {t('theoremCost')}: {theorem.cost}</small></article>) : <p>{t('noTheoremsCollected')}</p>}</div>}
             <button className="art-library-link" onClick={onOpenTheoremLibrary} disabled={!inventory.length}>{t('theoremLibrary')}<GameIcon name="arrow-right" size={16} /></button>
         </aside>
     </>;

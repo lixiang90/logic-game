@@ -7,7 +7,11 @@ import StartMenu from "@/components/StartMenu";
 import DraggableModal from "@/components/DraggableModal";
 import VariantSelector from "@/components/VariantSelector";
 import SettingsModal from "@/components/SettingsModal";
+import HarborModal from '@/components/HarborModal';
+import { buyVirtualChip, consumeVirtualCopies, shippingIslands, theoremTool, type ShippingRoute } from '@/lib/shipping';
+import '@/styles/shipping.css';
 import Stage2Panel from "@/components/Stage2Panel";
+import { ensureHarbors, islandHarbors, harborBounds, putHarbor, removeHarbor } from '@/lib/harbors';
 import TutorialOverlay from "@/components/TutorialOverlay";
 import LogicFarmModal from "@/components/LogicFarmModal";
 import LogicExchangeModal from "@/components/LogicExchangeModal";
@@ -20,15 +24,15 @@ import levels from "@/data/levels.json";
 import { getStage2LevelConfig, STAGE2_START_LEVEL_INDEX } from "@/data/stage2";
 import { getFarmCrop } from "@/data/farm";
 import { STAGE2_STORIES } from "@/data/story";
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Tool } from '@/types/game';
-import { SaveSystem, LevelState, SaveData } from '@/lib/saveSystem';
+import { SaveSystem, LevelState, SaveData, encodeSave, decodeSave, LegacyStage2SaveError } from '@/lib/saveSystem';
 import { NodeData } from '@/types/game';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTutorial } from '@/contexts/TutorialContext';
 import { TranslationKey } from '@/data/translations';
 import { FarmCropId, Stage2MetaProgress, TheoremChipInventoryEntry, createDefaultStage2MetaProgress } from '@/types/stage2';
-import { getNodeBounds } from '@/lib/gameUtils';
+import { getNodeBounds, boundsOverlap } from '@/lib/gameUtils';
 import { canSimplifyTheoremChip } from '@/lib/theorem-chips';
 
 interface Level {
@@ -170,6 +174,12 @@ export default function Home() {
   const [selectedStage2IslandId, setSelectedStage2IslandId] = useState<string | null>(null);
   const [showLogicFarm, setShowLogicFarm] = useState(false);
   const [showLogicExchange, setShowLogicExchange] = useState(false);
+  const [harbor, setHarbor] = useState<{ islandId: string; theoremId?: string; portId?: string } | null>(null);
+  const [portBuild, setPortBuild] = useState<{ islandId: string; portId?: string } | null>(null);
+  const [shipping, setShipping] = useState<{ routes: ShippingRoute[]; pending: string[] }>({ routes: [], pending: [] });
+  const handleShippingChange = useCallback((routes: ShippingRoute[], pending: string[]) => {
+    setShipping(previous => JSON.stringify(previous) === JSON.stringify({ routes, pending }) ? previous : { routes, pending });
+  }, []);
   const [showTheoremLibrary, setShowTheoremLibrary] = useState(false);
   const stage2IntroShownKeyRef = useRef<string | null>(null);
 
@@ -219,7 +229,7 @@ export default function Home() {
     });
   }, [stage2Config, stage2GoalIslands, stage2Progress.collectedTheorems]);
   const simplifiableTheorems = useMemo(
-    () => resolvedTheoremInventory.filter(canSimplifyTheoremChip),
+    () => resolvedTheoremInventory.filter(chip => !chip.virtual && canSimplifyTheoremChip(chip)),
     [resolvedTheoremInventory]
   );
   const stage2InitialState: LevelState | undefined = stage2Config
@@ -319,7 +329,7 @@ export default function Home() {
     metaProgress: Stage2MetaProgress,
     levelStartStates: Record<number, { levelState: LevelState; metaProgress: Stage2MetaProgress }>
   ): SaveData => ({
-    version: 2,
+    version: 3,
     timestamp: Date.now(),
     levelIndex,
     levelStates,
@@ -359,7 +369,7 @@ export default function Home() {
     if (!theorem) return baseProgress;
 
     const usedFreePlacement = theorem.freeUsesRemaining > 0;
-    const paidPlacement = !usedFreePlacement && baseProgress.coins >= theorem.cost;
+    const paidPlacement = !theorem.virtual && !usedFreePlacement && baseProgress.coins >= theorem.cost;
     if (!usedFreePlacement && !paidPlacement) return baseProgress;
 
     return {
@@ -401,14 +411,15 @@ export default function Home() {
     }
 
     const nextCollectedTheorems = { ...baseProgress.collectedTheorems };
-    if (completedIsland.rewardTheorem && !nextCollectedTheorems[completedIsland.rewardTheorem.theoremId]) {
+    if (completedIsland.rewardTheorem && (!nextCollectedTheorems[completedIsland.rewardTheorem.theoremId] || nextCollectedTheorems[completedIsland.rewardTheorem.theoremId].virtual)) {
       const theoremEntry: TheoremChipInventoryEntry = {
         ...completedIsland.rewardTheorem,
         premises: (completedIsland.premiseNodes ?? []).map((premise) => premise.formula),
         sourceIslandId: completedIsland.id,
         collectedInLevelId: stage2Config.levelId,
-        freeUsesRemaining: 5,
-        useCount: 0,
+        freeUsesRemaining: 5 + (nextCollectedTheorems[completedIsland.rewardTheorem.theoremId]?.freeUsesRemaining ?? 0),
+        useCount: nextCollectedTheorems[completedIsland.rewardTheorem.theoremId]?.useCount ?? 0,
+        virtual: false,
       };
       nextCollectedTheorems[theoremEntry.theoremId] = theoremEntry;
     }
@@ -659,10 +670,17 @@ export default function Home() {
         canvasRef.current.loadState(pendingLoad);
         const raf = requestAnimationFrame(() => {
           setPendingLoad(null);
+          setPortBuild(null);
         });
         return () => cancelAnimationFrame(raf);
     }
   }, [gameState, pendingLoad]);
+
+  useEffect(() => {
+    if (gameState !== 'playing' || pendingLoad || !stage2Config) return;
+    const frame = requestAnimationFrame(() => setStage2Progress(previous => ensureHarbors(previous, stage2Config, canvasRef.current?.getState().nodes ?? [])));
+    return () => cancelAnimationFrame(frame);
+  }, [gameState, pendingLoad, stage2Config, stage2Progress.unlockedIslandIds]);
 
   // Tutorial Logic
   useEffect(() => {
@@ -677,8 +695,9 @@ export default function Home() {
     }
   }, [activeTool, dispatchAction]);
 
-  const handleStage2IslandComplete = (islandId: string) => {
-    const nextStage2Progress = applyStage2IslandCompletion(stage2Progress, islandId);
+  const handleStage2IslandComplete = (islandId: string, dependencies: string[]) => {
+    const completed = applyStage2IslandCompletion(stage2Progress, islandId);
+    const nextStage2Progress = completed === stage2Progress ? completed : { ...completed, proofDependencies: { ...completed.proofDependencies, [islandId]: dependencies } };
     if (nextStage2Progress !== stage2Progress) {
       setStage2Progress(nextStage2Progress);
       if (canvasRef.current) {
@@ -924,13 +943,13 @@ export default function Home() {
       theoremToolbarPins,
     };
 
-    const json = JSON.stringify(fullSaveData);
-    const blob = new Blob([json], { type: 'application/json' });
+    const json = encodeSave(fullSaveData);
+    const blob = new Blob([json], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    a.download = `logic-game-save-${dateStr}.json`;
+    a.download = `logic-game-save-${dateStr}.logic`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -944,8 +963,7 @@ export default function Home() {
     reader.onload = (event) => {
       try {
         const json = event.target?.result as string;
-        const parsed = JSON.parse(json);
-        const normalized = SaveSystem.normalizeSaveData(parsed);
+        const normalized = decodeSave(json);
         if (!normalized) throw new Error("Invalid save data");
 
         // Apply to game
@@ -968,7 +986,7 @@ export default function Home() {
         setShowSaveMenu(false);
         alert(t('importSuccess' as TranslationKey));
       } catch (err) {
-        alert(t('importFailed' as TranslationKey));
+        alert(err instanceof LegacyStage2SaveError ? (language === 'zh' ? '群岛地图已更新，旧版第二大关存档无法导入。旧版第一大关存档仍可使用。' : err.message) : t('importFailed' as TranslationKey));
       }
     };
     reader.readAsText(file);
@@ -1089,6 +1107,7 @@ export default function Home() {
     if (stage2Config) {
       const tileSet = stage2BuildableTileSet ?? new Set<string>();
       const bounds = getNodeBounds(node);
+      if (shippingIslands(stage2Config, stage2Progress).some(island => islandHarbors(island, stage2Progress).some(port => boundsOverlap(bounds, harborBounds(port))))) return false;
       for (let x = Math.floor(bounds.x); x < Math.ceil(bounds.x + bounds.w); x += 1) {
         for (let y = Math.floor(bounds.y); y < Math.ceil(bounds.y + bounds.h); y += 1) {
           if (!tileSet.has(`${x},${y}`)) {
@@ -1108,6 +1127,16 @@ export default function Home() {
 
     const theorem = stage2Progress.collectedTheorems[node.theoremId];
     if (!theorem) return false;
+    if (theorem.virtual) {
+      const source = stage2Config?.world.getIslandById(theorem.sourceIslandId);
+      if (source && node.x >= source.mapBounds.x && node.x < source.mapBounds.x + source.mapBounds.w && node.y >= source.mapBounds.y && node.y < source.mapBounds.y + source.mapBounds.h) {
+        alert(language === 'zh' ? '虚芯片不能用于证明它自己的源定理。请调用其他定理或从公理出发。' : 'A virtual chip cannot prove its own source theorem.');
+        return false;
+      }
+      if (theorem.freeUsesRemaining > 0) return true;
+      alert(language === 'zh' ? '虚芯片次数已用完，请在港口购买。' : 'Buy another virtual use at the harbor.');
+      return false;
+    }
     if (node.theoremSimplified) {
       if (canSimplifyTheoremChip(theorem) && (theorem.simplifiedUsesRemaining ?? 0) > 0) return true;
       alert(language === 'zh' ? '该定理的纯黄口简化版次数不足，请前往证明交易所购买。' : 'No yellow-only uses remain for this theorem. Visit the Proof Exchange.');
@@ -1165,7 +1194,7 @@ export default function Home() {
       activeTool?.theoremId === node.theoremId &&
       nextTheorem &&
       nextTheorem.freeUsesRemaining === 0 &&
-      nextProgress.coins < nextTheorem.cost
+      (nextTheorem.virtual || nextProgress.coins < nextTheorem.cost)
     ) {
       setActiveTool(null);
     }
@@ -1197,9 +1226,28 @@ export default function Home() {
         goalFormula={stage2Config ? undefined : currentLevel.goal.formula}
         onLevelComplete={handleLevelComplete}
         onStage2IslandComplete={handleStage2IslandComplete}
+        onOpenPort={(islandId, theoremId, portId) => setHarbor({ islandId, theoremId, portId })}
+        portBuild={portBuild}
+        onCancelPortBuild={() => setPortBuild(null)}
+        onPlacePort={(x, y) => {
+          const island = portBuild && stage2Config?.world.getIslandById(portBuild.islandId);
+          if (!island || !portBuild) return;
+          const next = putHarbor(stage2Progress, island, canvasRef.current?.getState().nodes ?? [], x, y, portBuild.portId);
+          if (next !== stage2Progress) { setStage2Progress(next); setPortBuild(null); }
+        }}
+        onShippingChange={handleShippingChange}
         initialState={stage2InitialState}
         canPlaceNode={handleCanPlaceNode}
         onNodePlaced={handleNodePlaced}
+        onDuplicateNodes={nodes => {
+          if (!stage2Config) return true;
+          const reserved = shippingIslands(stage2Config, stage2Progress).flatMap(island => islandHarbors(island, stage2Progress).map(harborBounds));
+          if (nodes.some(node => reserved.some(port => boundsOverlap(getNodeBounds(node), port)))) return false;
+          const next = consumeVirtualCopies(stage2Progress, nodes);
+          if (!next) { alert(language === 'zh' ? '粘贴需要为每枚虚芯片支付一次已购次数，请先在港口补充芯片。' : 'Purchase enough virtual uses at a harbor before pasting these chips.'); return false; }
+          if (next !== stage2Progress) setStage2Progress(next);
+          return true;
+        }}
         stage2Config={stage2Config}
         stage2Progress={stage2Config ? stage2Progress : undefined}
         selectedStage2IslandId={selectedStage2IslandId}
@@ -1245,13 +1293,33 @@ export default function Home() {
         />
       )}
 
+      {stage2Config && harbor && <HarborModal key={`${stage2Config.levelId}:${harbor.islandId}:${harbor.theoremId ?? ''}:${harbor.portId ?? ''}`} config={stage2Config} progress={stage2Progress} islandId={harbor.islandId} theoremId={harbor.theoremId} portId={harbor.portId} language={language} routes={shipping.routes} pending={shipping.pending}
+        onBuildPort={portId => { setActiveTool(null); setPortBuild({islandId:harbor.islandId,portId}); canvasRef.current?.jumpToHarbor(harbor.islandId,portId); setHarbor(null); }}
+        onLocatePort={portId => { canvasRef.current?.jumpToHarbor(harbor.islandId,portId); setHarbor(null); }}
+        onRemovePort={portId => { const island=stage2Config.world.getIslandById(harbor.islandId); if(island) setStage2Progress(previous=>removeHarbor(previous,island,portId)); }}
+        onBindRoute={(key, binding) => setStage2Progress(previous => ({...previous,routePorts:{...previous.routePorts,[key]:binding}}))}
+        onOverview={() => { setActiveTool(null); setPortBuild(null); canvasRef.current?.showShippingOverview(); setHarbor(null); }}
+        onClose={() => setHarbor(null)} onChangePort={islandId => setHarbor({ islandId })}
+        onJump={islandId => { setSelectedStage2IslandId(islandId); canvasRef.current?.jumpToStage2Island(islandId); setHarbor(null); }}
+        onPlan={(sourceIslandId, targetIslandId, remove) => setStage2Progress(previous => {
+          const visible = new Set(shippingIslands(stage2Config, previous).map(island => island.id));
+          if (sourceIslandId === targetIslandId || !visible.has(sourceIslandId) || !visible.has(targetIslandId)) return previous;
+          const routes = previous.plannedRoutes.filter(route => route.sourceIslandId !== sourceIslandId || route.targetIslandId !== targetIslandId);
+          return { ...previous, plannedRoutes: remove ? routes : [...routes, { sourceIslandId, targetIslandId }] };
+        })}
+        onBuy={islandId => setStage2Progress(previous => buyVirtualChip(previous, stage2Config, islandId))}
+        onUse={chip => { setPortBuild(null); setActiveTool(theoremTool(chip)); setHarbor(null); }}
+      />}
+
       {stage2Config && (
         <Stage2Panel
           config={stage2Config}
           progress={stage2Progress}
           activeTheoremId={activeTool?.theoremId ?? null}
+          onTheoremDetails={islandId => setHarbor({islandId})}
           selectedIslandId={selectedStage2IslandId}
           onSelectIsland={(islandId) => {
+            setPortBuild(null);
             setSelectedStage2IslandId(islandId);
             canvasRef.current?.jumpToStage2Island(islandId);
           }}
@@ -1282,6 +1350,7 @@ export default function Home() {
       
       {/* Save Button */}
       <nav className="art-game-actions absolute top-4 right-4 z-50 flex flex-row items-center gap-2" aria-label={language === 'zh' ? '游戏工具' : 'Game actions'}>
+          {stage2Config && <button className="game-tool flex h-10 items-center gap-2 rounded-xl border border-cyan-400/30 bg-slate-950/85 px-3 font-bold text-cyan-100" onClick={() => setHarbor({ islandId: selectedStage2IslandId ?? stage2Config.focusIslandId })} title={language === 'zh' ? '港口与定理航线' : 'Harbors and theorem routes'}>⚓ {language === 'zh' ? '航线' : 'Routes'}{shipping.pending.length > 0 && <small>◌ {shipping.pending.length}</small>}</button>}
           {stage2Config && stage2Progress.farm.unlocked && (
             <button
               className="game-tool flex h-10 items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-950/85 px-3 font-bold text-emerald-200 shadow-lg hover:bg-emerald-900"
@@ -1439,7 +1508,7 @@ export default function Home() {
                 <GameIcon name="upload" size={27}/>
                 <h3>{t('importSave' as TranslationKey)}</h3>
                 <p>{t('importSaveDesc' as TranslationKey)}</p>
-                <label className="art-button art-data-import"><GameIcon name="upload" size={17}/>{t('importSave' as TranslationKey)}<input type="file" accept=".json" className="sr-only" onChange={handleImportSave}/></label>
+                <label className="art-button art-data-import"><GameIcon name="upload" size={17}/>{t('importSave' as TranslationKey)}<input type="file" accept=".logic,.txt,.json" className="sr-only" onChange={handleImportSave}/></label>
               </section>
             </div>
           )}
@@ -1531,7 +1600,7 @@ export default function Home() {
 
       <Toolbar 
         activeTool={activeTool} 
-        onSelectTool={setActiveTool}
+        onSelectTool={tool => { setPortBuild(null); setActiveTool(tool); }}
         selectMode={selectMode}
         onSelectModeChange={setSelectMode}
         unlockedTools={
@@ -1564,7 +1633,7 @@ export default function Home() {
         theoremLibraryOpen={showTheoremLibrary}
         onTheoremLibraryOpenChange={setShowTheoremLibrary}
       />
-      {!activeStoryScene && !showStage2Intro && !showLogicFarm && !showLogicExchange && !showSettings && <TutorialOverlay />}
+      {!activeStoryScene && !showStage2Intro && !showLogicFarm && !showLogicExchange && !harbor && !showSettings && <TutorialOverlay />}
     </main>
   );
 }

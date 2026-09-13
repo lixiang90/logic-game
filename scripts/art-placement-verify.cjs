@@ -49,7 +49,7 @@ const {chromium}=require(process.env.ART_PLAYWRIGHT||'playwright');
   assert.ok(await warnings()>0,'A different tool at the occupied cell must warn');
   await page.locator('.art-game-actions button[title="存档"]').click();
   await page.getByRole('button',{name:'存档 · 存档 2',exact:true}).click();
-  const nodes=await page.evaluate(()=>JSON.parse(localStorage.getItem('logic_game_save_2')).levelStates[1].nodes);
+  const nodes=await page.evaluate(()=>JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(localStorage.getItem('logic_game_save_2')), char => char.charCodeAt(0)))).levelStates[1].nodes);
   assert.equal(nodes.length,2,'Failed repeats must not add extra nodes');
   assert.ok(nodes.every(n=>n.subType==='P'));
   assert.deepEqual(errors,[]);

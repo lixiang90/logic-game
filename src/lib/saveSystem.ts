@@ -30,7 +30,7 @@ export type TheoremLibrarySaveState = {
 };
 
 export interface SaveData {
-    version?: 2;
+    version?: 2 | 3;
     timestamp: number;
     levelIndex: number;
     levelStates: Record<number, LevelState>; // Store state for each level index
@@ -42,11 +42,46 @@ export interface SaveData {
 }
 
 const STORAGE_KEY_PREFIX = 'logic_game_save_';
-const AUTO_SAVE_KEY = 'logic_game_autosave';
+export class LegacyStage2SaveError extends Error {
+    constructor() { super('The island map has changed. Only legacy Stage 1 saves can be imported.'); }
+}
+
+// UTF-8 before Base64 preserves Chinese notes, theorem names and emoji.
+export const encodeSave = (data: SaveData): string => {
+    const bytes = new TextEncoder().encode(JSON.stringify({ ...data, version: 3 }));
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+};
+
+export const decodeSave = (text: string): SaveData => {
+    const trimmed = text.trim();
+    const json = trimmed.startsWith('{') ? trimmed : new TextDecoder('utf-8', { fatal: true }).decode(
+        Uint8Array.from(atob(trimmed.replace(/\s/g, '')), char => char.charCodeAt(0)),
+    );
+    const data = JSON.parse(json);
+    if (!data || typeof data !== 'object' || Array.isArray(data) ||
+        !Number.isInteger(data.levelIndex) || data.levelIndex < 0 || data.levelIndex > 19 ||
+        !data.levelStates || typeof data.levelStates !== 'object' || Array.isArray(data.levelStates)) {
+        throw new Error('Invalid save data');
+    }
+    if (data.version !== undefined && data.version !== 1 && data.version !== 2 && data.version !== 3) {
+        throw new Error('Unsupported save version');
+    }
+    if (data.version !== 3 && (data.levelIndex >= 10 || Object.keys(data.levelStates).some(key => Number(key) >= 10))) {
+        throw new LegacyStage2SaveError();
+    }
+    for (const state of Object.values(data.levelStates) as LevelState[]) {
+        if (!state || !Array.isArray(state.nodes) || !Array.isArray(state.wires)) throw new Error('Invalid circuit state');
+    }
+    const normalized = SaveSystem.normalizeSaveData(data);
+    if (!normalized) throw new Error('Invalid save data');
+    return normalized;
+};
 
 export const SaveSystem = {
     createEmptySave: (): SaveData => ({
-        version: 2,
+        version: 3,
         timestamp: Date.now(),
         levelIndex: 0,
         levelStates: {},
@@ -59,26 +94,23 @@ export const SaveSystem = {
         const baseSeed = 42; // Fixed map seed for everyone
         const defaultMeta = createDefaultStage2MetaProgress(baseSeed);
         const savedMeta = data.metaProgress;
+        const normalizeMeta = (meta?: Stage2MetaProgress): Stage2MetaProgress => ({
+            ...defaultMeta, ...meta, mapSeed: baseSeed,
+            plannedRoutes: meta?.plannedRoutes ?? [],
+            proofDependencies: meta?.proofDependencies ?? {},
+            harbors: meta?.harbors ?? {},
+            routePorts: meta?.routePorts ?? {},
+            farm: { ...defaultMeta.farm, ...meta?.farm, plots: meta?.farm?.plots?.length ? meta.farm.plots : defaultMeta.farm.plots },
+        });
         return {
-            version: 2,
+            version: 3,
             timestamp: data.timestamp ?? Date.now(),
             levelIndex: data.levelIndex ?? 0,
             levelStates: data.levelStates ?? {},
-            metaProgress: savedMeta
-                ? {
-                      ...defaultMeta,
-                      ...savedMeta,
-                      farm: {
-                          ...defaultMeta.farm,
-                          ...(savedMeta.farm ?? {}),
-                          plots: savedMeta.farm?.plots?.length ? savedMeta.farm.plots : defaultMeta.farm.plots,
-                      },
-                      mapSeed: baseSeed, // Always force fixed map seed
-                  }
-                : defaultMeta,
+            metaProgress: normalizeMeta(savedMeta),
             theoremLibrary: data.theoremLibrary,
             theoremToolbarPins: data.theoremToolbarPins,
-            levelStartStates: data.levelStartStates ?? {},
+            levelStartStates: Object.fromEntries(Object.entries(data.levelStartStates ?? {}).map(([key, snapshot]) => [key, { ...snapshot, metaProgress: normalizeMeta(snapshot.metaProgress) }])),
             blueprints: data.blueprints ?? [],
         };
     },
@@ -86,7 +118,7 @@ export const SaveSystem = {
     save: (slot: number, data: SaveData) => {
         if (typeof window === 'undefined') return;
         try {
-            localStorage.setItem(`${STORAGE_KEY_PREFIX}${slot}`, JSON.stringify(data));
+            localStorage.setItem(`${STORAGE_KEY_PREFIX}${slot}`, encodeSave(data));
         } catch (e) {
             console.error("Save failed", e);
         }
@@ -101,7 +133,7 @@ export const SaveSystem = {
         if (typeof window === 'undefined') return null;
         try {
             const item = localStorage.getItem(`${STORAGE_KEY_PREFIX}${slot}`);
-            return item ? SaveSystem.normalizeSaveData(JSON.parse(item)) : null;
+            return item ? decodeSave(item) : null;
         } catch (e) {
             console.error("Load failed", e);
             return null;

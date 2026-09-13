@@ -31,7 +31,7 @@ async function frame(page) { await page.evaluate(() => new Promise(resolve => re
    await frame(page);
    return {context,page};
   }
-  // All shipped chapters restore from isolated version-2 save fixtures.
+  // All shipped chapters restore from isolated version-3 save fixtures.
   for(let level=0;level<(process.env.ART_SKIP_CHAPTERS ? 0 : 20);level++){
    const {context,page}=await open(level);
    assert.ok(await page.locator('canvas').first().isVisible());
@@ -70,7 +70,7 @@ async function frame(page) { await page.evaluate(() => new Promise(resolve => re
    await page.keyboard.press('Escape');
    await page.locator('.art-game-actions button[title="存档"]').click();
    await page.getByRole('button',{name:'存档 · 存档 2',exact:true}).click();
-   const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('logic_game_save_2')));
+   const saved=await page.evaluate(()=>JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(localStorage.getItem('logic_game_save_2')), char => char.charCodeAt(0)))));
    assert.equal(saved.metaProgress.coins,72);
    assert.equal(saved.metaProgress.quickMpUses,55);
    assert.equal(saved.metaProgress.farm.plots[5].cropId,'axiom-wheat');
