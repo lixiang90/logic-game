@@ -5,12 +5,12 @@ const {getStage2LevelConfig}=require('../src/data/stage2.ts');
 const {encodeSave,decodeSave}=require('../src/lib/saveSystem.ts');
 const {ensureHarbors,islandHarbors,harborSites,harborAnchor,validateHarborSite}=require('../src/lib/harbors.ts');
 const {islandPremises}=require('../src/lib/render/theorem-ribbon.ts');
-const worldVersion=process.env.ART_WORLD_VERSION==='2'?2:1;
+const worldVersion=2;
 const dir=path.resolve(worldVersion===2?'artifacts/harbor-coast-regional':'artifacts/harbor-coast');fs.mkdirSync(dir,{recursive:true});
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.ART_BROWSER});
  const errors=[],checks=[];
- const config=getStage2LevelConfig('level-16',42,worldVersion),main=config.world.getIslandById(config.focusIslandId),sources=config.goalIslandIds.filter(id=>id!==main.id);
+ const config=getStage2LevelConfig('level-16',42),main=config.world.getIslandById(config.focusIslandId),sources=config.goalIslandIds.filter(id=>id!==main.id);
  const save=fixture(15,false,worldVersion);save.metaProgress=ensureHarbors(save.metaProgress,config,[]);
  save.metaProgress.plannedRoutes=sources.slice(0,3).map(sourceIslandId=>({sourceIslandId,targetIslandId:main.id}));
  const context=await browser.newContext({viewport:{width:1440,height:960},reducedMotion:'reduce'}),page=await context.newPage();
@@ -83,7 +83,7 @@ const dir=path.resolve(worldVersion===2?'artifacts/harbor-coast-regional':'artif
   await page.getByLabel('本岛码头',{exact:true}).selectOption(ids[1]);await page.getByRole('button',{name:'拆除此港口',exact:true}).click();
   assert.equal(await page.getByLabel('本岛码头',{exact:true}).locator('option').count(),1);assert.equal(await page.getByLabel(`${source.rewardTheorem.theoremId} 入港`,{exact:true}).inputValue(),'');checks.push('remove releases cells and resets route assignment');
   assert.deepEqual(errors,[]);
-  const fourSave=fixture(11,false,worldVersion),fourConfig=getStage2LevelConfig('level-12',42,worldVersion),fourIsland=fourConfig.goalIslandIds.map(id=>fourConfig.world.getIslandById(id)).find(i=>islandPremises(i).length===4);
+  const fourSave=fixture(11,false,worldVersion),fourConfig=getStage2LevelConfig('level-12',42),fourIsland=fourConfig.goalIslandIds.map(id=>fourConfig.world.getIslandById(id)).find(i=>islandPremises(i).length===4);
   assert(fourIsland);
   // Leave gameplay first: pagehide now flushes narrative and circuit progress.
   await page.goto(process.env.ART_URL || 'http://127.0.0.1:4177/',{waitUntil:'networkidle'});

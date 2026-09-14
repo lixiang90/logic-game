@@ -1,6 +1,5 @@
 import levels from '@/data/levels.json';
 import { createRegionalWorld } from '@/lib/regional-world';
-import type { WorldVersion } from '@/types/world';
 import { Stage2GridPoint, Stage2IslandCategory, Stage2IslandDefinition, Stage2IslandPremiseDefinition, Stage2LevelConfig, Stage2MapBounds, Stage2WorldConfig, TheoremChipDefinition } from '@/types/stage2';
 
 export const STAGE2_START_LEVEL_INDEX = 10;
@@ -755,7 +754,7 @@ const createConfiguredChapter = (mapSeed: number, definition: ChapterDefinition)
     };
 };
 
-const getLegacyStage2LevelConfig = (levelId: string, mapSeed: number = 0): Stage2LevelConfig | undefined => {
+const getStage2ContentConfig = (levelId: string, mapSeed: number = 0): Stage2LevelConfig | undefined => {
     if (levelId === 'level-11') return createLevel11(mapSeed);
     if (levelId === 'level-12') return createLevel12(mapSeed);
     const configuredChapter = chapterDefinitions.find((definition) => definition.levelId === levelId);
@@ -763,7 +762,7 @@ const getLegacyStage2LevelConfig = (levelId: string, mapSeed: number = 0): Stage
     return undefined;
 };
 
-export const getStage2LevelConfig = (levelId: string, mapSeed = 0, worldVersion: WorldVersion = 1): Stage2LevelConfig | undefined => {
-    const config=getLegacyStage2LevelConfig(levelId,mapSeed);
-    return config && worldVersion===2 ? {...config,world:createRegionalWorld(mapSeed,config.world)} : config;
+export const getStage2LevelConfig = (levelId: string, mapSeed = 0): Stage2LevelConfig | undefined => {
+    const config=getStage2ContentConfig(levelId,mapSeed);
+    return config ? {...config,world:createRegionalWorld(mapSeed,config.world)} : undefined;
 };

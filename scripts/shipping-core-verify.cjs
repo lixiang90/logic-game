@@ -101,11 +101,13 @@ for (let chapter = 1; chapter <= 10; chapter++) {
     const main = config.world.getIslandById(config.focusIslandId);
     const neighbors = config.recommendedTheoremIds.map(theorem => config.goalIslandIds.map(id => config.world.getIslandById(id)).find(island => island.rewardTheorem?.theoremId === theorem)).filter(Boolean);
     for (const island of neighbors) {
-        const dx = main.mapBounds.x + main.mapBounds.w / 2 - island.mapBounds.x - island.mapBounds.w / 2;
-        const dy = main.mapBounds.y + main.mapBounds.h / 2 - island.mapBounds.y - island.mapBounds.h / 2;
-        assert(Math.hypot(dx, dy) < 155, `chapter ${chapter}: support island too distant`);
+        const { WORLD_ISLAND_ADDRESSES: addresses } = require('../src/data/world-regions.ts');
+        const mainAddress = addresses.find(address => address.id === main.id);
+        const supportAddress = addresses.find(address => address.id === island.id);
+        assert(mainAddress && supportAddress, 'theorem islands must be in the atlas');
+        assert.equal(supportAddress.clusterId, mainAddress.clusterId, `chapter ${chapter}: recommended support belongs to the same cluster`);
     }
     const visible = config.world.getIslandsInBounds(main.mapBounds);
     assert(visible.some(island => island.id === main.id), 'cluster must be discoverable by viewport');
 }
-console.log(JSON.stringify({ provenance: 'passed: used, unused, disconnected, unresolved, resolved, transitive, bridge channels', saves: 'passed: Unicode Base64, slots, autosave, old Stage 1, rejected old Stage 2', layout: { chapters: 10, islandChecks, stable: true, noOverlap: true, closeSupports: true } }, null, 2));
+console.log(JSON.stringify({ provenance: 'passed: used, unused, disconnected, unresolved, resolved, transitive, bridge channels', saves: 'passed: Unicode Base64, slots, autosave, old Stage 1, rejected old Stage 2', layout: { chapters: 10, islandChecks, stable: true, noOverlap: true, supportsInSameCluster: true } }, null, 2));

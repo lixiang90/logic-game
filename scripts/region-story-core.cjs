@@ -12,10 +12,10 @@ const {createDefaultStage2MetaProgress}=require('../src/types/stage2.ts');
 let islands=0,ports=0;const profiles=new Set(),sizes=new Set();
 assert.equal(new Set(WORLD_ISLAND_ADDRESSES.map(a=>a.id)).size,WORLD_ISLAND_ADDRESSES.length);
 for(const seed of [42,731,991]){
- const first=getStage2LevelConfig('level-11',seed,2),last=getStage2LevelConfig('level-20',seed,2);
+ const first=getStage2LevelConfig('level-11',seed),last=getStage2LevelConfig('level-20',seed);
  const positions=createAtlasPositions(seed);assert.deepEqual(positions,createAtlasPositions(seed));
  for(let chapter=1;chapter<=10;chapter++){
-  const config=getStage2LevelConfig(`level-${10+chapter}`,seed,2);
+  const config=getStage2LevelConfig(`level-${10+chapter}`,seed);
   for(const id of [...config.goalIslandIds,...config.initialUnlockedIslandIds])assert(config.world.getIslandById(id),`${chapter}: missing ${id}`);
  }
  const generated=WORLD_ISLAND_ADDRESSES.map(a=>last.world.getIslandById(a.id));
@@ -37,11 +37,11 @@ for(const seed of [42,731,991]){
 }
 assert.equal(profiles.size,6);assert(sizes.size>20);
 const {showIslandTheorem}=require('../src/lib/render/world-art.ts');
-const visibleIsland=getStage2LevelConfig('level-16',42,2).world.getIslandById('i_0_-20');assert(showIslandTheorem(visibleIsland,.075,true));assert(!showIslandTheorem(visibleIsland,.008,true));
-const old=fixture(15),oldConfig=getStage2LevelConfig('level-16',42,1);delete old.metaProgress.worldVersion;delete old.metaProgress.story;
-const restored=decodeSave(encodeSave(old));assert.equal(restored.metaProgress.worldVersion,1);assert.deepEqual(restored.metaProgress.story,{version:1,choices:{},reading:{},skippedIds:[]});
-assert.deepEqual(getStage2LevelConfig('level-16',42,restored.metaProgress.worldVersion).world.getIslandById(oldConfig.focusIslandId),oldConfig.world.getIslandById(oldConfig.focusIslandId));
-const regional=fixture(15,false,2),config=getStage2LevelConfig('level-16',42,2),main=config.world.getIslandById(config.focusIslandId);
+const visibleIsland=getStage2LevelConfig('level-16',42).world.getIslandById('i_0_-20');assert(showIslandTheorem(visibleIsland,.075,true));assert(!showIslandTheorem(visibleIsland,.008,true));
+const old=fixture(15);delete old.metaProgress.worldVersion;delete old.metaProgress.story;
+assert.throws(()=>decodeSave(encodeSave(old)),/island map has changed/);
+assert.equal(SaveSystem.normalizeSaveData(old),null);
+const regional=fixture(15,false,2),config=getStage2LevelConfig('level-16',42),main=config.world.getIslandById(config.focusIslandId);
 let progress=ensureHarbors(regional.metaProgress,config,[]);const site=harborSites(main).find(s=>validateHarborSite(main,progress,[],s.x,s.y));progress=putHarbor(progress,main,[],site.x,site.y);assert.equal(islandHarbors(main,progress).length,2);
 assert.deepEqual(decodeSave(encodeSave({...regional,metaProgress:progress})).metaProgress,progress);
 let story=createDefaultStage2MetaProgress(42);
@@ -65,5 +65,5 @@ events.plannedRoutes=[{sourceIslandId:'a',targetIslandId:'b'}];assert(!isStoryAv
 events.discoveredLandmarkIds=['landmark:haven','landmark:haven','landmark:haven'];assert(!isStoryAvailable(STORY_SCENES['explore-three-regions'],events,3));events.discoveredLandmarkIds=['landmark:haven','landmark:prism','landmark:rift'];assert(isStoryAvailable(STORY_SCENES['explore-three-regions'],events,3));
 const domainScene={...STORY_SCENES['stage2-1'],condition:{minChapter:1,contentDomainId:'test-domain'}};assert(!isStoryAvailable(domainScene,events,10));assert(isStoryAvailable(domainScene,events,10,'test-domain'));
 const custom={...DEFAULT_REGIONAL_WORLD,regions:[{...WORLD_REGIONS[0],id:'test-region',biomeId:'test-biome',contentDomainId:'test-domain'}],biomes:{'test-biome':{...DEFAULT_REGIONAL_WORLD.biomes.meadow,id:'test-biome',ground:'#123456'}},addresses:[{id:'i_0_0',regionId:'test-region',clusterId:'test-cluster',order:0}],clusters:[{...DEFAULT_REGIONAL_WORLD.clusters[0],id:'test-cluster'}],pointsOfInterest:[]};
-const customWorld=createRegionalWorld(42,getStage2LevelConfig('level-11',42,1).world,custom);assert.equal(customWorld.getIslandById('i_0_0').biome.ground,'#123456');assert.equal(customWorld.getIslandById('i_0_0').contentDomainId,'test-domain');assert.equal(customWorld.getIslandById('i_0_0').regionId,'test-region');
-console.log(JSON.stringify({islands,coastalSites:ports,profiles:[...profiles],sizes:sizes.size,regions:WORLD_REGIONS.length,scenes:Object.keys(STORY_SCENES).length,lines,choices:choiceIds.length,checks:['stable coordinates and coastline','all chapter identities','connected workshop/goal/premise land','multiple coastal ports','legacy and regional saves','event prerequisites','validated choices and skip','ending only after real proof']}));
+const customWorld=createRegionalWorld(42,getStage2LevelConfig('level-11',42).world,custom);assert.equal(customWorld.getIslandById('i_0_0').biome.ground,'#123456');assert.equal(customWorld.getIslandById('i_0_0').contentDomainId,'test-domain');assert.equal(customWorld.getIslandById('i_0_0').regionId,'test-region');
+console.log(JSON.stringify({islands,coastalSites:ports,profiles:[...profiles],sizes:sizes.size,regions:WORLD_REGIONS.length,scenes:Object.keys(STORY_SCENES).length,lines,choices:choiceIds.length,checks:['stable coordinates and coastline','all chapter identities','connected workshop/goal/premise land','multiple coastal ports','reject retired maps and preserve regional saves','event prerequisites','validated choices and skip','ending only after real proof']}));

@@ -12,7 +12,7 @@ async function saved(page){return decodeSave(await page.evaluate(()=>localStorag
 async function open(level=10,options={}){
  const context=await browser.newContext({viewport:{width:options.width||1440,height:options.height||960},reducedMotion:'reduce'}),page=await context.newPage();
  page.on('pageerror',e=>report.errors.push(e.message));page.on('response',r=>{if(r.status()>=400)report.resources.push(r.url());});
- await page.addInitScript(({save,language})=>{if(!sessionStorage.getItem('fixture-seeded')){localStorage.setItem('logic_game_save_1',JSON.stringify(save));sessionStorage.setItem('fixture-seeded','1');}localStorage.setItem('language',language);localStorage.setItem('completed_tutorials',JSON.stringify(Array.from({length:20},(_,i)=>i)));localStorage.setItem('logic-game-visual-settings-v1',JSON.stringify({quality:'standard',motion:'reduced'}));},{save:options.save||fixture(level,!!options.story,options.legacy?1:2),language:options.language||'zh'});
+ await page.addInitScript(({save,language})=>{if(!sessionStorage.getItem('fixture-seeded')){localStorage.setItem('logic_game_save_1',JSON.stringify(save));sessionStorage.setItem('fixture-seeded','1');}localStorage.setItem('language',language);localStorage.setItem('completed_tutorials',JSON.stringify(Array.from({length:20},(_,i)=>i)));localStorage.setItem('logic-game-visual-settings-v1',JSON.stringify({quality:'standard',motion:'reduced'}));},{save:options.save||fixture(level,!!options.story,2),language:options.language||'zh'});
  await page.goto(process.env.ART_URL||'http://127.0.0.1:4177/',{waitUntil:'networkidle',timeout:90000});await page.getByRole('button',{name:options.language==='en'?/^Continue/:/^继续游戏/}).click();await page.locator('canvas').first().waitFor();await frame(page);
  if(!options.story){const back=page.getByRole('button',{name:options.language==='en'?'Back':'返回',exact:true});if(await back.count())await back.first().click();}return {context,page};
 }
@@ -58,12 +58,12 @@ for(let chapter=2;chapter<=10;chapter++){
  await page.locator('.story-scene').waitFor({state:'detached'});pass(`chapter ${chapter}: all lines and choices readable, artwork decoded`);await context.close();
 }
 {
- const {context,page}=await open(15,{legacy:true});await page.locator('.world-atlas-launch').click();assert(await page.getByText('旧版航图',{exact:true}).count());pass('legacy save uses original terrain');await context.close();
+ const {context,page}=await open(15);await page.locator('.world-atlas-launch').click();assert.equal(await page.locator('.atlas-regions article').count(),6);pass('continued saves use regional atlas');await context.close();
 }
 {
  const save=fixture(19,false,2);save.metaProgress.farm.harvestedCount=1;save.metaProgress.completedIslandIds=['i_0_-36'];save.metaProgress.discoveredLandmarkIds=['landmark:haven','landmark:prism','landmark:rift'];save.metaProgress.proofDependencies={'i_0_-36':['i_0_-32']};
  const {getStage2LevelConfig}=require('../src/data/stage2.ts');const {ensureHarbors,putHarbor,harborSites,validateHarborSite}=require('../src/lib/harbors.ts');
- const config=getStage2LevelConfig('level-20',42,2),main=config.world.getIslandById(config.focusIslandId);save.metaProgress=ensureHarbors(save.metaProgress,config,[]);const site=harborSites(main).find(p=>validateHarborSite(main,save.metaProgress,[],p.x,p.y));save.metaProgress=putHarbor(save.metaProgress,main,[],site.x,site.y);
+ const config=getStage2LevelConfig('level-20',42),main=config.world.getIslandById(config.focusIslandId);save.metaProgress=ensureHarbors(save.metaProgress,config,[]);const site=harborSites(main).find(p=>validateHarborSite(main,save.metaProgress,[],p.x,p.y));save.metaProgress=putHarbor(save.metaProgress,main,[],site.x,site.y);
  const {context,page}=await open(19,{save});
  for(const scene of Object.values(STORY_SCENES).filter(scene=>scene.kind!=='main')){
   await page.locator('.story-journal-launch').click();await page.locator('.story-journal article').filter({has:page.getByText(scene.title.zh,{exact:true})}).getByRole('button',{name:'开始阅读',exact:true}).click();

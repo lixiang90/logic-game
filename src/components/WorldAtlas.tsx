@@ -14,7 +14,7 @@ export default function WorldAtlas({config,progress,language,landmarkId,onClose,
     const [selected,setSelected]=useState(landmarkId);
     const detailRef=useRef<HTMLElement>(null);
     useEffect(()=>{if(selected)detailRef.current?.scrollIntoView({block:'nearest'});},[selected]);
-    if(!atlas)return <ArtModal title={zh?'旧版航图':'Legacy chart'} closeLabel={zh?'关闭':'Close'} onClose={onClose}><p className="atlas-legacy">{zh?'这份存档保留原有地图和电路坐标。新建游戏可体验地域群岛；当前进度仍可继续游玩。':'This save keeps its original terrain and circuit coordinates. Start a new game to explore regional islands; this progress remains playable.'}</p></ArtModal>;
+    if(!atlas)return null;
     const b=atlas.bounds,poi=atlas.pointsOfInterest.find(p=>p.id===selected);
     const unlocked=new Set([...config.initialUnlockedIslandIds,...progress.unlockedIslandIds]);
     return <ArtModal wide className="world-atlas-dialog" title={zh?'群岛航图':'Archipelago atlas'} eyebrow="THE OPEN ARCHIPELAGO" closeLabel={zh?'关闭航图':'Close atlas'} onClose={onClose}>

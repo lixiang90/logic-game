@@ -192,8 +192,8 @@ export default function Home() {
 
   const currentLevel = levels[currentLevelIndex] as Level;
   const stage2Config = useMemo(
-    () => getStage2LevelConfig(currentLevel.id, 42, stage2Progress.worldVersion),
-    [currentLevel.id, stage2Progress.worldVersion]
+    () => getStage2LevelConfig(currentLevel.id, 42),
+    [currentLevel.id]
   );
   const activeStoryScene = useMemo(() => {
     if(manualStory)return STORY_SCENES[manualStory.id]??null;
@@ -754,7 +754,7 @@ export default function Home() {
     if (currentLevelIndex < levels.length - 1) {
       const nextLevelIndex = currentLevelIndex + 1;
       const nextLevel = levels[nextLevelIndex] as Level;
-      const nextStage2Config = getStage2LevelConfig(nextLevel.id, 42, stage2Progress.worldVersion);
+      const nextStage2Config = getStage2LevelConfig(nextLevel.id, 42);
 
       // Save progress before moving
       if (canvasRef.current) {

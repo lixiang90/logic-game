@@ -11,10 +11,10 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
 const { getStage2LevelConfig } = require('../src/data/stage2.ts');
 const { createDefaultStage2MetaProgress } = require('../src/types/stage2.ts');
 
-function fixture(levelIndex = 10, story = false, worldVersion = 1) {
+function fixture(levelIndex = 10, story = false, worldVersion = 2) {
     const meta = createDefaultStage2MetaProgress(42);
     meta.worldVersion = worldVersion;
-    const config = getStage2LevelConfig('level-' + (levelIndex + 1), 42, worldVersion);
+    const config = getStage2LevelConfig('level-' + (levelIndex + 1), 42);
     const now = Date.now();
     meta.coins = 500; meta.insight = 10; meta.quickMpUnlocked = true; meta.quickMpUses = 10;
     meta.seenStoryIds = Array.from({ length: 10 }, (_, i) => 'stage2-' + (i + 1)).filter(id => !story || id !== config?.storyId);

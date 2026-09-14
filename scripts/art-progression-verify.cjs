@@ -8,8 +8,8 @@ const {solveCircuitGoals}=require('../src/lib/circuit-solver.ts');
  const report={date:new Date().toISOString(),fixture:'saved, already-proved focus island; tests completion effects, not player proof discovery',checks:[],errors:[]};
  try{
  for(const index of [13,16,19]){
-  const worldVersion=process.env.ART_WORLD_VERSION==='2'?2:1;
-  const save=fixture(index,false,worldVersion); const config=getStage2LevelConfig('level-'+(index+1),42,worldVersion);
+  const worldVersion=2;
+  const save=fixture(index,false,worldVersion); const config=getStage2LevelConfig('level-'+(index+1),42);
   const island=config.world.getIslandById(config.focusIslandId),b=island.goalBounds;
   save.metaProgress.farm.unlocked=false;save.metaProgress.quickMpUnlocked=false;save.metaProgress.quickMpUses=0;save.metaProgress.collectedTheorems={};
   const nodes=[{id:'proof-fixture',type:'premise',subType:island.goalFormula,customLabel:island.goalFormula,x:b.x-8,y:b.y-2,w:6,h:6,locked:false},

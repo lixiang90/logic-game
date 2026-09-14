@@ -47,6 +47,17 @@ export class LegacyStage2SaveError extends Error {
     constructor() { super('The island map has changed. Only legacy Stage 1 saves can be imported.'); }
 }
 
+// Old island coordinates cannot be loaded onto the regional world. Check all
+// stored chapters, including restart snapshots, even when Stage 1 is selected.
+const hasIncompatibleStage2 = (data: Partial<SaveData>): boolean => {
+    const hasStage2 = (data.levelIndex ?? 0) >= 10 ||
+        Object.keys(data.levelStates ?? {}).some(key => Number(key) >= 10) ||
+        Object.keys(data.levelStartStates ?? {}).some(key => Number(key) >= 10);
+    return hasStage2 && (data.version !== 3 || data.metaProgress?.worldVersion !== 2 ||
+        Object.entries(data.levelStartStates ?? {}).some(([key, snapshot]) =>
+            Number(key) >= 10 && snapshot.metaProgress?.worldVersion !== 2));
+};
+
 // UTF-8 before Base64 preserves Chinese notes, theorem names and emoji.
 export const encodeSave = (data: SaveData): string => {
     const bytes = new TextEncoder().encode(JSON.stringify({ ...data, version: 3 }));
@@ -69,7 +80,7 @@ export const decodeSave = (text: string): SaveData => {
     if (data.version !== undefined && data.version !== 1 && data.version !== 2 && data.version !== 3) {
         throw new Error('Unsupported save version');
     }
-    if (data.version !== 3 && (data.levelIndex >= 10 || Object.keys(data.levelStates).some(key => Number(key) >= 10))) {
+    if (hasIncompatibleStage2(data)) {
         throw new LegacyStage2SaveError();
     }
     for (const state of Object.values(data.levelStates) as LevelState[]) {
@@ -91,17 +102,17 @@ export const SaveSystem = {
     }),
 
     normalizeSaveData: (data: Partial<SaveData> | null): SaveData | null => {
-        if (!data) return null;
+        if (!data || hasIncompatibleStage2(data)) return null;
         const baseSeed = 42; // Fixed map seed for everyone
         const defaultMeta = createDefaultStage2MetaProgress(baseSeed);
         const savedMeta = data.metaProgress;
-        // Future worlds must never be silently interpreted as the legacy layout.
+        // Stage 1 saves can enter the new world; unknown future versions cannot.
         const supportedMeta=(meta?:Stage2MetaProgress)=>(meta?.worldVersion===undefined||meta.worldVersion===1||meta.worldVersion===2)
             && (meta?.story?.version===undefined||meta.story.version===1);
         if(!supportedMeta(savedMeta)||Object.values(data.levelStartStates??{}).some(snapshot=>!supportedMeta(snapshot.metaProgress)))return null;
         const normalizeMeta = (meta?: Stage2MetaProgress): Stage2MetaProgress => ({
             ...defaultMeta, ...meta, mapSeed: baseSeed,
-            worldVersion: meta?.worldVersion === 2 ? 2 : 1,
+            worldVersion: 2,
             discoveredLandmarkIds: Array.isArray(meta?.discoveredLandmarkIds) ? [...new Set(meta.discoveredLandmarkIds.filter(id=>typeof id==='string'))] : [],
             story: normalizeStoryProgress(meta?.story),
             plannedRoutes: meta?.plannedRoutes ?? [],
