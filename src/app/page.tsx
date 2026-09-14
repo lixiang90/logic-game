@@ -8,6 +8,10 @@ import DraggableModal from "@/components/DraggableModal";
 import VariantSelector from "@/components/VariantSelector";
 import SettingsModal from "@/components/SettingsModal";
 import HarborModal from '@/components/HarborModal';
+import WorldAtlas from '@/components/WorldAtlas';
+import StoryJournal from '@/components/StoryJournal';
+import { STORY_SCENES } from '@/data/story';
+import { availableStories,chooseStoryOption,finishStory } from '@/lib/story-engine';
 import { buyVirtualChip, consumeVirtualCopies, shippingIslands, theoremTool, type ShippingRoute } from '@/lib/shipping';
 import '@/styles/shipping.css';
 import Stage2Panel from "@/components/Stage2Panel";
@@ -176,6 +180,9 @@ export default function Home() {
   const [showLogicExchange, setShowLogicExchange] = useState(false);
   const [harbor, setHarbor] = useState<{ islandId: string; theoremId?: string; portId?: string } | null>(null);
   const [portBuild, setPortBuild] = useState<{ islandId: string; portId?: string } | null>(null);
+  const [atlasView,setAtlasView] = useState<{landmarkId?:string}|null>(null);
+  const [showJournal,setShowJournal]=useState(false);
+  const [manualStory,setManualStory]=useState<{id:string;replay:boolean}|null>(null);
   const [shipping, setShipping] = useState<{ routes: ShippingRoute[]; pending: string[] }>({ routes: [], pending: [] });
   const handleShippingChange = useCallback((routes: ShippingRoute[], pending: string[]) => {
     setShipping(previous => JSON.stringify(previous) === JSON.stringify({ routes, pending }) ? previous : { routes, pending });
@@ -185,14 +192,20 @@ export default function Home() {
 
   const currentLevel = levels[currentLevelIndex] as Level;
   const stage2Config = useMemo(
-    () => getStage2LevelConfig(currentLevel.id, 42),
-    [currentLevel.id]
+    () => getStage2LevelConfig(currentLevel.id, 42, stage2Progress.worldVersion),
+    [currentLevel.id, stage2Progress.worldVersion]
   );
   const activeStoryScene = useMemo(() => {
+    if(manualStory)return STORY_SCENES[manualStory.id]??null;
     const storyId = stage2Config?.storyId;
     if (!storyId || stage2Progress.seenStoryIds.includes(storyId)) return null;
     return STAGE2_STORIES[storyId] ?? null;
-  }, [stage2Config?.storyId, stage2Progress.seenStoryIds]);
+  }, [stage2Config?.storyId, stage2Progress.seenStoryIds,manualStory]);
+  const unreadStories=useMemo(()=>stage2Config?availableStories(stage2Progress,stage2Config.chapterLevel).filter(scene=>scene.kind!=='main'&&!stage2Progress.seenStoryIds.includes(scene.id)).length:0,[stage2Config,stage2Progress]);
+  const handleStoryRead=useCallback((index:number)=>{
+    const id=activeStoryScene?.id;if(!id||manualStory?.replay)return;
+    setStage2Progress(previous=>previous.story.reading[id]===index?previous:{...previous,story:{...previous.story,reading:{...previous.story.reading,[id]:index}}});
+  },[activeStoryScene?.id,manualStory?.replay]);
   const stage2GoalIslands = useMemo(() => {
     if (!stage2Config) return [];
     return stage2Config.goalIslandIds
@@ -287,7 +300,7 @@ export default function Home() {
     return tileSet;
   }, [effectiveUnlockedIslandIds, stage2Config]);
 
-  const readTheoremUiStateFromStorage = (): Pick<SaveData, 'theoremLibrary' | 'theoremToolbarPins' | 'blueprints'> => {
+  const readTheoremUiStateFromStorage = useCallback((): Pick<SaveData, 'theoremLibrary' | 'theoremToolbarPins' | 'blueprints'> => {
     if (typeof window === 'undefined') return {};
     let theoremLibrary: SaveData['theoremLibrary'] | undefined;
     let theoremToolbarPins: SaveData['theoremToolbarPins'] | undefined;
@@ -321,9 +334,9 @@ export default function Home() {
     } catch {
     }
     return { theoremLibrary, theoremToolbarPins, blueprints };
-  };
+  },[]);
 
-  const buildSaveData = (
+  const buildSaveData = useCallback((
     levelIndex: number,
     levelStates: Record<number, LevelState>,
     metaProgress: Stage2MetaProgress,
@@ -336,7 +349,7 @@ export default function Home() {
     metaProgress,
     ...readTheoremUiStateFromStorage(),
     levelStartStates,
-  });
+  }),[readTheoremUiStateFromStorage]);
 
   const applyTheoremLibraryFromSave = (saved: SaveData) => {
     if (typeof window === 'undefined') return;
@@ -637,6 +650,19 @@ export default function Home() {
     }
   }, [showSaveMenu]);
 
+  // Reading and discoveries survive closing between periodic circuit saves.
+  useEffect(()=>{
+    if(gameState!=='playing'||pendingLoad||!stage2Config)return;
+    const persist=()=>{
+      if(!canvasRef.current)return;
+      const existing=SaveSystem.loadAutoSave()||SaveSystem.createEmptySave();
+      SaveSystem.autoSave(buildSaveData(currentLevelIndex,{...existing.levelStates,[currentLevelIndex]:canvasRef.current.getState()},stage2Progress,existing.levelStartStates??{}));
+    };
+    const timer=window.setTimeout(persist,350);
+    window.addEventListener('pagehide',persist);
+    return ()=>{clearTimeout(timer);window.removeEventListener('pagehide',persist);};
+  },[gameState,currentLevelIndex,stage2Config,stage2Progress,pendingLoad,buildSaveData]);
+
   // Auto-save every 30 seconds
   useEffect(() => {
     if (gameState !== 'playing') return;
@@ -662,7 +688,7 @@ export default function Home() {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [gameState, currentLevelIndex, stage2Progress]);
+  }, [gameState, currentLevelIndex, stage2Progress,buildSaveData]);
 
   // Handle pending state load
   useEffect(() => {
@@ -728,7 +754,7 @@ export default function Home() {
     if (currentLevelIndex < levels.length - 1) {
       const nextLevelIndex = currentLevelIndex + 1;
       const nextLevel = levels[nextLevelIndex] as Level;
-      const nextStage2Config = getStage2LevelConfig(nextLevel.id, 42);
+      const nextStage2Config = getStage2LevelConfig(nextLevel.id, 42, stage2Progress.worldVersion);
 
       // Save progress before moving
       if (canvasRef.current) {
@@ -1215,7 +1241,7 @@ export default function Home() {
   return (
     <main className={`game-shell ${stage2Config ? 'game-world' : 'game-atelier'} w-screen h-screen overflow-hidden relative`}>
       <InfiniteCanvas 
-        key={stage2Config ? `${stage2Config.levelId}-42` : currentLevel.id}
+        key={stage2Config ? `${stage2Config.levelId}-42-v${stage2Progress.worldVersion}` : currentLevel.id}
         ref={canvasRef}
         activeTool={activeTool} 
         selectMode={selectMode}
@@ -1227,6 +1253,7 @@ export default function Home() {
         onLevelComplete={handleLevelComplete}
         onStage2IslandComplete={handleStage2IslandComplete}
         onOpenPort={(islandId, theoremId, portId) => setHarbor({ islandId, theoremId, portId })}
+        onInspectLandmark={landmarkId=>setAtlasView({landmarkId})}
         portBuild={portBuild}
         onCancelPortBuild={() => setPortBuild(null)}
         onPlacePort={(x, y) => {
@@ -1258,12 +1285,13 @@ export default function Home() {
           key={activeStoryScene.id}
           scene={activeStoryScene}
           language={language}
-          onComplete={() => setStage2Progress((previous) => ({
-            ...previous,
-            seenStoryIds: previous.seenStoryIds.includes(activeStoryScene.id)
-              ? previous.seenStoryIds
-              : [...previous.seenStoryIds, activeStoryScene.id],
-          }))}
+          choices={stage2Progress.story.choices}
+          initialIndex={manualStory?.replay?0:stage2Progress.story.reading[activeStoryScene.id]??0}
+          replay={manualStory?.replay}
+          haloCracked={stage2Progress.seenStoryIds.includes('stage2-9')}
+          onRead={handleStoryRead}
+          onChoice={(choiceId,optionId)=>setStage2Progress(previous=>chooseStoryOption(previous,activeStoryScene.id,choiceId,optionId))}
+          onComplete={skipped=>{if(!manualStory?.replay)setStage2Progress(previous=>finishStory(previous,activeStoryScene.id,skipped));setManualStory(null);}}
         />
       )}
 
@@ -1311,6 +1339,12 @@ export default function Home() {
         onUse={chip => { setPortBuild(null); setActiveTool(theoremTool(chip)); setHarbor(null); }}
       />}
 
+      {stage2Config && atlasView && <WorldAtlas config={stage2Config} progress={stage2Progress} language={language} landmarkId={atlasView.landmarkId}
+        onClose={()=>setAtlasView(null)}
+        onOverview={()=>{setActiveTool(null);setPortBuild(null);canvasRef.current?.showWorldOverview();setAtlasView(null);}}
+        onTravel={(x,y,zoom)=>{setActiveTool(null);setPortBuild(null);canvasRef.current?.jumpToWorldPoint(x,y,zoom);setAtlasView(null);}}
+        onDiscover={id=>setStage2Progress(previous=>previous.discoveredLandmarkIds.includes(id)?previous:{...previous,discoveredLandmarkIds:[...previous.discoveredLandmarkIds,id]})}
+      />}
       {stage2Config && (
         <Stage2Panel
           config={stage2Config}
@@ -1327,6 +1361,9 @@ export default function Home() {
         />
       )}
 
+      {stage2Config && <button className="world-atlas-launch art-button" onClick={()=>setAtlasView({})}>{language==='zh'?'◈ 航图':'◈ Atlas'}</button>}
+      {stage2Config && <button className="story-journal-launch art-button" onClick={()=>setShowJournal(true)}>{language==='zh'?'◇ 手记':'◇ Journal'}{unreadStories>0?` · ${unreadStories}`:''}</button>}
+      {stage2Config && showJournal && !activeStoryScene && <StoryJournal progress={stage2Progress} chapter={stage2Config.chapterLevel} language={language} onClose={()=>setShowJournal(false)} onOpen={(id,replay)=>{setShowJournal(false);setManualStory({id,replay});}}/>}
       <VariantSelector 
         activeTool={activeTool} 
         onSelectVariant={handleToolSetType} 
@@ -1556,6 +1593,7 @@ export default function Home() {
                 : stage2Config.introText}
             </p>
             <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
+              {stage2Config.world.atlas&&<p className="mb-3 text-xs leading-relaxed text-slate-300">{language==='zh'?'滚轮放大到岛内接线，WASD 或中键平移。航图可以定位地域与航标，相处和探索事件会收进手记。':'Zoom in with the wheel to build circuits; pan with WASD or the middle mouse button. Use the atlas to find regions and waymarks, and the journal to read optional scenes.'}</p>}
               <div className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('mainIsland')}</div>
               <div className="mt-1 text-lg font-bold text-white">
                 {stage2Config.world.getIslandById(stage2Config.focusIslandId)?.name}
@@ -1633,7 +1671,7 @@ export default function Home() {
         theoremLibraryOpen={showTheoremLibrary}
         onTheoremLibraryOpenChange={setShowTheoremLibrary}
       />
-      {!activeStoryScene && !showStage2Intro && !showLogicFarm && !showLogicExchange && !harbor && !showSettings && <TutorialOverlay />}
+      {!activeStoryScene && !showJournal && !atlasView && !showStage2Intro && !showLogicFarm && !showLogicExchange && !harbor && !showSettings && <TutorialOverlay />}
     </main>
   );
 }

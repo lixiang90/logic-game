@@ -1,5 +1,6 @@
 
 import { NodeData, Wire } from '@/types/game';
+import { normalizeStoryProgress } from './story-engine';
 import { Stage2MetaProgress, createDefaultStage2MetaProgress } from '@/types/stage2';
 
 export interface LevelState {
@@ -94,8 +95,15 @@ export const SaveSystem = {
         const baseSeed = 42; // Fixed map seed for everyone
         const defaultMeta = createDefaultStage2MetaProgress(baseSeed);
         const savedMeta = data.metaProgress;
+        // Future worlds must never be silently interpreted as the legacy layout.
+        const supportedMeta=(meta?:Stage2MetaProgress)=>(meta?.worldVersion===undefined||meta.worldVersion===1||meta.worldVersion===2)
+            && (meta?.story?.version===undefined||meta.story.version===1);
+        if(!supportedMeta(savedMeta)||Object.values(data.levelStartStates??{}).some(snapshot=>!supportedMeta(snapshot.metaProgress)))return null;
         const normalizeMeta = (meta?: Stage2MetaProgress): Stage2MetaProgress => ({
             ...defaultMeta, ...meta, mapSeed: baseSeed,
+            worldVersion: meta?.worldVersion === 2 ? 2 : 1,
+            discoveredLandmarkIds: Array.isArray(meta?.discoveredLandmarkIds) ? [...new Set(meta.discoveredLandmarkIds.filter(id=>typeof id==='string'))] : [],
+            story: normalizeStoryProgress(meta?.story),
             plannedRoutes: meta?.plannedRoutes ?? [],
             proofDependencies: meta?.proofDependencies ?? {},
             harbors: meta?.harbors ?? {},

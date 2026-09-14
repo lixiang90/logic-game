@@ -241,7 +241,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'tut-l11-wires': 'Wire colors matter:\n• Blue = Formula (data)\n• Yellow = Provable (⊢)\n\nPress T to toggle wire type. Wrong connections will flash.',
         'tut-l11-finish': 'You are ready.\nExplore support islands, collect useful theorems, then return to the Main Island and prove the goal!',
 
-        'stage2-intro-text': 'The world extends infinitely. Unlock islands, prove goals, and collect theorem chips.',
+        'stage2-intro-text': 'Explore the archipelago, unlock islands, prove goals, and collect theorem chips. Optional stories await in your travel journal.',
         'stage2-island-desc-main': 'Main objective island.',
         'stage2-island-desc-support': 'Support theorem island.',
 
@@ -421,7 +421,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'tut-l11-wires': '导线颜色很重要：\n• 蓝色：普通公式（数据）\n• 黄色：可证命题（⊢）\n\n按 T 键切换导线颜色。连接错误时导线/端口会闪烁提示。',
         'tut-l11-finish': '准备就绪。\n先探索辅助岛收集有用的定理，再回到主目标岛完成最终证明！',
 
-        'stage2-intro-text': '世界会无限延伸。解锁岛屿、证明目标，并收集定理芯片。',
+        'stage2-intro-text': '探索群岛，解锁岛屿、证明目标，并收集定理芯片。相处与探索的新故事会收进航行手记。',
         'stage2-island-desc-main': '主目标岛。',
         'stage2-island-desc-support': '辅助定理岛。',
 

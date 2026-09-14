@@ -18,7 +18,7 @@ import { useVisualSettings } from '@/contexts/VisualSettingsContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { ART_THEME } from '@/lib/art-theme';
 import { drawCircuitItem, fitLabel, resolveDisplayValues } from '@/lib/render/circuit-art';
-import { CHAPTER_LANDMARKS, drawIslandGround, drawLandmark, drawStarWorkshop, worldLod } from '@/lib/render/world-art';
+import { CHAPTER_LANDMARKS, drawIslandGround, drawLandmark, drawStarWorkshop, worldLod, drawRegionChart,showIslandTheorem } from '@/lib/render/world-art';
 
 interface Point {
     x: number;
@@ -53,6 +53,7 @@ interface InfiniteCanvasProps {
     portBuild?: { islandId: string; portId?: string } | null;
     onPlacePort?: (x: number, y: number) => void;
     onCancelPortBuild?: () => void;
+    onInspectLandmark?: (id: string) => void;
     onShippingChange?: (routes: ShippingRoute[], pending: string[]) => void;
     stage2Config?: Stage2LevelConfig;
     stage2Progress?: Stage2MetaProgress;
@@ -66,6 +67,8 @@ export interface InfiniteCanvasHandle {
     jumpToStage2Island: (islandId: string) => void;
     showShippingOverview: () => void;
     jumpToHarbor: (islandId: string, portId?: string) => void;
+    showWorldOverview: () => void;
+    jumpToWorldPoint: (x: number, y: number, zoom?: number) => void;
     undo: () => boolean;
     redo: () => boolean;
     copySelection: () => number;
@@ -96,6 +99,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     onStage2IslandComplete,
     onOpenPort,
     portBuild, onPlacePort, onCancelPortBuild,
+    onInspectLandmark,
     onShippingChange,
     stage2Config,
     stage2Progress,
@@ -118,6 +122,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             string,
             {
                 tilesPath: Path2D;
+                tilesReady:boolean;
                 outlinePath: Path2D;
                 coarseLabel: string;
             }
@@ -150,7 +155,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
     const GRID_SIZE = 25;
     const BLOCK_STRIDE = 16;
     const SUPER_BLOCK_STRIDE = 128;
-    const MIN_SCALE = 0.1;
+    const MIN_SCALE = stage2Config?.world.atlas ? 0.003 : 0.1;
     const MAX_SCALE = 5.0;
     const LOD_THRESHOLD_SMALL = 0.4;
     const LOD_THRESHOLD_BLOCK = 0.2;
@@ -584,9 +589,17 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             const right = Math.max(...islands.map(island => (island.mapBounds.x + island.mapBounds.w) * GRID_SIZE));
             const top = Math.min(...islands.map(island => island.mapBounds.y * GRID_SIZE));
             const bottom = Math.max(...islands.map(island => (island.mapBounds.y + island.mapBounds.h) * GRID_SIZE + 800));
-            const targetScale = Math.max(.1, Math.min(.5, (window.innerWidth - 100) / (right - left), (window.innerHeight - 310) / (bottom - top)));
+            const targetScale = Math.max(MIN_SCALE, Math.min(.5, (window.innerWidth - 100) / (right - left), (window.innerHeight - 310) / (bottom - top)));
             setScale(targetScale);
             setOffset({ x: window.innerWidth / 2 - (left + right) / 2 * targetScale, y: 150 - top * targetScale });
+        },
+        showWorldOverview: () => {
+            const b=stage2Config?.world.atlas?.bounds;if(!b)return;
+            const zoom=Math.max(MIN_SCALE,Math.min(.1,(window.innerWidth-(window.innerWidth>900?540:40))/(b.w*GRID_SIZE),(window.innerHeight-300)/(b.h*GRID_SIZE)));
+            setScale(zoom);setOffset({x:window.innerWidth*.5-(b.x+b.w/2)*GRID_SIZE*zoom,y:window.innerHeight*.48-(b.y+b.h/2)*GRID_SIZE*zoom});
+        },
+        jumpToWorldPoint: (x:number,y:number,zoom=.17) => {
+            setScale(zoom);setOffset({x:window.innerWidth*.5-x*GRID_SIZE*zoom,y:window.innerHeight*.52-y*GRID_SIZE*zoom});
         },
         jumpToHarbor: (islandId: string, portId?: string) => {
             const island = stage2Config?.world.getIslandById(islandId);
@@ -604,7 +617,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             if (!island) return;
             const islandCenterX = (island.mapBounds.x + island.mapBounds.w / 2) * GRID_SIZE;
             const islandCenterY = (island.mapBounds.y + island.mapBounds.h / 2) * GRID_SIZE;
-            const targetScale = 1;
+            const targetScale = stage2Config.world.atlas?Math.max(.045,Math.min(.32,(window.innerWidth-(window.innerWidth>900?440:40))/(island.mapBounds.w*GRID_SIZE),(window.innerHeight-300)/(island.mapBounds.h*GRID_SIZE))):1;
             requestAnimationFrame(() => {
                 setScale(targetScale);
                 setOffset({
@@ -729,7 +742,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             setSelectedNodeIds(new Set(pastedNodes.map((node) => node.id)));
             return pastedNodes.length;
         },
-    }), [GRID_SIZE, nodes, scale, wires, initialState, stage2Config, stage2Progress, selectedNodeIds, activeNodeIds, focusMode, offset, makeSelectionState, onDuplicateNodes, applyNodeLayout, stepHistory]);
+    }), [GRID_SIZE, MIN_SCALE, nodes, scale, wires, initialState, stage2Config, stage2Progress, selectedNodeIds, activeNodeIds, focusMode, offset, makeSelectionState, onDuplicateNodes, applyNodeLayout, stepHistory]);
 
     useEffect(() => {
         if (!stage2Config) {
@@ -742,7 +755,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         const focusIsland = stage2Config.world.getIslandById(stage2Config.focusIslandId);
         if (!focusIsland) return;
         
-        const targetScale = 1; // Default scale where grid is clearly visible
+        const targetScale = stage2Config.world.atlas?Math.max(.045,Math.min(.32,(window.innerWidth-(window.innerWidth>900?440:40))/(focusIsland.mapBounds.w*GRID_SIZE),(window.innerHeight-300)/(focusIsland.mapBounds.h*GRID_SIZE))):1;
         const islandCenterX = (focusIsland.mapBounds.x + focusIsland.mapBounds.w / 2) * GRID_SIZE;
         const islandCenterY = (focusIsland.mapBounds.y + focusIsland.mapBounds.h / 2) * GRID_SIZE;
         const raf = requestAnimationFrame(() => {
@@ -823,7 +836,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 edgeMap.set(key, { ax, ay, bx, by });
             };
 
-            island.buildTiles.forEach((tile) => {
+            if(island.coastlineEdges)island.coastlineEdges.forEach(edge=>addOrToggleEdge(edge.ax,edge.ay,edge.bx,edge.by));
+            else island.buildTiles.forEach((tile) => {
                 const x0 = tile.x;
                 const y0 = tile.y;
                 const x1 = tile.x + 1;
@@ -921,15 +935,18 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
         const getIslandCachedArtifacts = (island: Stage2IslandDefinition) => {
             const cached = stage2IslandRenderCacheRef.current.get(island.id);
-            if (cached) return cached;
+            if (cached) {
+                if(lod==='tiles'&&!cached.tilesReady){island.buildTiles.forEach(tile=>cached.tilesPath.rect(tile.x*GRID_SIZE,tile.y*GRID_SIZE,GRID_SIZE,GRID_SIZE));cached.tilesReady=true;}
+                return cached;
+            }
 
             const tilesPath = new Path2D();
-            island.buildTiles.forEach((tile) => {
+            if(lod==='tiles')island.buildTiles.forEach((tile) => {
                 tilesPath.rect(tile.x * GRID_SIZE, tile.y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
             });
             const outlinePath = buildIslandOutlinePath(island);
             const coarseLabel = getCoarseLabel(island);
-            const result = { tilesPath, outlinePath, coarseLabel };
+            const result = { tilesPath, tilesReady:lod==='tiles',outlinePath, coarseLabel };
             if (stage2IslandRenderCacheRef.current.size >= 96) stage2IslandRenderCacheRef.current.clear();
             stage2IslandRenderCacheRef.current.set(island.id, result);
             return result;
@@ -961,11 +978,11 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 return;
             }
             const chapter = island.category === 'main' ? CHAPTER_LANDMARKS[island.name ?? ''] : undefined;
-            if (chapter) {
+            if (chapter && (!stage2Config.world.atlas || scale>=.09)) {
                 const size = (lod === 'coarse' ? 72 : lod === 'markers' ? 58 : 34) / scale;
                 drawLandmark(ctx, chapter, centerX, y * GRID_SIZE - size * .55 - 22 / scale, size, solved, low);
             }
-            if (!island.name) return;
+            if (!island.name || !showIslandTheorem(island,scale,!!stage2Config.world.atlas)) return;
             ctx.save();
             const font = lod === 'tiles' ? 12 : 14;
             const labelY = lod === 'coarse' ? (y + h * .52) * GRID_SIZE : (y - .6) * GRID_SIZE;
@@ -985,7 +1002,8 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
             }
             ctx.restore();
         });
-    }, [stage2Config, scale, quality, language, offset.x, offset.y, stage2Progress?.completedIslandIds, stage2UnlockedIslandIdSet, selectedStage2Island?.id]);
+        if(stage2Config.world.atlas) drawRegionChart(ctx,stage2Config.world.atlas,scale,language==='zh',stage2Progress?.discoveredLandmarkIds??[]);
+    }, [stage2Config, scale, quality, language, offset.x, offset.y, stage2Progress?.completedIslandIds, stage2Progress?.discoveredLandmarkIds, stage2UnlockedIslandIdSet, selectedStage2Island?.id]);
 
     const drawGoalBlock = useCallback((
         ctx: CanvasRenderingContext2D,
@@ -1033,7 +1051,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
         const backdropKey = [width, height, pixelRatioRef.current, offset.x, offset.y, scale, quality, language,
             stage2Config?.levelId, stage2Progress?.mapSeed, selectedStage2Island?.id,
-            stage2Progress?.completedIslandIds.join(','), [...stage2UnlockedIslandIdSet].join(',')].join('|');
+            stage2Progress?.completedIslandIds.join(','),stage2Progress?.discoveredLandmarkIds?.join(','), [...stage2UnlockedIslandIdSet].join(',')].join('|');
         if (!backdropRef.current || backdropRef.current.key !== backdropKey) {
             const surface = backdropRef.current?.canvas ?? document.createElement('canvas');
             surface.width = canvas.width; surface.height = canvas.height;
@@ -1144,7 +1162,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
         ctx.clearRect(0, 0, width, height);
         if (backdropRef.current) ctx.drawImage(backdropRef.current.canvas, 0, 0, width, height);
         ctx.save(); ctx.translate(offset.x, offset.y); ctx.scale(scale, scale);
-        if (stage2Config && stage2Progress) drawShipping(ctx, stage2Config, harborIslands, shippingRoutes, stage2Progress, scale, animationTimeRef.current, !reducedMotion && quality !== 'low', language === 'zh', !portBuild, shippingPanelRects);
+        if (stage2Config && stage2Progress) drawShipping(ctx, stage2Config, harborIslands, shippingRoutes, stage2Progress, scale, animationTimeRef.current, !reducedMotion && quality !== 'low', language === 'zh', !portBuild && scale>=.09, shippingPanelRects);
         const visibleBounds = { x: -offset.x / scale / GRID_SIZE - 3, y: -offset.y / scale / GRID_SIZE - 3,
             w: width / scale / GRID_SIZE + 6, h: height / scale / GRID_SIZE + 6 };
         if (!stage2Config && goalFormula) {
@@ -1482,16 +1500,23 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
     // Event Handlers
     const handleMouseDown = (e: React.MouseEvent) => {
+        if (e.button === 1 || (e.button===2 && portBuild)) {
+            e.preventDefault();setIsDragging(true);setLastMousePos({x:e.clientX,y:e.clientY});return;
+        }
         // Left click
         if (e.button === 0) {
             // Calculate grid pos immediately to ensure accuracy
             const worldX = (e.clientX - offset.x) / scale;
             const worldY = (e.clientY - offset.y) / scale;
+            if(!activeTool && !portBuild && stage2Config?.world.atlas) {
+                const poi=stage2Config.world.atlas.pointsOfInterest.find(p=>Math.hypot((p.position.x*GRID_SIZE-worldX)*scale,(p.position.y*GRID_SIZE-worldY)*scale)<20);
+                if(poi){onInspectLandmark?.(poi.id);return;}
+            }
             if (portBuild) { onPlacePort?.(Math.round(worldX/GRID_SIZE), Math.round(worldY/GRID_SIZE)); return; }
             if (!activeTool && stage2Progress) for (const island of harborIslands) {
                 for (const port of islandHarbors(island, stage2Progress)) {
                     const arrivals = shippingRoutes.filter(r => r.targetIslandId === island.id && r.targetPortId === port.id);
-                    const panel = (shippingPanelRects.get(port.id) ?? []).findIndex((b: {x:number;y:number;w:number;h:number}) => worldX >= b.x && worldX <= b.x+b.w && worldY >= b.y && worldY <= b.y+b.h);
+                    const panel = scale>=.09 ? (shippingPanelRects.get(port.id) ?? []).findIndex((b: {x:number;y:number;w:number;h:number}) => worldX >= b.x && worldX <= b.x+b.w && worldY >= b.y && worldY <= b.y+b.h) : -1;
                     const b = harborBounds(port);
                     if (panel >= 0 || boundsOverlap(b, {x:worldX/GRID_SIZE,y:worldY/GRID_SIZE,w:.001,h:.001})) {
                         onOpenPort?.(island.id, panel >= 0 ? arrivals[panel]?.theoremId : undefined, port.id); return;
@@ -1499,7 +1524,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
                 }
                 const map=island.mapBounds;
                 const labelWidth=Math.max(100,Math.min(240,map.w*GRID_SIZE*scale*.84));
-                const labelHit=worldLod(scale)==='coarse' && Math.abs(worldX-(map.x+map.w/2)*GRID_SIZE)<=labelWidth/(2*scale) && Math.abs(worldY-(map.y+map.h*.52)*GRID_SIZE)<=70/scale;
+                const labelHit=showIslandTheorem(island,scale,!!stage2Config?.world.atlas) && worldLod(scale)==='coarse' && Math.abs(worldX-(map.x+map.w/2)*GRID_SIZE)<=labelWidth/(2*scale) && Math.abs(worldY-(map.y+map.h*.52)*GRID_SIZE)<=70/scale;
                 if (labelHit || (island.goalBounds && boundsOverlap(island.goalBounds, {x:worldX/GRID_SIZE,y:worldY/GRID_SIZE,w:.001,h:.001}))) {
                     onOpenPort?.(island.id, island.rewardTheorem?.theoremId); return;
                 }
@@ -1896,6 +1921,7 @@ const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(({
 
     const handleContextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
+        if(portBuild)return;
         
         // If there are selected nodes (box select mode), delete all selected
         if (selectedNodeIds.size > 0) {

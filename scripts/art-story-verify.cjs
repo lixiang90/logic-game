@@ -45,11 +45,11 @@ async function inspectLine(page, sceneId, lineIndex, language = 'zh') {
     const background = images.find(image => image.className.includes('story-scene__background'));
     const portrait = images.find(image => image.className.includes('story-scene__portrait'));
     assert.ok(background.src.endsWith(art.background), sceneId + ' wrong scenic location');
-    assert.ok(portrait.src.endsWith(AURELIA_PORTRAITS[art.lines[lineIndex].expression]), sceneId + ' wrong expression');
+    assert.ok(portrait.src.endsWith(AURELIA_PORTRAITS[line.expression??'calm']), sceneId + ' wrong expression');
     const rendered = await page.locator('.story-dialogue__text').innerText();
     assert.equal(rendered.trim(), line[language], sceneId + ' dialogue changed');
     const halo = await page.locator('.story-scene__portrait-stage').getAttribute('data-halo');
-    assert.equal(halo, art.lines[lineIndex].halo);
+    assert.equal(halo, line.halo??(STAGE2_STORIES[sceneId].chapter>=9?'cracked':'intact'));
     const result = { sceneId, lineIndex, language, background: background.src, portrait: portrait.src, halo, imagesDecoded: images.length };
     report.lines.push(result);
     return result;
@@ -76,6 +76,7 @@ async function finishIntoMap(page, sceneId, language = 'zh') {
                 const lines = STAGE2_STORIES[sceneId].lines;
                 for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
                     await inspectLine(page, sceneId, lineIndex);
+                    if(lines[lineIndex].choice)await page.locator('.story-options button').first().click();
                     if (chapter >= 9 && lineIndex === lines.length - 1) await page.screenshot({ path: path.join(output, `chapter-${chapter}-scene.png`) });
                     if (lineIndex < lines.length - 1) await page.locator('.story-dialogue__continue').click();
                 }
@@ -111,7 +112,7 @@ async function finishIntoMap(page, sceneId, language = 'zh') {
                     await gate.waitFor({ state: 'visible' });
                     assert.ok((await gate.innerText()).includes('证明完成'));
                     const style = await gate.evaluate(element => getComputedStyle(element).backgroundImage);
-                    assert.ok(style.includes('/logicgame-test/art/scenes/second-gate.webp'));
+                    assert.ok(style.includes('/art/scenes/second-gate.webp'));
                     await page.screenshot({ path: path.join(output, 'chapter-10-completed-gate.png') });
                 } else {
                     assert.equal(await gate.count(), 0);

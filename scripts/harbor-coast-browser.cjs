@@ -5,12 +5,13 @@ const {getStage2LevelConfig}=require('../src/data/stage2.ts');
 const {encodeSave,decodeSave}=require('../src/lib/saveSystem.ts');
 const {ensureHarbors,islandHarbors,harborSites,harborAnchor,validateHarborSite}=require('../src/lib/harbors.ts');
 const {islandPremises}=require('../src/lib/render/theorem-ribbon.ts');
-const dir=path.resolve('artifacts/harbor-coast');fs.mkdirSync(dir,{recursive:true});
+const worldVersion=process.env.ART_WORLD_VERSION==='2'?2:1;
+const dir=path.resolve(worldVersion===2?'artifacts/harbor-coast-regional':'artifacts/harbor-coast');fs.mkdirSync(dir,{recursive:true});
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.ART_BROWSER});
  const errors=[],checks=[];
- const config=getStage2LevelConfig('level-16',42),main=config.world.getIslandById(config.focusIslandId),sources=config.goalIslandIds.filter(id=>id!==main.id);
- const save=fixture(15);save.metaProgress=ensureHarbors(save.metaProgress,config,[]);
+ const config=getStage2LevelConfig('level-16',42,worldVersion),main=config.world.getIslandById(config.focusIslandId),sources=config.goalIslandIds.filter(id=>id!==main.id);
+ const save=fixture(15,false,worldVersion);save.metaProgress=ensureHarbors(save.metaProgress,config,[]);
  save.metaProgress.plannedRoutes=sources.slice(0,3).map(sourceIslandId=>({sourceIslandId,targetIslandId:main.id}));
  const context=await browser.newContext({viewport:{width:1440,height:960},reducedMotion:'reduce'}),page=await context.newPage();
  page.on('pageerror',e=>errors.push(e.message));
@@ -34,6 +35,15 @@ const dir=path.resolve('artifacts/harbor-coast');fs.mkdirSync(dir,{recursive:tru
   assert(candidate,'visible nearby coast site');
   // Occupied default footprint cannot accept a second harbor.
   const occupied=screen(port);await page.mouse.click(occupied.x,occupied.y);assert(await page.locator('.harbor-build-banner').isVisible());
+  if(worldVersion===2){
+   // Right drag and reverse: the coast returns to the same pixel; no port is placed.
+   const beforePan=await page.locator('canvas').first().evaluate(canvas=>canvas.toDataURL());
+   await page.mouse.move(620,550);await page.mouse.down({button:'right'});await page.mouse.move(700,595,{steps:5});await page.mouse.up({button:'right'});
+   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+   assert.notEqual(await page.locator('canvas').first().evaluate(canvas=>canvas.toDataURL()),beforePan);
+   await page.mouse.down({button:'right'});await page.mouse.move(620,550,{steps:5});await page.mouse.up({button:'right'});
+   assert(await page.locator('.harbor-build-banner').isVisible());checks.push('right-drag pans in harbor mode without placing or deleting');
+  }
   await page.mouse.move(candidate.screen.x,candidate.screen.y);
   await page.screenshot({path:path.join(dir,'shore-placement.png')});
   await page.mouse.click(candidate.screen.x,candidate.screen.y);
@@ -50,7 +60,7 @@ const dir=path.resolve('artifacts/harbor-coast');fs.mkdirSync(dir,{recursive:tru
   await page.getByRole('button',{name:'迁移此港口',exact:true}).click();
   await page.locator('.harbor-build-banner').waitFor();
   const secondAnchor=harborAnchor({...candidate,id:ids[1],name:'2'});
-  const moved=harborSites(main).filter(p=>p.x!==candidate.x&&p.y!==candidate.y&&validateHarborSite(main,save.metaProgress,[],p.x,p.y)).map(p=>({...p,screen:screen(p,secondAnchor)})).filter(p=>p.screen.x>350&&p.screen.x<1250&&p.screen.y>230&&p.screen.y<740).sort((a,b)=>Math.hypot(a.x-candidate.x,a.y-candidate.y)-Math.hypot(b.x-candidate.x,b.y-candidate.y))[0];
+  const moved=harborSites(main).filter(p=>(p.x!==candidate.x||p.y!==candidate.y)&&validateHarborSite(main,save.metaProgress,[],p.x,p.y)).map(p=>({...p,screen:screen(p,secondAnchor)})).filter(p=>p.screen.x>350&&p.screen.x<1250&&p.screen.y>230&&p.screen.y<740).sort((a,b)=>Math.hypot(a.x-candidate.x,a.y-candidate.y)-Math.hypot(b.x-candidate.x,b.y-candidate.y))[0];
   assert(moved);await page.mouse.click(moved.screen.x,moved.screen.y);await page.locator('.harbor-build-banner').waitFor({state:'hidden'});
   await page.getByRole('button',{name:/⚓ 航线/}).click();
   assert.equal(await page.getByLabel(`${source.rewardTheorem.theoremId} 入港`,{exact:true}).inputValue(),ids[1]);checks.push('move preserves assigned route');
@@ -73,8 +83,10 @@ const dir=path.resolve('artifacts/harbor-coast');fs.mkdirSync(dir,{recursive:tru
   await page.getByLabel('本岛码头',{exact:true}).selectOption(ids[1]);await page.getByRole('button',{name:'拆除此港口',exact:true}).click();
   assert.equal(await page.getByLabel('本岛码头',{exact:true}).locator('option').count(),1);assert.equal(await page.getByLabel(`${source.rewardTheorem.theoremId} 入港`,{exact:true}).inputValue(),'');checks.push('remove releases cells and resets route assignment');
   assert.deepEqual(errors,[]);
-  const fourSave=fixture(11),fourConfig=getStage2LevelConfig('level-12',42),fourIsland=fourConfig.goalIslandIds.map(id=>fourConfig.world.getIslandById(id)).find(i=>islandPremises(i).length===4);
+  const fourSave=fixture(11,false,worldVersion),fourConfig=getStage2LevelConfig('level-12',42,worldVersion),fourIsland=fourConfig.goalIslandIds.map(id=>fourConfig.world.getIslandById(id)).find(i=>islandPremises(i).length===4);
   assert(fourIsland);
+  // Leave gameplay first: pagehide now flushes narrative and circuit progress.
+  await page.goto(process.env.ART_URL || 'http://127.0.0.1:4177/',{waitUntil:'networkidle'});
   await page.evaluate(raw=>localStorage.setItem('logic_game_save_1',raw),encodeSave(fourSave));await page.reload({waitUntil:'networkidle'});
   await page.getByRole('button',{name:/^继续游戏/}).click();if(await back.count())await back.first().click();
   await page.getByRole('button',{name:/⚓ 航线/}).click();

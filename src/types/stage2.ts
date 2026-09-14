@@ -43,6 +43,8 @@ export interface Stage2IslandDefinition {
     id: string;
     mapBounds: Stage2MapBounds;
     buildTiles: Stage2GridPoint[];
+    coastlineEdges?:Array<{ax:number;ay:number;bx:number;by:number}>;
+    biome?:import('./world').BiomeDefinition;
     unlocked: boolean;
     name?: string;
     category?: Stage2IslandCategory;
@@ -53,6 +55,11 @@ export interface Stage2IslandDefinition {
     premiseNodes?: Stage2IslandPremiseDefinition[];
     rewardCoins?: number;
     rewardTheorem?: TheoremChipDefinition;
+    regionId?: string;
+    biomeId?: string;
+    contentDomainId?: string;
+    profile?: import('./world').IslandProfile;
+    decorative?: boolean;
 }
 
 export interface Stage2WorldConfig {
@@ -60,6 +67,7 @@ export interface Stage2WorldConfig {
     chunkH: number;
     getIslandsInBounds: (bounds: Stage2MapBounds) => Stage2IslandDefinition[];
     getIslandById: (id: string) => Stage2IslandDefinition | null;
+    atlas?: import('./world').RegionalWorldInfo;
 }
 
 export interface Stage2LevelConfig {
@@ -100,6 +108,8 @@ export interface LogicFarmProgress {
 
 export interface Stage2MetaProgress {
     mapSeed: number;
+    worldVersion: import('./world').WorldVersion;
+    discoveredLandmarkIds: string[];
     coins: number;
     unlockedIslandIds: string[];
     completedIslandIds: string[];
@@ -109,6 +119,7 @@ export interface Stage2MetaProgress {
     quickMpUnlocked: boolean;
     quickMpUses: number;
     seenStoryIds: string[];
+    story: import('./story').StoryProgress;
     plannedRoutes: Array<{ sourceIslandId: string; targetIslandId: string }>;
     proofDependencies: Record<string, string[]>;
     harbors: Record<string, IslandHarbor[]>;
@@ -125,6 +136,8 @@ export interface IslandHarbor {
 
 export const createDefaultStage2MetaProgress = (seed?: number): Stage2MetaProgress => ({
     mapSeed: seed ?? Date.now(),
+    worldVersion: 2,
+    discoveredLandmarkIds: [],
     coins: 0,
     unlockedIslandIds: [],
     completedIslandIds: [],
@@ -138,6 +151,7 @@ export const createDefaultStage2MetaProgress = (seed?: number): Stage2MetaProgre
     quickMpUnlocked: false,
     quickMpUses: 0,
     seenStoryIds: [],
+    story: {version:1,skippedIds:[],choices:{},reading:{}},
     plannedRoutes: [],
     proofDependencies: {},
     harbors: {},

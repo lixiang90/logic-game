@@ -7,8 +7,9 @@ const {solveCircuitGoals}=require('../src/lib/circuit-solver.ts');
  const browser=await chromium.launch({headless:true,executablePath:process.env.ART_BROWSER});
  const report={date:new Date().toISOString(),fixture:'saved, already-proved focus island; tests completion effects, not player proof discovery',checks:[],errors:[]};
  try{
- for(const index of [13,16]){
-  const save=fixture(index); const config=getStage2LevelConfig('level-'+(index+1),42);
+ for(const index of [13,16,19]){
+  const worldVersion=process.env.ART_WORLD_VERSION==='2'?2:1;
+  const save=fixture(index,false,worldVersion); const config=getStage2LevelConfig('level-'+(index+1),42,worldVersion);
   const island=config.world.getIslandById(config.focusIslandId),b=island.goalBounds;
   save.metaProgress.farm.unlocked=false;save.metaProgress.quickMpUnlocked=false;save.metaProgress.quickMpUses=0;save.metaProgress.collectedTheorems={};
   const nodes=[{id:'proof-fixture',type:'premise',subType:island.goalFormula,customLabel:island.goalFormula,x:b.x-8,y:b.y-2,w:6,h:6,locked:false},
@@ -20,7 +21,7 @@ const {solveCircuitGoals}=require('../src/lib/circuit-solver.ts');
   await page.addInitScript(save=>{localStorage.setItem('logic_game_save_1',JSON.stringify(save));localStorage.setItem('completed_tutorials',JSON.stringify(Array.from({length:20},(_,i)=>i)));},save);
   await page.goto(process.env.ART_URL||'http://127.0.0.1:4175/logicgame-test/',{waitUntil:'networkidle'});
   await page.getByRole('button',{name:/^继续游戏/}).click();
-  await page.getByRole('button',{name:'下一关',exact:true}).waitFor();
+  await page.getByRole('button',{name:index===19?'自由模式':'下一关',exact:true}).waitFor();
   await page.locator('.art-discovery-notice').waitFor();
   assert.ok((await page.locator('.art-discovery-notice').innerText()).includes('新定理已归档'));
   await page.locator('.art-game-actions button[title="存档"]').click();
@@ -28,7 +29,7 @@ const {solveCircuitGoals}=require('../src/lib/circuit-solver.ts');
   const saved=await page.evaluate(()=>JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(localStorage.getItem('logic_game_save_4')), char => char.charCodeAt(0)))));
   assert.ok(saved.metaProgress.completedIslandIds.includes(island.id));
   if(index===13) assert.equal(saved.metaProgress.farm.unlocked,true);
-  else {assert.equal(saved.metaProgress.quickMpUnlocked,true);assert.equal(saved.metaProgress.quickMpUses,3);}
+  else if(index===16) {assert.equal(saved.metaProgress.quickMpUnlocked,true);assert.equal(saved.metaProgress.quickMpUses,3);}
   assert.ok(Object.keys(saved.metaProgress.collectedTheorems).length>0);
   report.checks.push({chapter:index-9,farm:saved.metaProgress.farm.unlocked,mp:saved.metaProgress.quickMpUnlocked,uses:saved.metaProgress.quickMpUses,theorems:Object.keys(saved.metaProgress.collectedTheorems)});
   await context.close();

@@ -47,10 +47,10 @@ export function drawShipping(ctx: CanvasRenderingContext2D, config: Stage2LevelC
         ctx.fillStyle='#d4b783';ctx.beginPath();ctx.moveTo(x+12,y+14);ctx.lineTo(x+w/2,y+4);ctx.lineTo(x+w-12,y+14);ctx.closePath();ctx.fill();
         for(const [bx,by] of [[x+8,y+8],[x+w-8,y+8],[x+8,y+h-8],[x+w-8,y+h-8]]){ctx.fillStyle='#edcf90';ctx.beginPath();ctx.arc(bx,by,3,0,Math.PI*2);ctx.fill();}
         ctx.strokeStyle='#c5ac78';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(anchor.x,anchor.y);ctx.lineTo(anchor.x+normal.x*14,anchor.y+normal.y*14);ctx.stroke();
-        const labelScale=Math.max(1,.65/scale);
+        if(scale>=.09){const labelScale=Math.max(1,.65/scale);
         ctx.save();ctx.translate(x+w/2,y+h/2);ctx.scale(labelScale,labelScale);
         ctx.fillStyle='#102337e8';ctx.beginPath();ctx.roundRect(-40,-10,80,20,5);ctx.fill();
-        ctx.fillStyle='#f1dbaa';ctx.font='600 11px sans-serif';ctx.textAlign='center';ctx.fillText(`${zh?'港':'Port'} ${port.name}`,0,4);ctx.restore();
+        ctx.fillStyle='#f1dbaa';ctx.font='600 11px sans-serif';ctx.textAlign='center';ctx.fillText(`${zh?'港':'Port'} ${port.name}`,0,4);ctx.restore();}
         const panels: HarborPanel[] = showCards ? panelLayout.get(port.id) ?? [] : [];
         panels.forEach((rect,index)=>{
             const route=arrivals[index],source=config.world.getIslandById(route.sourceIslandId);if(!source?.rewardTheorem)return;

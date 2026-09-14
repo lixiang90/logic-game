@@ -85,7 +85,8 @@ async function frame(page) { await page.evaluate(() => new Promise(resolve => re
    assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=dims[0]+1&&bounds.y+bounds.height<=dims[1]+1);
    await page.screenshot({path:path.join(output,'story-'+dims[0]+'.png')});
    await page.keyboard.press('Tab');
-   assert.equal(await page.locator('.story-dialogue__continue').evaluate(el=>el===document.activeElement),true);
+   assert.equal(await page.locator('.story-scene').evaluate(el=>el.contains(document.activeElement)),true);
+   await page.locator('.story-dialogue__continue').focus();
    await page.keyboard.press('Space');
    assert.equal(await page.locator('.story-scene').getAttribute('data-line-index'),'1');
    await context.close();

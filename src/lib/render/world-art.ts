@@ -1,8 +1,11 @@
 import { ART_THEME as A } from '@/lib/art-theme';
 import { Stage2IslandDefinition } from '@/types/stage2';
+import { WORLD_BIOMES } from '@/data/world-regions';
+import type { RegionalWorldInfo } from '@/types/world';
 
 export type WorldLod = 'coarse' | 'markers' | 'tiles';
 export const worldLod = (scale: number): WorldLod => scale >= .95 ? 'tiles' : scale >= .38 ? 'markers' : 'coarse';
+export const showIslandTheorem=(island:Stage2IslandDefinition,scale:number,regional:boolean)=>!regional || (island.mapBounds.w*25*scale>=180 && island.mapBounds.h*25*scale>=165);
 
 /** Names come from the ten existing main-island theorem labels, never from future progress. */
 export const CHAPTER_LANDMARKS: Record<string,number> = {
@@ -37,15 +40,16 @@ export function drawStarWorkshop(ctx: CanvasRenderingContext2D,width:number,heig
 export function drawIslandGround(ctx:CanvasRenderingContext2D,island:Stage2IslandDefinition,outline:Path2D,tiles:Path2D,scale:number,lod:WorldLod,low:boolean,unlocked:boolean,completed:boolean,selected:boolean) {
     const {x,y,w,h}=island.mapBounds,G=25,depth=Math.min(190,h*G*.14);
     const skin=island.category==='main'?0:island.category==='support'?1:2;
+    const biome=island.biome??(island.biomeId?WORLD_BIOMES[island.biomeId]:undefined);
     const tops=lod==='tiles'?['#26383C','#293844','#343B3C']:['#526A61','#50646A','#65695C'];
     ctx.save();ctx.globalAlpha=unlocked?1:.22;
     // Stacked silhouettes form the rock volume below the unchanged buildable top edge.
     for(let layer=low?2:4;layer>=1;layer--) {
         ctx.save();ctx.translate(0,depth*layer/(low?2:4));
-        ctx.fillStyle=layer===1?'#655F56':layer===2?'#484D50':'#303B47';ctx.fill(outline,'evenodd');
+        ctx.fillStyle=layer===1?(biome?.rock??'#655F56'):layer===2?'#484D50':'#303B47';ctx.fill(outline,'evenodd');
         ctx.strokeStyle='rgba(164,145,115,.25)';ctx.lineWidth=2/scale;ctx.stroke(outline);ctx.restore();
     }
-    ctx.fillStyle=tops[skin];ctx.fill(outline,'evenodd');
+    ctx.fillStyle=biome?(lod==='tiles'?biome.detail:biome.ground):tops[skin];ctx.fill(outline,'evenodd');
     ctx.save();ctx.clip(outline,'evenodd');
     const light=ctx.createLinearGradient(x*G,y*G,(x+w)*G,(y+h)*G);
     light.addColorStop(0,'rgba(212,220,174,.15)');light.addColorStop(1,'rgba(11,23,39,.18)');ctx.fillStyle=light;ctx.fillRect(x*G,y*G,w*G,h*G);
@@ -58,10 +62,63 @@ export function drawIslandGround(ctx:CanvasRenderingContext2D,island:Stage2Islan
         }
     }
     if(lod==='tiles') {ctx.lineWidth=.7/scale;ctx.strokeStyle='rgba(196,210,197,.105)';ctx.stroke(tiles);}
+    if(biome && !low && lod!=='tiles') {
+        ctx.strokeStyle=biome.accent+'55';ctx.fillStyle=biome.accent+'55';ctx.lineWidth=1/scale;
+        for(let i=0;i<12;i++) {
+            const px=(x+8+(i*23.7)%(w-16))*G,py=(y+10+(i*17.3)%(h-20))*G;
+            ctx.beginPath();
+            if(biome.motif==='crystal'){ctx.moveTo(px,py-24);ctx.lineTo(px+12,py+9);ctx.lineTo(px-9,py+9);ctx.closePath();ctx.fill();}
+            else if(biome.motif==='frost'){ctx.moveTo(px-15,py);ctx.lineTo(px+15,py);ctx.moveTo(px,py-15);ctx.lineTo(px,py+15);ctx.moveTo(px-11,py-11);ctx.lineTo(px+11,py+11);ctx.stroke();}
+            else if(biome.motif==='basalt'){ctx.moveTo(px-23,py-12);ctx.lineTo(px,py+3);ctx.lineTo(px-5,py+24);ctx.stroke();}
+            else if(biome.motif==='strata'||biome.motif==='sand'){ctx.moveTo(px-30,py);ctx.quadraticCurveTo(px,py-12,px+36,py+5);ctx.stroke();}
+            else {ctx.moveTo(px-9,py);ctx.lineTo(px,py-17);ctx.lineTo(px+3,py);ctx.stroke();}
+        }
+    }
     ctx.restore();
-    ctx.lineWidth=Math.max(1.5/scale,5);ctx.strokeStyle=selected?A.provable:completed?'#A5CCAF':unlocked?'#A8B18F':'#77858D';ctx.stroke(outline);
+    ctx.lineWidth=Math.max(1.5/scale,5);ctx.strokeStyle=selected?A.provable:completed?'#A5CCAF':unlocked?(biome?.edge??'#A8B18F'):'#77858D';ctx.stroke(outline);
     // Inner grass lip shares the exact geometry of the buildable island surface.
     ctx.save();ctx.clip(outline,'evenodd');ctx.strokeStyle=lod==='tiles'?'rgba(147,172,132,.24)':'rgba(186,199,149,.36)';ctx.lineWidth=14;ctx.stroke(outline);ctx.restore();
+    ctx.restore();
+}
+
+export function drawRegionChart(ctx:CanvasRenderingContext2D,atlas:RegionalWorldInfo,scale:number,zh:boolean,discovered:string[]) {
+    ctx.save();
+    for(const region of atlas.regions) {
+        const biome=atlas.biomes[region.biomeId],mark=atlas.pointsOfInterest.find(p=>p.regionId===region.id);
+        const x=(mark?.position.x??region.center.x)*25,y=(mark?.position.y??region.center.y)*25;
+        if(scale<.13){
+            ctx.save();ctx.translate(x,y);ctx.scale(1/scale,1/scale);ctx.translate(0,-38);
+            ctx.font='600 15px serif';ctx.textAlign='center';ctx.fillStyle=biome.edge;ctx.fillText(region.name[zh?'zh':'en'],0,0);
+            if(scale>.01){ctx.font='10px sans-serif';ctx.fillStyle='#bac9d6';ctx.fillText(biome.name[zh?'zh':'en'],0,18);}ctx.restore();
+        }
+    }
+    for(const poi of atlas.pointsOfInterest) {
+        const visited=discovered.includes(poi.id);
+        if(scale>.04){
+            const region=atlas.regions.find(r=>r.id===poi.regionId)!,biome=atlas.biomes[region.biomeId];
+            ctx.save();ctx.translate(poi.position.x*25,poi.position.y*25-110);
+            ctx.fillStyle=biome.rock;ctx.beginPath();ctx.moveTo(-95,28);ctx.lineTo(70,22);ctx.lineTo(32,78);ctx.lineTo(-45,68);ctx.closePath();ctx.fill();
+            ctx.fillStyle=biome.ground;ctx.beginPath();ctx.ellipse(0,24,96,36,-.1,0,Math.PI*2);ctx.fill();
+            ctx.strokeStyle=biome.accent;ctx.fillStyle=biome.edge;ctx.lineWidth=5;
+            if(poi.kind==='beacon'){
+                ctx.fillRect(-14,-87,28,107);ctx.fillStyle='#172b3a';ctx.fillRect(-8,-68,16,22);
+                ctx.beginPath();ctx.moveTo(-28,-88);ctx.lineTo(0,-115);ctx.lineTo(28,-88);ctx.closePath();ctx.fillStyle=biome.accent;ctx.fill();
+                ctx.beginPath();ctx.ellipse(0,-72,54,17,-.2,0,Math.PI*2);ctx.stroke();
+            }else if(poi.kind==='archive'){
+                for(const x of [-44,32])ctx.fillRect(x,-50,12,72);
+                ctx.beginPath();ctx.ellipse(0,-48,50,32,0,Math.PI,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.arc(0,-8,21,0,Math.PI*2);ctx.stroke();
+            }else{
+                for(const x of [-40,0,40]){ctx.beginPath();ctx.moveTo(x,20);ctx.lineTo(x-12,-14);ctx.lineTo(x+4,-48-Math.abs(x)*.3);ctx.lineTo(x+17,-9);ctx.closePath();ctx.fill();}
+            }
+            ctx.restore();
+        }
+        ctx.save();ctx.translate(poi.position.x*25,poi.position.y*25);ctx.scale(1/scale,1/scale);
+        ctx.fillStyle='#112438ed';ctx.strokeStyle=visited?'#dcca8f':'#92c3d4';ctx.lineWidth=1;
+        ctx.beginPath();ctx.arc(0,0,13,0,Math.PI*2);ctx.fill();ctx.stroke();
+        ctx.fillStyle=visited?'#f2d998':'#b9e5f0';ctx.font='15px serif';ctx.textAlign='center';ctx.fillText(visited?'✦':'◇',0,5);
+        if(scale>.035){ctx.font='11px sans-serif';ctx.fillText(poi.name[zh?'zh':'en'],0,29);}
+        ctx.restore();
+    }
     ctx.restore();
 }
 
